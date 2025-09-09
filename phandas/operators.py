@@ -1,10 +1,24 @@
 import pandas as pd
-import numpy as np
-from typing import Union
-from .core import Factor # 導入 Factor 類
+from typing import Union, List
+from .core import Factor 
 
-# Functional API - WQ style operator functions (tested and stable)
-# 以下內容將從 phandas/core.py 中剪切過來
+def group_neutralize(factor: 'Factor', group_data: 'Factor') -> 'Factor':
+    """
+    Neutralizes the factor against specified groups (e.g., industry) (functional style).
+    """
+    return factor.group_neutralize(group_data)
+
+def vector_neutralize(factor: 'Factor', other: 'Factor') -> 'Factor':
+    """
+    Neutralizes the factor against another factor using vector projection (functional style).
+    """
+    return factor.vector_neutralize(other)
+
+def regression_neutralize(factor: 'Factor', neut_factors: Union['Factor', List['Factor']]) -> 'Factor':
+    """
+    Neutralizes the factor against one or more factors using OLS regression (functional style).
+    """
+    return factor.regression_neutralize(neut_factors)
 
 def rank(factor: 'Factor') -> 'Factor':
     """Cross-sectional rank within each timestamp (functional style)."""
@@ -33,6 +47,38 @@ def ts_sum(factor: 'Factor', window: int) -> 'Factor':
 def ts_std_dev(factor: 'Factor', window: int) -> 'Factor':
     """Returns standard deviation of x for the past d days (functional style)."""
     return factor.ts_std_dev(window)
+
+def where(condition: Factor, x: Union[Factor, float], y: Union[Factor, float]) -> Factor:
+    """
+    Operator wrapper for Factor.where method.
+    
+    Selects elements from x where condition is True, and from y where it is False.
+    
+    Parameters
+    ----------
+    condition : Factor
+        A boolean Factor. Where True, yield x, otherwise yield y.
+    x : Factor or scalar
+        Value to yield where condition is True.
+    y : Factor or scalar
+        Value to yield where condition is False.
+        
+    Returns
+    -------
+    Factor
+        A new Factor with elements from x and y, depending on the condition.
+    """
+    if not isinstance(x, Factor):
+        # If x is a scalar, we need a Factor of the same shape as condition
+        # to call the .where method.
+        # We can create a dummy factor and then apply the logic.
+        # A simpler way is to use x.where(condition, y) which is what is desired.
+        # Let's check the implementation of where I added.
+        # `self.where(cond, other)` keeps `self` where `cond` is true, and takes `other` where false.
+        # So `where(cond, x, y)` should be `x.where(cond, y)`.
+        raise TypeError("The `x` argument (value if True) must be a Factor object for `where` operator.")
+        
+    return x.where(condition, other=y)
 
 def ts_corr(factor1: 'Factor', factor2: 'Factor', window: int) -> 'Factor':
     """Rolling correlation between two factors (functional style)."""

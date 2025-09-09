@@ -4,8 +4,6 @@ Utility functions for unified Factor-based analysis.
 Helper functions for creating and managing Factor objects.
 """
 
-import pandas as pd
-from typing import Union, List
 from .core import Factor
 
 

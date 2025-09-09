@@ -75,7 +75,7 @@ def fetch_data(
     
     # Combine and process
     combined = pd.concat(all_data, ignore_index=True)
-    result = _process_data(combined)
+    result = _process_data(combined, timeframe)
     
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -122,7 +122,7 @@ def _fetch_renamed_symbol(exchange, symbols: List[str], timeframe: str, since) -
     return combined
 
 
-def _process_data(df: pd.DataFrame) -> pd.DataFrame:
+def _process_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     """Process and align data."""
     # Pivot to find common start date
     pivoted = df.pivot_table(index='timestamp', columns='symbol', values='close')
@@ -130,7 +130,21 @@ def _process_data(df: pd.DataFrame) -> pd.DataFrame:
     
     # Create full date range
     end_date = df['timestamp'].max()
-    full_range = pd.date_range(start=common_start, end=end_date, freq='D')
+    
+    freq_map = {
+        '1m': 'min',
+        '5m': '5min',
+        '15m': '15min',
+        '30m': '30min',
+        '1h': 'h',
+        '4h': '4h',
+        '1d': 'D',
+        '1w': 'W',
+        '1M': 'MS',
+    }
+    
+    freq = freq_map.get(timeframe, 'D') # Default to daily if not found
+    full_range = pd.date_range(start=common_start, end=end_date, freq=freq)
     
     # Align and fill for each column
     ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']

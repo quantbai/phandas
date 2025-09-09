@@ -6,7 +6,8 @@ Provides efficient factor matrix operations with pandas-like API.
 
 import pandas as pd
 import numpy as np
-from typing import Union, Optional, Callable
+import statsmodels.api as sm
+from typing import Union, Optional, Callable, List
 from scipy.stats import rankdata, norm, uniform, cauchy
 
 
@@ -383,6 +384,149 @@ class Factor:
         # Z-score is equivalent to normalize(x, useStd=True)
         return self.normalize(useStd=True)
 
+    def group_neutralize(self, group_data: 'Factor') -> 'Factor':
+        """
+        Neutralizes the factor against specified groups (e.g., industry).
+
+        Parameters
+        ----------
+        group_data : Factor
+            A Factor object where the 'factor' column contains group labels
+            (e.g., industry names, sectors).
+
+        Returns
+        -------
+        Factor
+            A new Factor object with group-neutralized values.
+        """
+        if not isinstance(group_data, Factor):
+            raise TypeError("group_data must be a Factor object.")
+
+        # Merge factor data with group data
+        merged = pd.merge(self.data, group_data.data, on=['timestamp', 'symbol'], 
+                          suffixes=('', '_group'))
+        
+        if merged.empty:
+            raise ValueError("No common data between factor and group data.")
+
+        # Group by timestamp and the group label, then de-mean
+        merged['factor'] = merged.groupby(['timestamp', 'factor_group'])['factor'].transform(
+            lambda x: x - x.mean()
+        )
+        
+        result_data = merged[['timestamp', 'symbol', 'factor']]
+        return Factor(result_data, name=f"group_neutralize({self.name},{group_data.name})")
+
+    def vector_neutralize(self, other: 'Factor') -> 'Factor':
+        """
+        Neutralizes the factor against another factor using vector projection.
+
+        Parameters
+        ----------
+        other : Factor
+            The factor to neutralize against.
+
+        Returns
+        -------
+        Factor
+            A new Factor object with values orthogonal to the other factor.
+        """
+        if not isinstance(other, Factor):
+            raise TypeError("other must be a Factor object.")
+
+        merged = pd.merge(self.data, other.data, on=['timestamp', 'symbol'], 
+                          suffixes=('_target', '_neut'))
+
+        if merged.empty:
+            raise ValueError("No common data for vector neutralization.")
+
+        def neutralize_single_date(group):
+            x = group['factor_target'].values
+            y = group['factor_neut'].values
+            
+            if np.all(y == 0) or np.dot(y, y) == 0:
+                return pd.Series(x, index=group.index)
+
+            projection = (np.dot(x, y) / np.dot(y, y)) * y
+            neutralized_x = x - projection
+            
+            return pd.Series(neutralized_x, index=group.index)
+
+        neutralized_series = merged.groupby('timestamp').apply(neutralize_single_date).reset_index(level=0, drop=True)
+        
+        result_data = merged[['timestamp', 'symbol']].copy()
+        result_data['factor'] = neutralized_series
+        
+        return Factor(result_data, name=f"vector_neutralize({self.name},{other.name})")
+
+    def regression_neutralize(self, neut_factors: Union['Factor', List['Factor']]) -> 'Factor':
+        """
+        Neutralizes the factor against one or more factors using OLS regression.
+
+        Parameters
+        ----------
+        neut_factors : Factor or list of Factor
+            Factor(s) to use as independent variables in the regression.
+
+        Returns
+        -------
+        Factor
+            A new Factor object containing the residuals of the regression.
+        """
+        if isinstance(neut_factors, Factor):
+            neut_factors = [neut_factors]
+        if not all(isinstance(f, Factor) for f in neut_factors):
+            raise TypeError("neut_factors must be a Factor or a list of Factor objects.")
+
+        # Start with the target factor's data
+        merged = self.data.rename(columns={'factor': self.name or 'target'})
+        
+        # Sequentially merge all neutralization factors
+        neut_names = []
+        for i, f in enumerate(neut_factors):
+            neut_name = f.name or f'neut_{i}'
+            neut_names.append(neut_name)
+            merged = pd.merge(merged, f.data.rename(columns={'factor': neut_name}),
+                              on=['timestamp', 'symbol'], how='inner')
+
+        if merged.empty:
+            raise ValueError("No common data for regression neutralization.")
+        
+        def get_residuals(group):
+            Y = group[self.name or 'target']
+            X = group[neut_names]
+            
+            # Drop rows with NaNs in this slice
+            valid_idx = Y.notna() & X.notna().all(axis=1)
+            if valid_idx.sum() < 2: # Not enough data to run regression
+                return pd.Series(np.nan, index=group.index)
+                
+            Y = Y[valid_idx]
+            X = X[valid_idx]
+
+            if X.empty:
+                return pd.Series(np.nan, index=group.index)
+
+            # Check for multicollinearity by inspecting the condition number of the design matrix
+            X_const = sm.add_constant(X)
+            if np.linalg.cond(X_const) > 1e10: # A common threshold for high multicollinearity
+                return pd.Series(np.nan, index=group.index)
+
+            model = sm.OLS(Y, X_const).fit()
+            
+            # Align residuals back to the original group index
+            residuals = pd.Series(np.nan, index=group.index)
+            residuals[valid_idx] = model.resid
+            return residuals
+
+        residuals_series = merged.groupby('timestamp').apply(get_residuals, include_groups=False).reset_index(level=0, drop=True)
+        
+        result_data = merged[['timestamp', 'symbol']].copy()
+        result_data['factor'] = residuals_series
+
+        neut_factors_str = ",".join([f.name for f in neut_factors])
+        return Factor(result_data, name=f"regression_neutralize({self.name},[{neut_factors_str}])")
+
     def normalize(self, useStd: bool = False, limit: float = 0.0) -> 'Factor':
         """Cross-sectional normalization: (x - mean) / std (optional), then limit (optional)."""
         result = self.data.copy()
@@ -678,6 +822,33 @@ class Factor:
         result = self.data.copy()
         result['factor'] = 1 / result['factor']
         return Factor(result, f"inverse({self.name})")
+
+    def where(self, cond: 'Factor', other: Union['Factor', float] = np.nan) -> 'Factor':
+        """
+        Equivalent to pandas.Series.where.
+        Replace values where the condition is False.
+        """
+        if not isinstance(cond, Factor):
+            raise TypeError("cond must be a Factor object.")
+
+        # Prepare the data, setting index for alignment
+        self_s = self.data.set_index(['timestamp', 'symbol'])['factor']
+        cond_s = cond.data.set_index(['timestamp', 'symbol'])['factor']
+        
+        # Ensure condition is boolean, treating NaNs as False
+        cond_s = cond_s.fillna(False).astype(bool)
+
+        other_val = other
+        if isinstance(other, Factor):
+            other_val = other.data.set_index(['timestamp', 'symbol'])['factor']
+
+        # Perform the where operation. Pandas handles alignment based on index.
+        result_s = self_s.where(cond_s, other_val)
+
+        # Convert back to standard Factor format
+        result_df = result_s.reset_index()
+        
+        return Factor(result_df, name=f"where({self.name})")
     
     # Python 運算符重載 - 讓因子表達式更直觀
     def __neg__(self) -> 'Factor':
@@ -752,6 +923,60 @@ class Factor:
             result = self.data.copy()
             result['factor'] = other / result['factor']
             return Factor(result, f"({other}/{self.name})")
+
+    def __lt__(self, other: Union['Factor', float]) -> 'Factor':
+        """Less than: factor < other"""
+        if isinstance(other, Factor):
+            result_df = self._binary_op(other, lambda x, y: x < y)
+        else:
+            result_df = self.data.copy()
+            result_df['factor'] = result_df['factor'] < other
+        return Factor(result_df, f"({self.name}<{getattr(other, 'name', other)})")
+
+    def __le__(self, other: Union['Factor', float]) -> 'Factor':
+        """Less than or equal to: factor <= other"""
+        if isinstance(other, Factor):
+            result_df = self._binary_op(other, lambda x, y: x <= y)
+        else:
+            result_df = self.data.copy()
+            result_df['factor'] = result_df['factor'] <= other
+        return Factor(result_df, f"({self.name}<={getattr(other, 'name', other)})")
+
+    def __gt__(self, other: Union['Factor', float]) -> 'Factor':
+        """Greater than: factor > other"""
+        if isinstance(other, Factor):
+            result_df = self._binary_op(other, lambda x, y: x > y)
+        else:
+            result_df = self.data.copy()
+            result_df['factor'] = result_df['factor'] > other
+        return Factor(result_df, f"({self.name}>{getattr(other, 'name', other)})")
+
+    def __ge__(self, other: Union['Factor', float]) -> 'Factor':
+        """Greater than or equal to: factor >= other"""
+        if isinstance(other, Factor):
+            result_df = self._binary_op(other, lambda x, y: x >= y)
+        else:
+            result_df = self.data.copy()
+            result_df['factor'] = result_df['factor'] >= other
+        return Factor(result_df, f"({self.name}>={getattr(other, 'name', other)})")
+
+    def __eq__(self, other: Union['Factor', float]) -> 'Factor':
+        """Equal to: factor == other"""
+        if isinstance(other, Factor):
+            result_df = self._binary_op(other, lambda x, y: x == y)
+        else:
+            result_df = self.data.copy()
+            result_df['factor'] = result_df['factor'] == other
+        return Factor(result_df, f"({self.name}=={getattr(other, 'name', other)})")
+
+    def __ne__(self, other: Union['Factor', float]) -> 'Factor':
+        """Not equal to: factor != other"""
+        if isinstance(other, Factor):
+            result_df = self._binary_op(other, lambda x, y: x != y)
+        else:
+            result_df = self.data.copy()
+            result_df['factor'] = result_df['factor'] != other
+        return Factor(result_df, f"({self.name}!={getattr(other, 'name', other)})")
     
     # Correlation
     def ts_corr(self, other: 'Factor', window: int) -> 'Factor':

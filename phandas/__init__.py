@@ -5,7 +5,7 @@ Clean, efficient factor analysis with pandas-like API.
 """
 
 __author__ = "Phantom Management"
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 # Core components
 from .core import (
@@ -14,7 +14,8 @@ from .core import (
 from .operators import (
     rank, ts_rank, ts_mean, ts_median, ts_corr, ts_delay, ts_delta, ts_arg_max, ts_arg_min, ts_av_diff, ts_backfill, ts_decay_exp_window, ts_decay_linear, 
     log, s_log_1p, sign, sqrt, maximum, minimum, multiply, power, reverse, 
-    signed_power, subtract, divide, inverse, add
+    signed_power, subtract, divide, inverse, add, where,
+    group_neutralize, vector_neutralize, regression_neutralize
 )
 from .data import fetch_data, check_data_quality
 from .backtest import Backtester, backtest
@@ -36,7 +37,8 @@ __all__ = [
     # Functional API (WQ style) - tested and stable
     'rank', 'ts_rank', 'ts_mean', 'ts_median', 'ts_corr', 'ts_delay', 'ts_delta', 'ts_arg_max', 'ts_arg_min', 'ts_av_diff', 'ts_backfill', 'ts_decay_exp_window', 'ts_decay_linear',
     'log', 's_log_1p', 'sign', 'sqrt', 'maximum', 'minimum', 'multiply', 'power', 'reverse',
-    'signed_power', 'subtract', 'divide', 'inverse', 'add',
+    'signed_power', 'subtract', 'divide', 'inverse', 'add', 'where',
+    'group_neutralize', 'vector_neutralize', 'regression_neutralize',
     
     # Utilities
     'save_factor',

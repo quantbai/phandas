@@ -19,27 +19,47 @@ pip install phandas
 
 ## Quick Start
 
-```python
-from phandas import fetch_data, load_factor, backtest, ts_corr
+Here is a complete example showing how to build a momentum strategy and neutralize it against trading volume.
 
-# 下載數據
+```python
+from phandas import fetch_data, load_factor, backtest, Factor
+from phandas.operators import vector_neutralize
+
+# 1. Download Data
 raw_data = fetch_data(
-    symbols=['BTC', 'ETH', 'SOL', 'MATIC', 'ARB', 'OP'],
+    symbols=['BNB', 'ETH', 'SOL', 'MATIC', 'ARB', 'OP'],
     timeframe='1d',
     start_date='2023-01-01'
 )
 
-# 創建因子
-open = load_factor(raw_data, 'open')
+# 2. Load and Calculate Factors
+close = load_factor(raw_data, 'close')
 volume = load_factor(raw_data, 'volume')
-price = load_factor(raw_data, 'open')
+open_price = load_factor(raw_data, 'open')
 
-# Alpha#6: (-1 * ts_corr(open, volume, 10))
-alpha006 = -ts_corr(open, volume, 10)
+# Define a momentum factor function
+def momentum_factor(close: Factor, delay: int) -> Factor:
+    return (close / close.ts_delay(delay)) - 1
 
-# 回測
-result = backtest(price, alpha006, transaction_cost=0.001)
-result.summary()
+# Combine multiple momentum factors
+momentum = (momentum_factor(close, 14) + 
+            momentum_factor(close, 21) + 
+            momentum_factor(close, 30))
+
+# 3. Factor Neutralization
+# Neutralize the momentum factor against volume to remove its influence
+neutralized_momentum = vector_neutralize(momentum, -volume)
+
+# 4. Backtest
+result = backtest(
+    price_factor=open_price, 
+    strategy_factor=neutralized_momentum,
+    transaction_cost=(0.0003, 0.0003) # Set separate buy/sell cost rates
+)
+
+# 5. Analyze Results
+summary_output = result.summary()
+result.plot_equity(summary_text=summary_output)
 ```
 
 Perfect for crypto quantitative research and strategy development! 📈

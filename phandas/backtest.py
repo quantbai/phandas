@@ -7,7 +7,7 @@ Efficient implementation with clean API.
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Optional, Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING, Union, Tuple
 import logging
 
 if TYPE_CHECKING:
@@ -21,18 +21,134 @@ plt.rcParams['font.family'] = ['DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
 
+class Portfolio:
+    """
+    Manages the state of a trading portfolio.
+    
+    Tracks cash, positions, and historical performance.
+    """
+    def __init__(self, initial_capital: float = 100000):
+        self.initial_capital = initial_capital
+        self.cash = initial_capital
+        self.positions = pd.Series(dtype=float)  # symbol -> quantity
+        self.holdings = pd.Series(dtype=float)   # symbol -> market value
+        self.total_value = initial_capital
+        
+        self.history = []
+        self.trade_log = [] # 新增：記錄詳細交易日誌
+
+    def update_market_value(self, date, prices: pd.Series):
+        """
+        Update holdings and total portfolio value based on new prices.
+        This is the "mark-to-market" step.
+        """
+        common_symbols = self.positions.index.intersection(prices.index)
+        
+        self.holdings = self.positions.loc[common_symbols] * prices.loc[common_symbols]
+        
+        previous_total_value = self.total_value
+        self.total_value = self.cash + self.holdings.sum()
+        
+        # 計算每日 PnL
+        daily_pnl = self.total_value - previous_total_value
+
+        # 計算多頭和空頭持倉市值
+        long_holdings_value = self.holdings[self.holdings > 0].sum()
+        short_holdings_value = self.holdings[self.holdings < 0].sum()
+        
+        self.history.append({
+            'date': date,
+            'total_value': self.total_value,
+            'cash': self.cash,
+            'holdings_value': self.holdings.sum(),
+            'daily_pnl': daily_pnl, # 新增：記錄每日 PnL
+            'long_holdings_value': long_holdings_value, # 新增：記錄多頭持倉市值
+            'short_holdings_value': short_holdings_value, # 新增：記錄空頭持倉市值
+        })
+
+    def execute_trade(self, symbol: str, quantity: float, price: float, transaction_cost_rates: Union[float, Tuple[float, float]], trade_date: pd.Timestamp):
+        """
+        Executes a single trade and updates portfolio state.
+        
+        Parameters
+        ----------
+        symbol : str
+            The asset symbol.
+        quantity : float
+            Number of shares to trade. Positive for buy, negative for sell.
+        price : float
+            Execution price per share.
+        transaction_cost_rates : Union[float, Tuple[float, float]]
+            Transaction cost. Can be a single float (e.g., 0.001) for both buy/sell,
+            or a tuple (buy_cost_rate, sell_cost_rate) for separate rates.
+        """
+        # 處理交易成本可以是單一費率或 (買入費率, 賣出費率) 的情況
+        if isinstance(transaction_cost_rates, (list, tuple)):
+            buy_cost_rate = transaction_cost_rates[0]
+            sell_cost_rate = transaction_cost_rates[1]
+        else:
+            buy_cost_rate = transaction_cost_rates
+            sell_cost_rate = transaction_cost_rates
+            
+        trade_value = quantity * price
+        
+        if quantity > 0: # 買入
+            cost = abs(trade_value) * buy_cost_rate
+        else: # 賣出
+            cost = abs(trade_value) * sell_cost_rate
+        
+        self.cash -= (trade_value + cost)
+        
+        current_quantity = self.positions.get(symbol, 0.0)
+        new_quantity = current_quantity + quantity
+        
+        # 記錄交易日誌
+        self.trade_log.append({
+            'date': trade_date,
+            'symbol': symbol,
+            'quantity': quantity,
+            'price': price,
+            'trade_value': trade_value,
+            'cost': cost
+        })
+
+        if np.isclose(new_quantity, 0):
+            if symbol in self.positions.index:
+                self.positions = self.positions.drop(symbol)
+        else:
+            self.positions.loc[symbol] = new_quantity
+            
+    def get_history_df(self) -> pd.DataFrame:
+        """Return the portfolio history as a DataFrame."""
+        if not self.history:
+            return pd.DataFrame()
+        df = pd.DataFrame(self.history)
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.set_index('date')
+        return df
+
+    def get_trade_log_df(self) -> pd.DataFrame:
+        """Return the trade log as a DataFrame."""
+        if not self.trade_log:
+            return pd.DataFrame()
+        df = pd.DataFrame(self.trade_log)
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.set_index('date')
+        return df
+
+
 class Backtester:
     """
     Professional backtesting engine with unified Factor format.
     
-    Implements dollar-neutral factor strategies using Factor objects.
+    Implements dollar-neutral factor strategies using a portfolio-based approach.
     """
     
     def __init__(
         self,
         price_factor: 'Factor',
         strategy_factor: 'Factor',
-        transaction_cost: float = 0.001,
+        transaction_cost: Union[float, Tuple[float, float]] = 0.001,
         initial_capital: float = 100000
     ):
         """
@@ -44,8 +160,9 @@ class Backtester:
             Price factor for entry/exit prices (e.g., open price)
         strategy_factor : Factor
             Strategy factor for position weights
-        transaction_cost : float, default 0.001
-            Transaction cost per trade (0.1%)
+        transaction_cost : Union[float, Tuple[float, float]], default 0.001
+            Transaction cost. Can be a single float (e.g., 0.001) for both buy/sell,
+            or a tuple (buy_cost_rate, sell_cost_rate) for separate rates.
         initial_capital : float, default 100000
             Initial capital for backtesting
         """
@@ -58,12 +175,15 @@ class Backtester:
         
         self.price_factor = price_factor
         self.strategy_factor = strategy_factor
-        self.transaction_cost = transaction_cost
-        self.initial_capital = initial_capital
         
-        # Results
-        self.daily_pnl = pd.Series(dtype=float)
-        self.equity_curve = pd.Series(dtype=float)
+        # 確保 transaction_cost 始終是 (buy_rate, sell_rate) 形式的 tuple
+        if isinstance(transaction_cost, (list, tuple)):
+            self.transaction_cost_rates = tuple(transaction_cost)
+        else:
+            self.transaction_cost_rates = (transaction_cost, transaction_cost)
+        
+        self.portfolio = Portfolio(initial_capital)
+        
         self.metrics = {}
     
     def run(self) -> 'Backtester':
@@ -75,7 +195,6 @@ class Backtester:
         Backtester
             Self for method chaining
         """
-        # Get all available dates from both factors
         price_dates = set(self.price_factor.data['timestamp'])
         strategy_dates = set(self.strategy_factor.data['timestamp'])
         common_dates = sorted(price_dates & strategy_dates)
@@ -83,80 +202,46 @@ class Backtester:
         if len(common_dates) < 2:
             raise ValueError("Insufficient overlapping dates for backtesting")
         
-        # Find first valid date with complete data
         start_idx = self._find_start_date(common_dates)
-        if start_idx >= len(common_dates) - 1:
+        if start_idx >= len(common_dates):
             raise ValueError("Insufficient data for backtesting")
-        
-        # Run backtest
-        pnl_data = []
-        equity = self.initial_capital
-        
-        for i in range(start_idx + 1, len(common_dates) - 1):  # Need next day for exit price
+            
+        initial_date = common_dates[start_idx] - pd.DateOffset(days=1)
+        self.portfolio.history.append({
+            'date': initial_date,
+            'total_value': self.portfolio.initial_capital,
+            'cash': self.portfolio.initial_capital,
+            'holdings_value': 0,
+        })
+
+        for i in range(start_idx, len(common_dates)):
             current_date = common_dates[i]
-            prev_date = common_dates[i - 1]
-            next_date = common_dates[i + 1]
+            prev_date = common_dates[i - 1] if i > 0 else None
             
             try:
-                # Get strategy factors from previous date (T-1)
-                prev_strategy = self._get_factor_data(self.strategy_factor, prev_date)
-                
-                # Get entry price from current date (T) and exit price from next date (T+1)
-                entry_prices = self._get_factor_data(self.price_factor, current_date)
-                exit_prices = self._get_factor_data(self.price_factor, next_date)
-                
-                # Find common symbols with valid data
-                common_symbols = (set(prev_strategy.index) & 
-                                set(entry_prices.index) & 
-                                set(exit_prices.index))
-                
-                if len(common_symbols) == 0:
+                current_prices = self._get_factor_data(self.price_factor, current_date)
+                if current_prices.empty:
                     continue
                 
-                # Filter to common symbols
-                strategy_values = prev_strategy.loc[list(common_symbols)]
-                entry_price_values = entry_prices.loc[list(common_symbols)]
-                exit_price_values = exit_prices.loc[list(common_symbols)]
+                self.portfolio.update_market_value(current_date, current_prices)
                 
-                # Remove any remaining NaN values
-                valid_mask = (strategy_values.notna() & 
-                            entry_price_values.notna() & 
-                            exit_price_values.notna())
-                
-                if not valid_mask.any():
+                if not prev_date:
                     continue
                 
-                strategy_values = strategy_values[valid_mask]
-                entry_price_values = entry_price_values[valid_mask]
-                exit_price_values = exit_price_values[valid_mask]
+                strategy_factors = self._get_factor_data(self.strategy_factor, prev_date)
                 
-                # Calculate positions and returns
-                positions = self._calculate_positions(strategy_values)
-                daily_return = self._calculate_return(positions, entry_price_values, exit_price_values)
-                daily_pnl = equity * daily_return
+                target_holdings = self._calculate_target_holdings(strategy_factors)
                 
-                equity += daily_pnl
-                pnl_data.append({
-                    'date': current_date,
-                    'pnl': daily_pnl,
-                    'equity': equity,
-                    'return': daily_return
-                })
+                orders = self._generate_orders(target_holdings, current_prices)
+                
+                for symbol, quantity in orders.items():
+                    if symbol in current_prices.index:
+                        price = current_prices.loc[symbol]
+                        self.portfolio.execute_trade(symbol, quantity, price, self.transaction_cost_rates, current_date)
                 
             except Exception as e:
                 logger.warning(f"Error on {current_date}: {e}")
                 continue
-        
-        # Store results
-        if pnl_data:
-            df = pd.DataFrame(pnl_data)
-            self.daily_pnl = pd.Series(df['pnl'].values, index=df['date'])
-            self.equity_curve = pd.Series(df['equity'].values, index=df['date'])
-            
-            # Add initial equity
-            start_equity = pd.Series([self.initial_capital], 
-                                   index=[df['date'].iloc[0] - pd.DateOffset(days=1)])
-            self.equity_curve = pd.concat([start_equity, self.equity_curve])
         
         return self
     
@@ -174,19 +259,20 @@ class Backtester:
         Backtester
             Self for method chaining
         """
-        if self.equity_curve.empty:
+        history = self.portfolio.get_history_df()
+        if history.empty or len(history) < 2:
             self.metrics = {}
             return self
         
-        # Basic metrics
-        total_return = (self.equity_curve.iloc[-1] / self.equity_curve.iloc[0]) - 1
+        equity_curve = history['total_value']
         
-        days = (self.equity_curve.index[-1] - self.equity_curve.index[0]).days
+        total_return = (equity_curve.iloc[-1] / equity_curve.iloc[0]) - 1
+        
+        days = (equity_curve.index[-1] - equity_curve.index[0]).days
         days = max(days, 1)
         annual_return = (1 + total_return) ** (365 / days) - 1
         
-        # Risk metrics
-        daily_returns = self.equity_curve.pct_change().dropna()
+        daily_returns = equity_curve.pct_change().dropna()
         if not daily_returns.empty:
             annual_vol = daily_returns.std() * np.sqrt(365)
             sharpe = (annual_return - risk_free_rate) / annual_vol if annual_vol > 0 else 0
@@ -194,9 +280,8 @@ class Backtester:
             annual_vol = 0
             sharpe = 0
         
-        # Drawdown
-        rolling_max = self.equity_curve.expanding().max()
-        drawdown = (self.equity_curve / rolling_max - 1)
+        rolling_max = equity_curve.expanding().max()
+        drawdown = (equity_curve / rolling_max - 1)
         max_drawdown = drawdown.min()
         
         calmar = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0
@@ -215,46 +300,49 @@ class Backtester:
     def _get_factor_data(self, factor: 'Factor', date) -> pd.Series:
         """Extract factor data for a specific date."""
         date_data = factor.data[factor.data['timestamp'] == date]
-        return date_data.set_index('symbol')['factor']
+        if date_data.empty:
+            return pd.Series(dtype=float)
+        return date_data.set_index('symbol')['factor'].dropna()
     
     def _find_start_date(self, dates) -> int:
         """Find first date with complete data in both factors."""
         for i, date in enumerate(dates):
-            strategy_data = self._get_factor_data(self.strategy_factor, date)
+            if i == 0: continue
+            prev_date = dates[i-1]
+            
+            strategy_data = self._get_factor_data(self.strategy_factor, prev_date)
             price_data = self._get_factor_data(self.price_factor, date)
             
-            # Check if we have valid data for both factors
-            if (len(strategy_data) > 0 and len(price_data) > 0 and
-                not strategy_data.isna().all() and not price_data.isna().all()):
+            if not strategy_data.empty and not price_data.empty:
                 return i
-        raise ValueError("No valid factor data found")
+        raise ValueError("No valid start date found with overlapping data")
     
-    def _calculate_positions(self, factors: pd.Series) -> pd.Series:
-        """Calculate dollar-neutral positions from factors."""
-        # Demean factors
+    def _calculate_target_holdings(self, factors: pd.Series) -> pd.Series:
+        """Calculate target dollar-neutral holdings from factors."""
         demeaned = factors - factors.mean()
-        
-        # Normalize by sum of absolute values
         abs_sum = np.abs(demeaned).sum()
         
-        # Check if factors are essentially constant (no meaningful signal)
-        if abs_sum == 0 or abs_sum < 1e-10:  # Very small threshold for numerical precision
+        if abs_sum < 1e-10:
             return pd.Series(0.0, index=factors.index)
         
-        return demeaned / abs_sum
-    
-    def _calculate_return(self, positions: pd.Series, entry_prices: pd.Series, exit_prices: pd.Series) -> float:
-        """Calculate daily strategy return using entry and exit prices."""
-        # Symbol returns from entry to exit prices
-        symbol_returns = (exit_prices / entry_prices) - 1
+        weights = demeaned / abs_sum
+        return weights * self.portfolio.total_value
+
+    def _generate_orders(self, target_holdings: pd.Series, prices: pd.Series) -> pd.Series:
+        """Generate trade orders based on target holdings and current prices."""
+        current_holdings = self.portfolio.holdings
         
-        # Portfolio return
-        portfolio_return = (positions * symbol_returns).sum()
+        all_symbols = target_holdings.index.union(current_holdings.index)
         
-        # Apply transaction cost
-        return portfolio_return - self.transaction_cost
+        trade_values = target_holdings.reindex(all_symbols, fill_value=0) - \
+                       current_holdings.reindex(all_symbols, fill_value=0)
+                       
+        valid_prices = prices.reindex(trade_values.index)
+        trade_quantities = trade_values / valid_prices
+        
+        return trade_quantities.dropna().loc[lambda x: ~np.isclose(x, 0)]
     
-    def plot_equity(self, figsize: tuple = (12, 6)) -> 'Backtester':
+    def plot_equity(self, figsize: tuple = (12, 6), summary_text: str = None) -> 'Backtester':
         """
         Plot equity curve.
         
@@ -262,89 +350,91 @@ class Backtester:
         ----------
         figsize : tuple, default (12, 6)
             Figure size
+        summary_text : str, optional
+            Summary text to display on the plot.
             
         Returns
         -------
         Backtester
             Self for method chaining
         """
-        if self.equity_curve.empty:
+        history = self.portfolio.get_history_df()
+        if history.empty:
             logger.warning("No equity data to plot")
             return self
         
+        equity_curve = history['total_value']
+        
         fig, ax = plt.subplots(figsize=figsize)
-        self.equity_curve.plot(ax=ax, color='blue', linewidth=1.5)
+        equity_curve.plot(ax=ax, color='blue', linewidth=1.5)
         ax.set_title(f'Equity Curve ({self.strategy_factor.name})')
         ax.set_xlabel('Date')
         ax.set_ylabel('Equity Value')
         ax.grid(True, alpha=0.3)
+        
+        if summary_text:
+            ax.text(0.02, 0.98, summary_text, transform=ax.transAxes, fontsize=10, 
+                    verticalalignment='top', horizontalalignment='left',
+                    bbox=dict(boxstyle='round,pad=0.5', fc='yellow', alpha=0.5))
+            
         plt.tight_layout()
         plt.show()
         
         return self
     
-    def summary(self) -> None:
-        """Print performance summary."""
+    def summary(self) -> str:
+        """Return concise performance summary as a string for plotting."""
         if not self.metrics:
-            print("No metrics available. Run calculate_metrics() first.")
-            return
+            return "No metrics available."
         
-        print(f"\nBacktest Results: {self.strategy_factor.name}")
-        print("=" * 50)
+        equity_curve = self.portfolio.get_history_df()['total_value']
         
-        if not self.equity_curve.empty:
-            start = self.equity_curve.index[0].strftime('%Y-%m-%d')
-            end = self.equity_curve.index[-1].strftime('%Y-%m-%d')
-            print(f"Period: {start} to {end}")
-            print(f"Initial Capital: ${self.initial_capital:,.0f}")
-            print(f"Final Capital: ${self.equity_curve.iloc[-1]:,.0f}")
+        summary_lines = []
+        summary_lines.append(f"Strategy: {self.strategy_factor.name}")
         
-        print("\nPerformance Metrics:")
-        print("-" * 30)
-        for name, value in self.metrics.items():
-            if 'return' in name or 'volatility' in name or 'drawdown' in name:
-                print(f"{name.replace('_', ' ').title()}: {value:.2%}")
-            else:
-                print(f"{name.replace('_', ' ').title()}: {value:.3f}")
+        if not equity_curve.empty:
+            start = equity_curve.index[0].strftime('%Y-%m-%d')
+            end = equity_curve.index[-1].strftime('%Y-%m-%d')
+            summary_lines.append(f"Period: {start} to {end}")
+            summary_lines.append(f"Total Return: {self.metrics.get('total_return', 0):.2%}")
+            summary_lines.append(f"Annual Return: {self.metrics.get('annual_return', 0):.2%}")
+            summary_lines.append(f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}")
+            summary_lines.append(f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}")
         
-        # Assessment
-        total_ret = self.metrics.get('total_return', 0)
-        sharpe = self.metrics.get('sharpe_ratio', 0)
+        return "\n".join(summary_lines)
+
+    def calculate_total_transaction_cost(self) -> float:
+        """
+        Calculate the total transaction cost incurred during the backtest.
         
-        print("\nAssessment:")
-        status = "Profitable" if total_ret > 0 else "Loss-making"
-        if sharpe > 1:
-            risk_assessment = "Excellent"
-        elif sharpe > 0.5:
-            risk_assessment = "Good"
-        elif sharpe > 0:
-            risk_assessment = "Fair"
-        else:
-            risk_assessment = "Poor"
-        
-        print(f"Return: {status}")
-        print(f"Risk-adjusted: {risk_assessment}")
-        print("=" * 50)
-    
+        Returns
+        -------
+        float
+            Total transaction cost.
+        """
+        trade_log_df = self.portfolio.get_trade_log_df()
+        if trade_log_df.empty:
+            return 0.0
+        return trade_log_df['cost'].sum()
+
     def __repr__(self):
         """Professional representation of Backtester."""
-        if hasattr(self, 'daily_pnl') and not self.daily_pnl.empty:
-            # After backtest
-            days = len(self.daily_pnl)
-            start_date = self.daily_pnl.index[0].strftime('%Y-%m-%d')
-            end_date = self.daily_pnl.index[-1].strftime('%Y-%m-%d')
+        history = self.portfolio.get_history_df()
+        if not history.empty:
+            days = len(history)
+            start_date = history.index[0].strftime('%Y-%m-%d')
+            end_date = history.index[-1].strftime('%Y-%m-%d')
             return (f"Backtester(strategy={self.strategy_factor.name}, "
                    f"period={start_date} to {end_date}, days={days})")
         else:
-            # Before backtest
             return (f"Backtester(strategy={self.strategy_factor.name}, "
-                   f"price={self.price_factor.name}, cost={self.transaction_cost:.3%})")
+                   f"price={self.price_factor.name}, cost={self.transaction_cost_rates[0]:.3%})")
 
 
 def backtest(
     price_factor: 'Factor',
     strategy_factor: 'Factor',
-    transaction_cost: float = 0.001,
+    transaction_cost: Union[float, Tuple[float, float]] = 0.001,
     initial_capital: float = 100000,
     auto_run: bool = True
 ) -> Backtester:
@@ -357,8 +447,9 @@ def backtest(
         Price factor for entry/exit prices (e.g., open price)
     strategy_factor : Factor
         Strategy factor for position weights
-    transaction_cost : float, default 0.001
-        Transaction cost per trade
+    transaction_cost : Union[float, Tuple[float, float]], default 0.001
+        Transaction cost. Can be a single float (e.g., 0.001) for both buy/sell,
+        or a tuple (buy_cost_rate, sell_cost_rate) for separate rates.
     initial_capital : float, default 100000
         Initial capital
     auto_run : bool, default True

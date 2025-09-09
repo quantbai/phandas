@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='phandas',
-    version='0.3.0',
+    version='0.4.0',
     author='Phantom Management',
     author_email='quantbai@gmail.com',
     description='Simple cryptocurrency data fetching and visualization toolkit by Phantom Management.',
@@ -17,6 +17,7 @@ setup(
         'seaborn>=0.12.0',
         'ccxt>=4.0.0',
         'scipy>=1.9.0',
+        'statsmodels>=0.14.0',
     ],
     classifiers=[
         'Development Status :: 4 - Beta',
