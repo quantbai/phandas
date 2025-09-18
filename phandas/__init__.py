@@ -11,6 +11,9 @@ __version__ = "0.4.0"
 from .core import (
     Factor, load_factor
 )
+from .factors import (
+    momentum
+)
 from .operators import (
     rank, ts_rank, ts_mean, ts_median, ts_corr, ts_delay, ts_delta, ts_arg_max, ts_arg_min, ts_av_diff, ts_backfill, ts_decay_exp_window, ts_decay_linear, 
     log, s_log_1p, sign, sqrt, maximum, minimum, multiply, power, reverse, 
@@ -39,6 +42,7 @@ __all__ = [
     'log', 's_log_1p', 'sign', 'sqrt', 'maximum', 'minimum', 'multiply', 'power', 'reverse',
     'signed_power', 'subtract', 'divide', 'inverse', 'add', 'where',
     'group_neutralize', 'vector_neutralize', 'regression_neutralize',
+    'momentum',
     
     # Utilities
     'save_factor',
