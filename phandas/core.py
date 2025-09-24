@@ -751,11 +751,23 @@ class Factor:
             result['factor'] *= k / abs_sum
         return Factor(result, f"scale({self.name},{k})")
     
-    def log(self) -> 'Factor':
-        """Natural logarithm of factor."""
+    def log(self, base: Optional[float] = None) -> 'Factor':
+        """Logarithm of factor with optional base."""
+        result = self.data.copy()
+        if base is None:
+            # Natural logarithm (default)
+            result['factor'] = np.log(result['factor'])
+            return Factor(result, f"log({self.name})")
+        else:
+            # Arbitrary base using change of base formula: log_b(x) = ln(x) / ln(b)
+            result['factor'] = np.log(result['factor']) / np.log(base)
+            return Factor(result, f"log({self.name},base={base})")
+    
+    def ln(self) -> 'Factor':
+        """Natural logarithm of factor (explicit ln function)."""
         result = self.data.copy()
         result['factor'] = np.log(result['factor'])
-        return Factor(result, f"log({self.name})")
+        return Factor(result, f"ln({self.name})")
     
     def sqrt(self) -> 'Factor':
         """Square root of factor values."""

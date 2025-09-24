@@ -5,19 +5,27 @@ Clean, efficient factor analysis with pandas-like API.
 """
 
 __author__ = "Phantom Management"
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 # Core components
 from .core import (
     Factor, load_factor
 )
-from .factors import (
-    momentum
-)
+
 from .operators import (
-    rank, ts_rank, ts_mean, ts_median, ts_corr, ts_delay, ts_delta, ts_arg_max, ts_arg_min, ts_av_diff, ts_backfill, ts_decay_exp_window, ts_decay_linear, 
-    log, s_log_1p, sign, sqrt, maximum, minimum, multiply, power, reverse, 
+    # Cross-sectional and time-series operations
+    rank, ts_rank, ts_mean, ts_median, ts_product, ts_sum, ts_std_dev, ts_corr, ts_delay, ts_delta, 
+    ts_arg_max, ts_arg_min, ts_av_diff, ts_backfill, ts_decay_exp_window, ts_decay_linear,
+    ts_count_nans, ts_covariance, ts_quantile, ts_scale, ts_zscore,
+    
+    # Cross-sectional operations
+    normalize, quantile, scale, zscore,
+    
+    # Mathematical operations
+    log, ln, s_log_1p, sign, sqrt, maximum, minimum, multiply, power, reverse, 
     signed_power, subtract, divide, inverse, add, where,
+    
+    # Neutralization operations
     group_neutralize, vector_neutralize, regression_neutralize
 )
 from .data import fetch_data, check_data_quality
@@ -37,12 +45,20 @@ __all__ = [
     'Backtester',
     'backtest',
     
-    # Functional API (WQ style) - tested and stable
-    'rank', 'ts_rank', 'ts_mean', 'ts_median', 'ts_corr', 'ts_delay', 'ts_delta', 'ts_arg_max', 'ts_arg_min', 'ts_av_diff', 'ts_backfill', 'ts_decay_exp_window', 'ts_decay_linear',
-    'log', 's_log_1p', 'sign', 'sqrt', 'maximum', 'minimum', 'multiply', 'power', 'reverse',
+    # Functional API (WQ style) - Cross-sectional and time-series operations
+    'rank', 'ts_rank', 'ts_mean', 'ts_median', 'ts_product', 'ts_sum', 'ts_std_dev', 'ts_corr', 'ts_delay', 'ts_delta', 
+    'ts_arg_max', 'ts_arg_min', 'ts_av_diff', 'ts_backfill', 'ts_decay_exp_window', 'ts_decay_linear',
+    'ts_count_nans', 'ts_covariance', 'ts_quantile', 'ts_scale', 'ts_zscore',
+    
+    # Cross-sectional operations
+    'normalize', 'quantile', 'scale', 'zscore',
+    
+    # Mathematical operations
+    'log', 'ln', 's_log_1p', 'sign', 'sqrt', 'maximum', 'minimum', 'multiply', 'power', 'reverse',
     'signed_power', 'subtract', 'divide', 'inverse', 'add', 'where',
+    
+    # Neutralization operations
     'group_neutralize', 'vector_neutralize', 'regression_neutralize',
-    'momentum',
     
     # Utilities
     'save_factor',

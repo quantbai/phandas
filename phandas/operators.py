@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import Union, List
+from typing import Union, List, Optional
 from .core import Factor 
 
 def group_neutralize(factor: 'Factor', group_data: 'Factor') -> 'Factor':
@@ -152,9 +152,13 @@ def ts_decay_linear(factor: 'Factor', window: int, dense: bool = False) -> 'Fact
     """Returns the linear decay on x for the past d days (functional style)."""
     return factor.ts_decay_linear(window, dense)
 
-def log(factor: 'Factor') -> 'Factor':
+def log(factor: 'Factor', base: Optional[float] = None) -> 'Factor':
+    """Logarithm of factor with optional base (functional style)."""
+    return factor.log(base)
+
+def ln(factor: 'Factor') -> 'Factor':
     """Natural logarithm of factor (functional style)."""
-    return factor.log()
+    return factor.ln()
 
 def s_log_1p(factor: 'Factor') -> 'Factor':
     """Confine factor values to a shorter range using sign(x) * log(1 + abs(x)) (functional style)."""
