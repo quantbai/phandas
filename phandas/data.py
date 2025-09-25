@@ -86,18 +86,38 @@ def fetch_data(
 
 
 def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since) -> Optional[pd.DataFrame]:
-    """Fetch data for single symbol."""
+    """Fetch data for single symbol with pagination."""
     try:
         market_symbol = f'{symbol}/USDT'
-        ohlcv = exchange.fetch_ohlcv(market_symbol, timeframe, since=since)
-        time.sleep(exchange.rateLimit / 1000)
         
-        if not ohlcv:
+        # Load markets to check symbol availability
+        exchange.load_markets()
+        if market_symbol not in exchange.symbols:
+            logger.warning(f"{market_symbol} not available on exchange")
+            return None
+        
+        all_ohlcv = []
+        limit = 1000  # Fetch limit per request
+        
+        # Use pagination to fetch all historical data
+        while True:
+            ohlcv = exchange.fetch_ohlcv(market_symbol, timeframe, since=since, limit=limit)
+            if not ohlcv:
+                break
+            all_ohlcv.extend(ohlcv)
+            # Update since to continue from last timestamp + 1ms
+            since = ohlcv[-1][0] + 1
+            # Respect rate limits
+            time.sleep(exchange.rateLimit / 1000)
+        
+        if not all_ohlcv:
             return None
             
-        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         df['symbol'] = symbol
+        
+        logger.info(f"Fetched {len(df)} records for {symbol}")
         return df
         
     except Exception as e:

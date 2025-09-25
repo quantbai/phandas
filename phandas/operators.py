@@ -14,11 +14,49 @@ def vector_neutralize(factor: 'Factor', other: 'Factor') -> 'Factor':
     """
     return factor.vector_neutralize(other)
 
+def vector_neut(x: 'Factor', y: 'Factor') -> 'Factor':
+    """
+    For given vectors x and y, it finds a new vector x* (output) such that x* is orthogonal to y.
+    Equivalent to vector_neutralize(x, y) (functional style).
+
+    Parameters
+    ----------
+    x : Factor
+        The factor to be neutralized.
+    y : Factor
+        The factor to neutralize against.
+
+    Returns
+    -------
+    Factor
+        A new Factor object with values orthogonal to the y factor.
+    """
+    return vector_neutralize(x, y)
+
 def regression_neutralize(factor: 'Factor', neut_factors: Union['Factor', List['Factor']]) -> 'Factor':
     """
     Neutralizes the factor against one or more factors using OLS regression (functional style).
     """
     return factor.regression_neutralize(neut_factors)
+
+def regression_neut(y: 'Factor', x: 'Factor') -> 'Factor':
+    """
+    Conducts the cross-sectional regression on the stocks with Y as target and X as the independent variable.
+    Returns the residuals: Y - (a + b*X) (functional style).
+
+    Parameters
+    ----------
+    y : Factor
+        The dependent variable (Y) Factor.
+    x : Factor
+        The independent variable (X) Factor.
+
+    Returns
+    -------
+    Factor
+        A new Factor object with the regression residuals.
+    """
+    return y.regression_neutralize(x)
 
 def rank(factor: 'Factor') -> 'Factor':
     """Cross-sectional rank within each timestamp (functional style)."""
@@ -99,6 +137,14 @@ def ts_arg_max(factor: 'Factor', window: int) -> 'Factor':
 def ts_arg_min(factor: 'Factor', window: int) -> 'Factor':
     """Returns relative index of min value in time series for past d days (functional style)."""
     return factor.ts_arg_min(window)
+
+def ts_min(factor: 'Factor', window: int) -> 'Factor':
+    """Rolling minimum over window (functional style)."""
+    return factor.ts_min(window)
+
+def ts_max(factor: 'Factor', window: int) -> 'Factor':
+    """Rolling maximum over window (functional style)."""
+    return factor.ts_max(window)
 
 def ts_count_nans(factor: 'Factor', window: int) -> 'Factor':
     """Returns the number of NaN values in x for the past d days (functional style)."""
@@ -262,3 +308,38 @@ def reverse(factor: 'Factor') -> 'Factor':
 def signed_power(base: 'Factor', exponent: Union['Factor', float]) -> 'Factor':
     """x raised to the power of y such that final result preserves sign of x (functional style)."""
     return base.signed_power(exponent)
+
+def ts_regression(y: 'Factor', x: 'Factor', window: int, lag: int = 0, rettype: int = 0) -> 'Factor':
+    """
+    Returns various parameters related to rolling regression function (functional style).
+
+    Parameters
+    ----------
+    y : Factor
+        The dependent variable (Y) Factor.
+    x : Factor
+        The independent variable (X) Factor.
+    window : int
+        Number of periods for rolling calculation.
+    lag : int, optional
+        Lag for the independent variable (X). Default is 0.
+    rettype : int, optional
+        Determines the regression parameter to return:
+        0: Error Term (y_i - y_estimate)
+        1: y-intercept (alpha)
+        2: slope (beta)
+        3: y-estimate
+        4: Sum of Squares of Error (SSE)
+        5: Sum of Squares of Total (SST)
+        6: R-Square
+        7: Mean Square Error (MSE)
+        8: Standard Error of Beta
+        9: Standard Error of Alpha
+        Default is 0.
+
+    Returns
+    -------
+    Factor
+        A new Factor object with the requested regression parameter values.
+    """
+    return y.ts_regression(x, window, lag, rettype)

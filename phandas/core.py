@@ -55,26 +55,26 @@ class Factor:
         """Cross-sectional rank within each timestamp."""
         result = self.data.copy()
         
-        # 確保數據類型正確
+        # Ensure numeric data type
         result['factor'] = pd.to_numeric(result['factor'], errors='coerce')
         
-        # 檢查是否有有效數據
+        # Check for valid data
         if result['factor'].isna().all():
             raise ValueError("All factor values are NaN")
         
-        # 分組計算排名，處理 NaN 值
+        # Group-wise ranking with NaN handling
         def safe_rank(group):
             try:
-                # 只對非 NaN 值計算排名
+                # Rank only non-NaN values
                 valid_mask = group.notna()
                 if valid_mask.sum() == 0:
-                    return group  # 如果全是 NaN，保持原樣
+                    return group  # Keep as-is if all NaN
                 
                 ranked = group.copy()
                 ranked[valid_mask] = group[valid_mask].rank(method='min', pct=True)
                 return ranked
-            except Exception as e:
-                # 如果出錯，返回 NaN
+            except Exception:
+                # Return NaN on error
                 return pd.Series(np.nan, index=group.index)
         
         result['factor'] = (result.groupby('timestamp')['factor']
@@ -92,17 +92,17 @@ class Factor:
             Calculates rank only if there are enough valid data points.
             """
             try:
-                # 只有當窗口內的有效數據點數量達到窗口大小時才計算
+                # Calculate only when sufficient valid data points
                 if x.notna().sum() < window:
                     return np.nan
                 
-                # 使用 scipy.stats.rankdata 計算排名
+                # Use scipy.stats.rankdata for ranking
                 ranks = rankdata(x.to_numpy(), method='min')
                 
-                # 獲取窗口中最後一個值的排名
+                # Get rank of last value in window
                 current_rank = ranks[-1]
                 
-                # 轉換為百分位數 (0-1]
+                # Convert to percentile (0-1]
                 return current_rank / len(ranks)
                 
             except Exception:
@@ -778,7 +778,7 @@ class Factor:
     def s_log_1p(self) -> 'Factor':
         """Confine factor values to a shorter range using sign(x) * log(1 + abs(x))."""
         result = self.data.copy()
-        # 使用 np.sign 處理符號，np.log1p(x) 等同於 log(1 + x)
+        # Use np.sign for sign handling, np.log1p(x) equivalent to log(1 + x)
         result['factor'] = np.sign(result['factor']) * np.log1p(np.abs(result['factor']))
         return Factor(result, f"s_log_1p({self.name})")
     
@@ -793,15 +793,15 @@ class Factor:
         result = self.data.copy()
         
         if isinstance(exponent, Factor):
-            # 合併數據並計算 sign(x) * (abs(x) ** y)
+            # Merge data and calculate sign(x) * (abs(x) ** y)
             merged = pd.merge(self.data, exponent.data, on=['timestamp', 'symbol'], 
                              suffixes=('_x', '_y'), how='outer')
             
-            # 對齊並確保數據類型正確
+            # Align and ensure correct data types
             x_values = merged['factor_x']
             y_values = merged['factor_y']
             
-            # 計算簽名次方
+            # Calculate signed power
             final_values = np.sign(x_values) * (np.abs(x_values) ** y_values)
             
             result = merged[['timestamp', 'symbol']].copy()
@@ -809,7 +809,7 @@ class Factor:
             
             return Factor(result, f"signed_power({self.name},{exponent.name})")
         else:
-            # 對純量指數計算 signed_power
+            # Calculate signed_power for scalar exponent
             result['factor'] = np.sign(result['factor']) * (np.abs(result['factor']) ** exponent)
             return Factor(result, f"signed_power({self.name},{exponent})")
     
@@ -862,7 +862,7 @@ class Factor:
         
         return Factor(result_df, name=f"where({self.name})")
     
-    # Python 運算符重載 - 讓因子表達式更直觀
+    # Python operator overloading for intuitive factor expressions
     def __neg__(self) -> 'Factor':
         """Unary negation: -factor"""
         return self.multiply(-1)
@@ -1016,7 +1016,7 @@ class Factor:
         if not isinstance(other, Factor):
             raise TypeError("Other must be a Factor object")
         
-        # 合併兩個因子的數據
+        # Merge factor data
         try:
             merged = pd.merge(self.data, other.data, on=['timestamp', 'symbol'], 
                              suffixes=('_x', '_y'), how='inner')
@@ -1028,7 +1028,7 @@ class Factor:
         
         merged = merged.sort_values(['symbol', 'timestamp'])
         
-        # 分組計算滾動相關性
+        # Calculate rolling correlation by symbol
         result_data = []
         
         for symbol in merged['symbol'].unique():
@@ -1036,24 +1036,24 @@ class Factor:
                 symbol_data = merged[merged['symbol'] == symbol].copy()
                 symbol_data = symbol_data.sort_values('timestamp')
                 
-                # 確保數據類型正確
+                # Ensure correct data types
                 x_values = pd.to_numeric(symbol_data['factor_x'], errors='coerce')
                 y_values = pd.to_numeric(symbol_data['factor_y'], errors='coerce')
                 
-                # 計算滾動相關性
+                # Calculate rolling correlation
                 corr_values = x_values.rolling(window, min_periods=window).corr(y_values)
                 
-                # 處理無效相關性值
+                # Handle invalid correlation values
                 corr_values = corr_values.where(
                     (corr_values >= -1) & (corr_values <= 1), np.nan
                 )
                 
-                # 添加到結果中
+                # Add to results
                 symbol_data['factor'] = corr_values
                 result_data.append(symbol_data[['timestamp', 'symbol', 'factor']])
                 
-            except Exception as e:
-                # 如果出錯，添加 NaN 值
+            except Exception:
+                # Add NaN values on error
                 symbol_data = merged[merged['symbol'] == symbol][['timestamp', 'symbol']].copy()
                 symbol_data['factor'] = np.nan
                 result_data.append(symbol_data)
@@ -1063,7 +1063,7 @@ class Factor:
         else:
             merged['factor'] = np.nan
         
-        # 處理 NaN 值 - 保持 NaN 而不是填充為 0
+        # Handle NaN values - keep NaN rather than filling with 0
         result = merged[['timestamp', 'symbol', 'factor']].copy()
         
         return Factor(result, f"ts_corr({self.name},{other.name},{window})")
@@ -1076,7 +1076,7 @@ class Factor:
         if not isinstance(other, Factor):
             raise TypeError("Other must be a Factor object")
             
-        # 合併兩個因子的數據
+        # Merge factor data
         merged = pd.merge(self.data, other.data, on=['timestamp', 'symbol'], 
                          suffixes=('_x', '_y'), how='inner')
         
@@ -1085,7 +1085,7 @@ class Factor:
         
         merged = merged.sort_values(['symbol', 'timestamp'])
         
-        # 分組計算滾動協方差
+        # Calculate rolling covariance by symbol
         result_data = []
         
         for symbol in merged['symbol'].unique():
@@ -1095,7 +1095,7 @@ class Factor:
             x_values = pd.to_numeric(symbol_data['factor_x'], errors='coerce')
             y_values = pd.to_numeric(symbol_data['factor_y'], errors='coerce')
             
-            # 計算滾動協方差
+            # Calculate rolling covariance
             cov_values = x_values.rolling(window, min_periods=window).cov(y_values)
             
             symbol_data['factor'] = cov_values
@@ -1109,7 +1109,140 @@ class Factor:
             
         result = merged[['timestamp', 'symbol', 'factor']].copy()
         return Factor(result, f"ts_covariance({self.name},{other.name},{window})")
-    
+
+    def ts_regression(self, x_factor: 'Factor', window: int, lag: int = 0, rettype: int = 0) -> 'Factor':
+        """
+        Performs rolling OLS linear regression and returns various parameters based on rettype.
+
+        Parameters
+        ----------
+        x_factor : Factor
+            The independent variable (X) Factor.
+        window : int
+            Number of periods for rolling calculation.
+        lag : int, optional
+            Lag for the independent variable (X). Default is 0.
+        rettype : int, optional
+            Determines the regression parameter to return:
+            0: Error Term (y_i - y_estimate)
+            1: y-intercept (alpha)
+            2: slope (beta)
+            3: y-estimate
+            4: Sum of Squares of Error (SSE)
+            5: Sum of Squares of Total (SST)
+            6: R-Square
+            7: Mean Square Error (MSE)
+            8: Standard Error of Beta
+            9: Standard Error of Alpha
+            Default is 0.
+
+        Returns
+        -------
+        Factor
+            A new Factor object with the requested regression parameter values.
+        """
+        if window <= 0:
+            raise ValueError("Window must be positive")
+        if not isinstance(x_factor, Factor):
+            raise TypeError("x_factor must be a Factor object.")
+        if not 0 <= rettype <= 9:
+            raise ValueError("rettype must be between 0 and 9.")
+
+        # Prepare data: dependent variable (self) and independent variable (x_factor)
+        y_data = self.data.rename(columns={'factor': 'y'})
+        x_data = x_factor.data.rename(columns={'factor': 'x'})
+
+        # Apply lag to x_data if specified
+        if lag > 0:
+            x_data = Factor(x_data, name=x_factor.name).ts_delay(lag).data.rename(columns={'factor': 'x'})
+
+        merged = pd.merge(y_data, x_data, on=['timestamp', 'symbol'], how='inner')
+        merged = merged.sort_values(['symbol', 'timestamp'])
+
+        results_list = []
+
+        for symbol in merged['symbol'].unique():
+            symbol_df = merged[merged['symbol'] == symbol].copy()
+            symbol_df['y'] = pd.to_numeric(symbol_df['y'], errors='coerce')
+            symbol_df['x'] = pd.to_numeric(symbol_df['x'], errors='coerce')
+            
+            # Store original index to align results later
+            original_index = symbol_df.index
+
+            # Apply rolling window regression
+            # We need to use `apply` with a custom function to get all regression stats
+            def _rolling_regression(series_window):
+                # series_window will have 'y' and 'x' columns for the current window
+                if len(series_window) < window or series_window['y'].isna().all() or series_window['x'].isna().all():
+                    return pd.Series([np.nan] * 10) # Return NaNs for all 10 possible rettype values
+
+                # Drop NaNs for OLS fitting within the window
+                clean_window = series_window.dropna(subset=['y', 'x'])
+
+                if len(clean_window) < 2: # Need at least 2 observations for regression
+                    return pd.Series([np.nan] * 10)
+
+                Y = clean_window['y']
+                X = sm.add_constant(clean_window['x'])
+
+                try:
+                    model = sm.OLS(Y, X).fit()
+
+                    alpha = model.params.get('const', np.nan)
+                    beta = model.params.get('x', np.nan)
+                    y_estimate = model.predict(X).iloc[-1] # Get the last predicted value
+
+                    # Error term for the last observation
+                    error_term = Y.iloc[-1] - y_estimate if pd.notna(Y.iloc[-1]) and pd.notna(y_estimate) else np.nan
+
+                    # Sum of Squares calculations
+                    SSE = np.sum(model.resid ** 2) # Sum of squared errors
+                    SST = np.sum((Y - Y.mean()) ** 2) # Total sum of squares
+
+                    R_squared = model.rsquared if SST > 0 else np.nan
+                    MSE = SSE / model.df_resid if model.df_resid > 0 else np.nan
+
+                    # Standard Errors
+                    std_err_beta = model.bse.get('x', np.nan)
+                    std_err_alpha = model.bse.get('const', np.nan)
+
+                    return pd.Series([
+                        error_term,
+                        alpha,
+                        beta,
+                        y_estimate,
+                        SSE,
+                        SST,
+                        R_squared,
+                        MSE,
+                        std_err_beta,
+                        std_err_alpha
+                    ])
+                except Exception:
+                    return pd.Series([np.nan] * 10)
+
+            # The rolling apply will return a Series for each window. Extract the last value for each row.
+            # We need to apply this rolling window to each symbol's data.
+            # Create an empty DataFrame to store the results for this symbol
+            symbol_results_df = pd.DataFrame(index=symbol_df.index, columns=range(10), dtype=float)
+            
+            for i in range(window - 1, len(symbol_df)):
+                window_data = symbol_df.iloc[i - window + 1 : i + 1]
+                result_series = _rolling_regression(window_data)
+                symbol_results_df.loc[symbol_df.index[i]] = result_series.values
+
+            # Assign the requested rettype column
+            symbol_df['factor'] = symbol_results_df.iloc[:, rettype]
+            results_list.append(symbol_df[['timestamp', 'symbol', 'factor']])
+
+        if results_list:
+            final_result_df = pd.concat(results_list, ignore_index=True)
+        else:
+            final_result_df = merged[['timestamp', 'symbol']].copy()
+            final_result_df['factor'] = np.nan
+
+        return Factor(final_result_df, name=f"ts_regression({self.name},{x_factor.name},{window},lag={lag},rettype={rettype})")
+
     # Utility methods
     def _apply_rolling(self, func: Union[str, Callable], window: int) -> pd.DataFrame:
         """Apply rolling function by symbol."""

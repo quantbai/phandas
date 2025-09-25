@@ -35,7 +35,7 @@ class Portfolio:
         self.total_value = initial_capital
         
         self.history = []
-        self.trade_log = [] # 新增：記錄詳細交易日誌
+        self.trade_log = []  # Track detailed trade log
 
     def update_market_value(self, date, prices: pd.Series):
         """
@@ -49,10 +49,10 @@ class Portfolio:
         previous_total_value = self.total_value
         self.total_value = self.cash + self.holdings.sum()
         
-        # 計算每日 PnL
+        # Calculate daily PnL
         daily_pnl = self.total_value - previous_total_value
 
-        # 計算多頭和空頭持倉市值
+        # Calculate long and short position values
         long_holdings_value = self.holdings[self.holdings > 0].sum()
         short_holdings_value = self.holdings[self.holdings < 0].sum()
         
@@ -61,9 +61,9 @@ class Portfolio:
             'total_value': self.total_value,
             'cash': self.cash,
             'holdings_value': self.holdings.sum(),
-            'daily_pnl': daily_pnl, # 新增：記錄每日 PnL
-            'long_holdings_value': long_holdings_value, # 新增：記錄多頭持倉市值
-            'short_holdings_value': short_holdings_value, # 新增：記錄空頭持倉市值
+            'daily_pnl': daily_pnl,  # Track daily PnL
+            'long_holdings_value': long_holdings_value,  # Track long position values
+            'short_holdings_value': short_holdings_value,  # Track short position values
         })
 
     def execute_trade(self, symbol: str, quantity: float, price: float, transaction_cost_rates: Union[float, Tuple[float, float]], trade_date: pd.Timestamp):
@@ -82,7 +82,7 @@ class Portfolio:
             Transaction cost. Can be a single float (e.g., 0.001) for both buy/sell,
             or a tuple (buy_cost_rate, sell_cost_rate) for separate rates.
         """
-        # 處理交易成本可以是單一費率或 (買入費率, 賣出費率) 的情況
+        # Handle transaction cost as single rate or (buy_rate, sell_rate) tuple
         if isinstance(transaction_cost_rates, (list, tuple)):
             buy_cost_rate = transaction_cost_rates[0]
             sell_cost_rate = transaction_cost_rates[1]
@@ -92,9 +92,9 @@ class Portfolio:
             
         trade_value = quantity * price
         
-        if quantity > 0: # 買入
+        if quantity > 0:  # Buy
             cost = abs(trade_value) * buy_cost_rate
-        else: # 賣出
+        else:  # Sell
             cost = abs(trade_value) * sell_cost_rate
         
         self.cash -= (trade_value + cost)
@@ -102,7 +102,7 @@ class Portfolio:
         current_quantity = self.positions.get(symbol, 0.0)
         new_quantity = current_quantity + quantity
         
-        # 記錄交易日誌
+        # Record trade log
         self.trade_log.append({
             'date': trade_date,
             'symbol': symbol,
@@ -176,7 +176,7 @@ class Backtester:
         self.price_factor = price_factor
         self.strategy_factor = strategy_factor
         
-        # 確保 transaction_cost 始終是 (buy_rate, sell_rate) 形式的 tuple
+        # Ensure transaction_cost is always (buy_rate, sell_rate) tuple format
         if isinstance(transaction_cost, (list, tuple)):
             self.transaction_cost_rates = tuple(transaction_cost)
         else:

@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='phandas',
-    version='0.4.0',
+    version='0.4.2',
     author='Phantom Management',
     author_email='quantbai@gmail.com',
     description='Simple cryptocurrency data fetching and visualization toolkit by Phantom Management.',
