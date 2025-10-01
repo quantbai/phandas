@@ -1,7 +1,13 @@
 """
 Data acquisition and management for cryptocurrency markets.
 
-Simplified API for fetching and preparing OHLCV data.
+Provides efficient OHLCV data fetching from exchanges using CCXT.
+Features:
+- Multi-symbol batch downloading
+- Automatic pagination for historical data
+- Special handling for renamed tokens (e.g., MATIC->POL)
+- Data alignment and gap filling
+- Quality validation and reporting
 """
 
 import pandas as pd

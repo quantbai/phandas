@@ -5,7 +5,7 @@ Clean, efficient factor analysis with pandas-like API.
 """
 
 __author__ = "Phantom Management"
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 # Core components
 from .core import (
@@ -26,7 +26,7 @@ from .operators import (
     signed_power, subtract, divide, inverse, add, where,
     
     # Neutralization operations
-    group_neutralize, vector_neutralize, regression_neutralize, vector_neut, regression_neut
+    group_neutralize, vector_neut, regression_neut
 )
 from .data import fetch_data, check_data_quality
 from .backtest import Backtester, backtest
@@ -55,7 +55,7 @@ __all__ = [
     'signed_power', 'subtract', 'divide', 'inverse', 'add', 'where',
     
     # Neutralization operations
-    'group_neutralize', 'vector_neutralize', 'regression_neutralize', 'vector_neut', 'regression_neut',
+    'group_neutralize', 'vector_neut', 'regression_neut',
     
     # Utilities
     'save_factor', 'load_saved_factor', 'factor_info'

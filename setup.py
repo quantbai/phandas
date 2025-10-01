@@ -2,10 +2,10 @@ from setuptools import setup, find_packages
 
 setup(
     name='phandas',
-    version='0.4.2',
+    version='0.4.3',
     author='Phantom Management',
     author_email='quantbai@gmail.com',
-    description='Simple cryptocurrency data fetching and visualization toolkit by Phantom Management.',
+    description='Hedge fund-grade multi-factor quantitative trading framework for cryptocurrency markets.',
     long_description=open('README.md', encoding='utf-8').read(),
     long_description_content_type='text/markdown',
     url='https://github.com/quantbai/phandas',

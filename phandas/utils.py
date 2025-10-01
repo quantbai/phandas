@@ -1,13 +1,16 @@
 """
 Utility functions for unified Factor-based analysis.
 
-Helper functions for creating and managing Factor objects.
+Provides helper functions for:
+- Saving and loading Factor objects to/from disk
+- Factor information and statistics display
+- Factor validation and quality checks
 """
 
 from .core import Factor
 
 
-
+# ==================== Factor Persistence ====================
 
 def save_factor(factor: Factor, path: str) -> str:
     """Save factor to CSV file."""
@@ -21,6 +24,8 @@ def load_saved_factor(csv_path: str, name: str = None) -> Factor:
         name = os.path.splitext(os.path.basename(csv_path))[0]
     return Factor(csv_path, name)
 
+
+# ==================== Factor Information ====================
 
 def factor_info(factor: Factor, verbose: bool = True) -> dict:
     """
@@ -58,5 +63,3 @@ def factor_info(factor: Factor, verbose: bool = True) -> dict:
     
     return info
 
-
-# End of utility functions
