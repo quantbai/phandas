@@ -2,6 +2,10 @@
 
 <img src="https://raw.githubusercontent.com/quantbai/phandas/main/assets/PHANDAS.png" alt="Phandas" width="500">
 
+</div>
+
+<div align="center">
+
 [![en](https://img.shields.io/badge/lang-en-yellow.svg)](#english)
 [![zh-TW](https://img.shields.io/badge/lang-繁體中文-green.svg)](#繁體中文)
 
