@@ -4,6 +4,8 @@
 
 </div>
 
+---
+
 <div align="center">
 
 [![en](https://img.shields.io/badge/lang-en-yellow.svg)](#english)
@@ -11,7 +13,6 @@
 
 </div>
 
----
 
 ## English
 
