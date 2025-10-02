@@ -15,8 +15,10 @@ import ccxt
 import time
 import os
 import logging
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from .panel import Panel
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ def fetch_data(
     start_date: Optional[str] = None,
     exchange: str = 'binance',
     output_path: Optional[str] = None
-) -> pd.DataFrame:
+) -> 'Panel':
     """
     Fetch and prepare cryptocurrency OHLCV data.
     
@@ -46,8 +48,8 @@ def fetch_data(
         
     Returns
     -------
-    DataFrame
-        MultiIndex DataFrame with (timestamp, symbol) index
+    Panel
+        Panel object with OHLCV data
     """
     try:
         exchange_obj = getattr(ccxt, exchange)()
@@ -83,12 +85,16 @@ def fetch_data(
     combined = pd.concat(all_data, ignore_index=True)
     result = _process_data(combined, timeframe)
     
+    # Convert to Panel
+    from .panel import Panel
+    panel = Panel(result)
+    
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        result.to_csv(output_path)
+        panel.to_csv(output_path)
         logger.info(f"Data saved to {output_path}")
     
-    return result
+    return panel
 
 
 def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since) -> Optional[pd.DataFrame]:

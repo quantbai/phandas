@@ -12,7 +12,6 @@ Categories:
 - Comparison and conditional operations
 """
 
-import pandas as pd
 from typing import Union, List, Optional
 from .core import Factor 
 

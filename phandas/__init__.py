@@ -11,6 +11,7 @@ __version__ = "0.4.3"
 from .core import (
     Factor, load_factor
 )
+from .panel import Panel
 
 from .operators import (
     # Time-series operations
@@ -34,7 +35,7 @@ from .utils import save_factor, load_saved_factor, factor_info
 
 __all__ = [
     # Core classes and factories
-    'Factor', 'load_factor',
+    'Factor', 'load_factor', 'Panel',
     
     # Data management
     'fetch_data', 'check_data_quality',

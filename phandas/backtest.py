@@ -228,8 +228,8 @@ class Backtester:
         Backtester
             Self for method chaining
         """
-        price_dates = set(self.price_factor.data['timestamp'])
-        strategy_dates = set(self.strategy_factor.data['timestamp'])
+        price_dates = set(self.price_factor.data.index.get_level_values('timestamp'))
+        strategy_dates = set(self.strategy_factor.data.index.get_level_values('timestamp'))
         common_dates = sorted(price_dates & strategy_dates)
         
         if len(common_dates) < 2:
@@ -377,10 +377,13 @@ class Backtester:
     
     def _get_factor_data(self, factor: 'Factor', date) -> pd.Series:
         """Extract factor data for a specific date."""
-        date_data = factor.data[factor.data['timestamp'] == date]
-        if date_data.empty:
+        try:
+            date_data = factor.data.xs(date, level='timestamp')
+            if date_data.empty:
+                return pd.Series(dtype=float)
+            return date_data['factor'].dropna()
+        except KeyError:
             return pd.Series(dtype=float)
-        return date_data.set_index('symbol')['factor'].dropna()
     
     def _find_start_date(self, dates) -> int:
         """Find first date with complete data in both factors."""

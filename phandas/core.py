@@ -14,15 +14,18 @@ The Factor class supports:
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
-from typing import Union, Optional, Callable, List
+from typing import Union, Optional, Callable, List, TYPE_CHECKING
 from scipy.stats import rankdata, norm, uniform, cauchy
+
+if TYPE_CHECKING:
+    from .panel import Panel
 
 
 class Factor:
     """
     Professional factor matrix for quantitative analysis.
     
-    Standardized format: timestamp, symbol, factor columns.
+    Internal format: MultiIndex DataFrame with (timestamp, symbol) index.
     Supports method chaining and vectorized operations.
     """
     
@@ -41,20 +44,34 @@ class Factor:
             df = pd.read_csv(data, parse_dates=['timestamp'])
         else:
             df = data.copy()
+        
+        # Convert to MultiIndex format if needed
+        if isinstance(df.index, pd.MultiIndex):
+            # Already MultiIndex
+            if 'factor' not in df.columns:
+                # Take first column as factor
+                df = df.iloc[:, [0]].copy()
+                df.columns = ['factor']
+            self.data = df[['factor']].copy()
+        else:
+            # Convert from flat format to MultiIndex
+            # Standardize column names
+            if len(df.columns) == 3 and 'factor' not in df.columns:
+                df.columns = ['timestamp', 'symbol', 'factor']
+            elif 'factor' not in df.columns:
+                factor_cols = [col for col in df.columns 
+                              if col not in ['timestamp', 'symbol']]
+                if not factor_cols:
+                    raise ValueError("No factor column found")
+                df = df[['timestamp', 'symbol', factor_cols[0]]]
+                df.columns = ['timestamp', 'symbol', 'factor']
             
-        # Standardize column names
-        if len(df.columns) == 3 and 'factor' not in df.columns:
-            df.columns = ['timestamp', 'symbol', 'factor']
-        elif 'factor' not in df.columns:
-            factor_cols = [col for col in df.columns 
-                          if col not in ['timestamp', 'symbol']]
-            if not factor_cols:
-                raise ValueError("No factor column found")
-            df = df[['timestamp', 'symbol', factor_cols[0]]]
-            df.columns = ['timestamp', 'symbol', 'factor']
+            # Set MultiIndex
+            df = df[['timestamp', 'symbol', 'factor']].copy()
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df = df.set_index(['timestamp', 'symbol']).sort_index()
+            self.data = df
             
-        self.data = df[['timestamp', 'symbol', 'factor']].copy()
-        self.data = self.data.sort_values(['timestamp', 'symbol'])
         self.name = name or 'factor'
     
     # ==================== Cross-Sectional Operations ====================
@@ -80,7 +97,7 @@ class Factor:
             except Exception:
                 return pd.Series(np.nan, index=group.index)
         
-        result['factor'] = (result.groupby('timestamp')['factor']
+        result['factor'] = (result.groupby(level='timestamp')['factor']
                            .transform(safe_rank))
         
         return Factor(result, f"rank({self.name})")
@@ -321,7 +338,7 @@ class Factor:
             
             return transformed_group
 
-        result['factor'] = result.groupby('timestamp')['factor'].transform(apply_quantile)
+        result['factor'] = result.groupby(level='timestamp')['factor'].transform(apply_quantile)
 
         return Factor(result, f"quantile({self.name},driver={driver},sigma={sigma})")
 
@@ -353,7 +370,7 @@ class Factor:
                     return group
                 return (group / abs_sum) * scale
 
-        result['factor'] = result.groupby('timestamp')['factor'].transform(apply_scale)
+        result['factor'] = result.groupby(level='timestamp')['factor'].transform(apply_scale)
 
         return Factor(result, f"scale({self.name},scale={scale},longscale={longscale},shortscale={shortscale})")
 
@@ -382,17 +399,20 @@ class Factor:
         if not isinstance(group_data, Factor):
             raise TypeError("group_data must be a Factor object.")
 
-        merged = pd.merge(self.data, group_data.data, on=['timestamp', 'symbol'], 
-                          suffixes=('', '_group'))
+        merged = pd.merge(self.data, group_data.data, 
+                         left_index=True, right_index=True,
+                         suffixes=('', '_group'))
         
         if merged.empty:
             raise ValueError("No common data between factor and group data.")
 
-        merged['factor'] = merged.groupby(['timestamp', 'factor_group'])['factor'].transform(
+        # Create temporary columns for groupby
+        temp_df = merged.reset_index()
+        temp_df['factor'] = temp_df.groupby(['timestamp', 'factor_group'])['factor'].transform(
             lambda x: x - x.mean()
         )
         
-        result_data = merged[['timestamp', 'symbol', 'factor']]
+        result_data = temp_df.set_index(['timestamp', 'symbol'])[['factor']]
         return Factor(result_data, name=f"group_neutralize({self.name},{group_data.name})")
 
     def vector_neut(self, other: 'Factor') -> 'Factor':
@@ -412,8 +432,9 @@ class Factor:
         if not isinstance(other, Factor):
             raise TypeError("other must be a Factor object.")
 
-        merged = pd.merge(self.data, other.data, on=['timestamp', 'symbol'], 
-                          suffixes=('_target', '_neut'))
+        merged = pd.merge(self.data, other.data,
+                         left_index=True, right_index=True,
+                         suffixes=('_target', '_neut'))
 
         if merged.empty:
             raise ValueError("No common data for vector neutralization.")
@@ -430,9 +451,10 @@ class Factor:
             
             return pd.Series(neutralized_x, index=group.index)
 
-        neutralized_series = merged.groupby('timestamp').apply(neutralize_single_date).reset_index(level=0, drop=True)
+        neutralized_series = merged.groupby(level='timestamp').apply(neutralize_single_date).reset_index(level=0, drop=True)
         
-        result_data = merged[['timestamp', 'symbol']].copy()
+        result_data = merged[['factor_target']].copy()
+        result_data.columns = ['factor']
         result_data['factor'] = neutralized_series
         
         return Factor(result_data, name=f"vector_neut({self.name},{other.name})")
@@ -462,7 +484,7 @@ class Factor:
             neut_name = f.name or f'neut_{i}'
             neut_names.append(neut_name)
             merged = pd.merge(merged, f.data.rename(columns={'factor': neut_name}),
-                              on=['timestamp', 'symbol'], how='inner')
+                              left_index=True, right_index=True, how='inner')
 
         if merged.empty:
             raise ValueError("No common data for regression neutralization.")
@@ -490,9 +512,10 @@ class Factor:
             residuals[valid_idx] = model.resid
             return residuals
 
-        residuals_series = merged.groupby('timestamp').apply(get_residuals, include_groups=False).reset_index(level=0, drop=True)
+        residuals_series = merged.groupby(level='timestamp').apply(get_residuals, include_groups=False).reset_index(level=0, drop=True)
         
-        result_data = merged[['timestamp', 'symbol']].copy()
+        result_data = merged[[self.name or 'target']].copy()
+        result_data.columns = ['factor']
         result_data['factor'] = residuals_series
 
         neut_factors_str = ",".join([f.name for f in neut_factors])
@@ -518,7 +541,7 @@ class Factor:
             
             return normalized_group
 
-        result['factor'] = result.groupby('timestamp')['factor'].transform(apply_normalize)
+        result['factor'] = result.groupby(level='timestamp')['factor'].transform(apply_normalize)
 
         return Factor(result, f"normalize({self.name},useStd={useStd},limit={limit})")
 
@@ -672,12 +695,13 @@ class Factor:
         """Addition with factor or scalar, with optional NaN filtering."""
         if isinstance(other, Factor):
             if filter_nan:
-                merged = pd.merge(self.data, other.data, on=['timestamp', 'symbol'], 
+                merged = pd.merge(self.data, other.data,
+                                  left_index=True, right_index=True,
                                   suffixes=('_x', '_y'), how='outer')
                 merged['factor_x'] = merged['factor_x'].fillna(0)
                 merged['factor_y'] = merged['factor_y'].fillna(0)
                 merged['factor'] = merged['factor_x'] + merged['factor_y']
-                result = merged[['timestamp', 'symbol', 'factor']]
+                result = merged[['factor']]
                 return Factor(result, f"add({self.name},{other.name},filter_nan={filter_nan})")
             else:
                 result = self._binary_op(other, lambda x, y: x + y)
@@ -694,12 +718,13 @@ class Factor:
         """Subtraction with factor or scalar, with optional NaN filtering."""
         if isinstance(other, Factor):
             if filter_nan:
-                merged = pd.merge(self.data, other.data, on=['timestamp', 'symbol'], 
+                merged = pd.merge(self.data, other.data,
+                                  left_index=True, right_index=True,
                                   suffixes=('_x', '_y'), how='outer')
                 merged['factor_x'] = merged['factor_x'].fillna(0)
                 merged['factor_y'] = merged['factor_y'].fillna(0)
                 merged['factor'] = merged['factor_x'] - merged['factor_y']
-                result = merged[['timestamp', 'symbol', 'factor']]
+                result = merged[['factor']]
                 return Factor(result, f"subtract({self.name},{other.name},filter_nan={filter_nan})")
             else:
                 result = self._binary_op(other, lambda x, y: x - y)
@@ -716,12 +741,13 @@ class Factor:
         """Multiplication with factor or scalar, with optional NaN filtering."""
         if isinstance(other, Factor):
             if filter_nan:
-                merged = pd.merge(self.data, other.data, on=['timestamp', 'symbol'], 
+                merged = pd.merge(self.data, other.data,
+                                  left_index=True, right_index=True,
                                   suffixes=('_x', '_y'), how='outer')
                 merged['factor_x'] = merged['factor_x'].fillna(1)
                 merged['factor_y'] = merged['factor_y'].fillna(1)
                 merged['factor'] = merged['factor_x'] * merged['factor_y']
-                result = merged[['timestamp', 'symbol', 'factor']]
+                result = merged[['factor']]
                 return Factor(result, f"multiply({self.name},{other.name},filter_nan={filter_nan})")
             else:
                 result = self._binary_op(other, lambda x, y: x * y)
@@ -780,7 +806,8 @@ class Factor:
         
         if isinstance(exponent, Factor):
             # Merge data and calculate sign(x) * (abs(x) ** y)
-            merged = pd.merge(self.data, exponent.data, on=['timestamp', 'symbol'], 
+            merged = pd.merge(self.data, exponent.data,
+                             left_index=True, right_index=True,
                              suffixes=('_x', '_y'), how='outer')
             
             # Align and ensure correct data types
@@ -790,7 +817,8 @@ class Factor:
             # Calculate signed power
             final_values = np.sign(x_values) * (np.abs(x_values) ** y_values)
             
-            result = merged[['timestamp', 'symbol']].copy()
+            result = merged[['factor_x']].copy()
+            result.columns = ['factor']
             result['factor'] = final_values
             
             return Factor(result, f"signed_power({self.name},{exponent.name})")
@@ -1029,7 +1057,8 @@ class Factor:
         
         # Merge factor data
         try:
-            merged = pd.merge(self.data, other.data, on=['timestamp', 'symbol'], 
+            merged = pd.merge(self.data, other.data,
+                             left_index=True, right_index=True,
                              suffixes=('_x', '_y'), how='inner')
         except Exception as e:
             raise ValueError(f"Failed to merge factor data: {e}")
@@ -1037,15 +1066,12 @@ class Factor:
         if merged.empty:
             raise ValueError("No common data between factors")
         
-        merged = merged.sort_values(['symbol', 'timestamp'])
-        
         # Calculate rolling correlation by symbol
-        result_data = []
+        result_series = []
         
-        for symbol in merged['symbol'].unique():
+        for symbol in merged.index.get_level_values('symbol').unique():
             try:
-                symbol_data = merged[merged['symbol'] == symbol].copy()
-                symbol_data = symbol_data.sort_values('timestamp')
+                symbol_data = merged.xs(symbol, level='symbol')
                 
                 # Ensure correct data types
                 x_values = pd.to_numeric(symbol_data['factor_x'], errors='coerce')
@@ -1059,23 +1085,20 @@ class Factor:
                     (corr_values >= -1) & (corr_values <= 1), np.nan
                 )
                 
-                # Add to results
-                symbol_data['factor'] = corr_values
-                result_data.append(symbol_data[['timestamp', 'symbol', 'factor']])
+                result_series.append(corr_values)
                 
             except Exception:
                 # Add NaN values on error
-                symbol_data = merged[merged['symbol'] == symbol][['timestamp', 'symbol']].copy()
-                symbol_data['factor'] = np.nan
-                result_data.append(symbol_data)
+                symbol_data = merged.xs(symbol, level='symbol')
+                result_series.append(pd.Series(np.nan, index=symbol_data.index))
         
-        if result_data:
-            merged = pd.concat(result_data, ignore_index=True)
+        if result_series:
+            result = pd.concat(result_series)
+            result = result.to_frame('factor')
         else:
-            merged['factor'] = np.nan
-        
-        # Handle NaN values - keep NaN rather than filling with 0
-        result = merged[['timestamp', 'symbol', 'factor']].copy()
+            result = merged[['factor_x']].copy()
+            result.columns = ['factor']
+            result['factor'] = np.nan
         
         return Factor(result, f"ts_corr({self.name},{other.name},{window})")
     
@@ -1088,20 +1111,18 @@ class Factor:
             raise TypeError("Other must be a Factor object")
             
         # Merge factor data
-        merged = pd.merge(self.data, other.data, on=['timestamp', 'symbol'], 
+        merged = pd.merge(self.data, other.data,
+                         left_index=True, right_index=True,
                          suffixes=('_x', '_y'), how='inner')
         
         if merged.empty:
             raise ValueError("No common data between factors")
         
-        merged = merged.sort_values(['symbol', 'timestamp'])
-        
         # Calculate rolling covariance by symbol
-        result_data = []
+        result_series = []
         
-        for symbol in merged['symbol'].unique():
-            symbol_data = merged[merged['symbol'] == symbol].copy()
-            symbol_data = symbol_data.sort_values('timestamp')
+        for symbol in merged.index.get_level_values('symbol').unique():
+            symbol_data = merged.xs(symbol, level='symbol')
             
             x_values = pd.to_numeric(symbol_data['factor_x'], errors='coerce')
             y_values = pd.to_numeric(symbol_data['factor_y'], errors='coerce')
@@ -1109,16 +1130,16 @@ class Factor:
             # Calculate rolling covariance
             cov_values = x_values.rolling(window, min_periods=window).cov(y_values)
             
-            symbol_data['factor'] = cov_values
-            result_data.append(symbol_data[['timestamp', 'symbol', 'factor']])
+            result_series.append(cov_values)
             
-        if result_data:
-            merged = pd.concat(result_data, ignore_index=True)
+        if result_series:
+            result = pd.concat(result_series)
+            result = result.to_frame('factor')
         else:
-            merged = merged[['timestamp', 'symbol']].copy()
-            merged['factor'] = np.nan
+            result = merged[['factor_x']].copy()
+            result.columns = ['factor']
+            result['factor'] = np.nan
             
-        result = merged[['timestamp', 'symbol', 'factor']].copy()
         return Factor(result, f"ts_covariance({self.name},{other.name},{window})")
 
     def ts_regression(self, x_factor: 'Factor', window: int, lag: int = 0, rettype: int = 0) -> 'Factor':
@@ -1166,13 +1187,12 @@ class Factor:
         if lag > 0:
             x_data = Factor(x_data, name=x_factor.name).ts_delay(lag).data.rename(columns={'factor': 'x'})
 
-        merged = pd.merge(y_data, x_data, on=['timestamp', 'symbol'], how='inner')
-        merged = merged.sort_values(['symbol', 'timestamp'])
+        merged = pd.merge(y_data, x_data, left_index=True, right_index=True, how='inner')
 
         results_list = []
 
-        for symbol in merged['symbol'].unique():
-            symbol_df = merged[merged['symbol'] == symbol].copy()
+        for symbol in merged.index.get_level_values('symbol').unique():
+            symbol_df = merged.xs(symbol, level='symbol').copy()
             symbol_df['y'] = pd.to_numeric(symbol_df['y'], errors='coerce')
             symbol_df['x'] = pd.to_numeric(symbol_df['x'], errors='coerce')
             original_index = symbol_df.index
@@ -1237,12 +1257,13 @@ class Factor:
 
             # Assign the requested rettype column
             symbol_df['factor'] = symbol_results_df.iloc[:, rettype]
-            results_list.append(symbol_df[['timestamp', 'symbol', 'factor']])
+            results_list.append(symbol_df[['factor']])
 
         if results_list:
-            final_result_df = pd.concat(results_list, ignore_index=True)
+            final_result_df = pd.concat(results_list)
         else:
-            final_result_df = merged[['timestamp', 'symbol']].copy()
+            final_result_df = merged[['y']].copy()
+            final_result_df.columns = ['factor']
             final_result_df['factor'] = np.nan
 
         return Factor(final_result_df, name=f"ts_regression({self.name},{x_factor.name},{window},lag={lag},rettype={rettype})")
@@ -1252,82 +1273,95 @@ class Factor:
     
     def _apply_rolling(self, func: Union[str, Callable], window: int) -> pd.DataFrame:
         """Apply rolling function by symbol."""
-        result = self.data.copy().sort_values(['symbol', 'timestamp'])
+        result = self.data.copy()
         if isinstance(func, str):
             if func == 'product':
-                result['factor'] = (result.groupby('symbol')['factor']
-                                   .rolling(window, min_periods=window)
-                                   .apply(np.prod, raw=True).values)
+                rolled = (result.groupby(level='symbol')['factor']
+                         .rolling(window, min_periods=window)
+                         .apply(np.prod, raw=True))
             else:
-                result['factor'] = (result.groupby('symbol')['factor']
-                                   .rolling(window, min_periods=window)
-                                   .agg(func).values)
+                rolled = (result.groupby(level='symbol')['factor']
+                         .rolling(window, min_periods=window)
+                         .agg(func))
         else:
-            result['factor'] = (result.groupby('symbol')['factor']
-                               .rolling(window, min_periods=window)
-                               .apply(func, raw=False).values)
-        return result.sort_values(['timestamp', 'symbol'])
+            rolled = (result.groupby(level='symbol')['factor']
+                     .rolling(window, min_periods=window)
+                     .apply(func, raw=False))
+        
+        # Remove extra level from rolling
+        rolled = rolled.reset_index(level=0, drop=True)
+        result['factor'] = rolled
+        return result
     
     def _apply_groupby(self, func: str, *args) -> pd.DataFrame:
         """Apply groupby function by symbol."""
-        result = self.data.copy().sort_values(['symbol', 'timestamp'])
-        result['factor'] = (result.groupby('symbol')['factor']
+        result = self.data.copy()
+        result['factor'] = (result.groupby(level='symbol')['factor']
                            .transform(func, *args))
-        return result.sort_values(['timestamp', 'symbol'])
+        return result
     
     def _binary_op(self, other: 'Factor', op: Callable) -> pd.DataFrame:
-        """Apply binary operation with another factor."""
-        merged = pd.merge(self.data, other.data, on=['timestamp', 'symbol'], 
-                         suffixes=('_x', '_y'))
-        merged['factor'] = op(merged['factor_x'], merged['factor_y'])
-        return merged[['timestamp', 'symbol', 'factor']]
+        """Apply binary operation with another factor (fast index alignment)."""
+        result = op(self.data['factor'], other.data['factor'])
+        return result.to_frame('factor')
     
     # ==================== Data Access and Information ====================
     # Methods for exporting data and retrieving factor information
     
     def to_csv(self, path: str) -> str:
         """Save to CSV file."""
-        self.data.to_csv(path, index=False)
+        self.data.reset_index().to_csv(path, index=False)
         return path
     
     def to_multiindex(self) -> pd.Series:
-        """Convert to MultiIndex Series."""
-        return self.data.set_index(['timestamp', 'symbol'])['factor']
+        """Convert to MultiIndex Series (already in this format)."""
+        return self.data['factor']
+    
+    def to_flat(self) -> pd.DataFrame:
+        """Convert to flat DataFrame with timestamp, symbol, factor columns."""
+        return self.data.reset_index()
     
     def info(self) -> dict:
         """Get factor information."""
+        timestamps = self.data.index.get_level_values('timestamp')
+        symbols = self.data.index.get_level_values('symbol')
         return {
             'name': self.name,
             'shape': self.data.shape,
-            'time_range': (self.data['timestamp'].min(), self.data['timestamp'].max()),
-            'symbols': sorted(self.data['symbol'].unique()),
+            'time_range': (timestamps.min(), timestamps.max()),
+            'symbols': sorted(symbols.unique()),
             'valid_ratio': self.data['factor'].notna().mean()
         }
     
     def __repr__(self):
         n_obs = self.data.shape[0]
-        n_symbols = len(self.data['symbol'].unique())
+        timestamps = self.data.index.get_level_values('timestamp')
+        symbols = self.data.index.get_level_values('symbol')
+        n_symbols = len(symbols.unique())
         valid_ratio = self.data['factor'].notna().mean()
-        time_range = f"{self.data['timestamp'].min().strftime('%Y-%m-%d')} to {self.data['timestamp'].max().strftime('%Y-%m-%d')}"
+        time_range = f"{timestamps.min().strftime('%Y-%m-%d')} to {timestamps.max().strftime('%Y-%m-%d')}"
         return (f"Factor(name={self.name}, obs={n_obs}, symbols={n_symbols}, "
                f"valid={valid_ratio:.1%}, period={time_range})")
     
     def __str__(self):
         """User-friendly string representation."""
-        return f"Factor({self.name}): {self.data.shape[0]} obs, {len(self.data['symbol'].unique())} symbols"
+        n_symbols = len(self.data.index.get_level_values('symbol').unique())
+        return f"Factor({self.name}): {self.data.shape[0]} obs, {n_symbols} symbols"
 
 
 # ==================== Factory Functions ====================
 # Convenience functions for creating Factor objects from various sources
 
-def load_factor(data: Union[str, pd.DataFrame], column: str, name: Optional[str] = None) -> Factor:
+def load_factor(data: Union[str, pd.DataFrame, 'Panel'], column: str, name: Optional[str] = None) -> Factor:
     """
     Load factor from data source.
     
+    Deprecated: Use panel['column'] or panel.get_factor() instead.
+    
     Parameters
     ----------
-    data : str or DataFrame
-        Data source (CSV path or DataFrame)
+    data : str, DataFrame, or Panel
+        Data source
     column : str
         Column name to extract as factor
     name : str, optional
@@ -1338,7 +1372,11 @@ def load_factor(data: Union[str, pd.DataFrame], column: str, name: Optional[str]
     Factor
         Factor object with specified column
     """
-    if isinstance(data, str):
+    from .panel import Panel
+    
+    if isinstance(data, Panel):
+        return data.get_factor(column, name)
+    elif isinstance(data, str):
         df = pd.read_csv(data, parse_dates=['timestamp'])
     else:
         df = data.copy()
