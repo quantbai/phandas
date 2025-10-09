@@ -31,7 +31,14 @@ from .operators import (
 )
 from .data import fetch_data, check_data_quality
 from .backtest import Backtester, backtest
+from .layer_backtest import backtest_layer
+from .layer import analyze_layers
+from .trade_simulator import simulate_trade_replay
 from .utils import save_factor, load_saved_factor, factor_info
+
+from .ic import (
+    analyze_ic 
+)
 
 __all__ = [
     # Core classes and factories
@@ -41,7 +48,7 @@ __all__ = [
     'fetch_data', 'check_data_quality',
     
     # Backtesting
-    'Backtester', 'backtest',
+    'Backtester', 'backtest', 'backtest_layer', 'simulate_trade_replay',
     
     # Time-series operations
     'ts_rank', 'ts_mean', 'ts_median', 'ts_product', 'ts_sum', 'ts_std_dev', 'ts_corr', 'ts_delay', 'ts_delta', 
@@ -57,6 +64,9 @@ __all__ = [
     
     # Neutralization operations
     'group_neutralize', 'vector_neut', 'regression_neut',
+    
+    # Information Coefficient (IC) analysis
+    'analyze_ic', 'analyze_layers',
     
     # Utilities
     'save_factor', 'load_saved_factor', 'factor_info'

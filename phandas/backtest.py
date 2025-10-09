@@ -8,6 +8,8 @@ Implements dollar-neutral portfolio-based backtesting with:
 - Comprehensive performance metrics
 - Detailed trade logging
 
+Optimized for 3-column Factor format [timestamp, symbol, factor]
+
 Classes:
     Portfolio: Portfolio state management and trade execution
     Backtester: Main backtesting engine with metrics calculation
@@ -36,23 +38,6 @@ class Portfolio:
     
     Tracks cash, positions, historical equity curve, and detailed trade log.
     Supports real-time mark-to-market valuation and trade execution.
-    
-    Attributes
-    ----------
-    initial_capital : float
-        Starting capital
-    cash : float
-        Current cash balance
-    positions : Series
-        Current holdings (symbol -> quantity)
-    holdings : Series
-        Current market value (symbol -> dollar value)
-    total_value : float
-        Total portfolio value (cash + holdings)
-    history : list
-        Historical portfolio snapshots
-    trade_log : list
-        Detailed record of all executed trades
     """
     def __init__(self, initial_capital: float = 100000):
         self.initial_capital = initial_capital
@@ -62,10 +47,8 @@ class Portfolio:
         self.total_value = initial_capital
         
         self.history = []
-        self.trade_log = []  # Track detailed trade log
+        self.trade_log = []
 
-    # ==================== Portfolio State Management ====================
-    
     def update_market_value(self, date, prices: pd.Series):
         """Update holdings and total portfolio value based on new prices."""
         common_symbols = self.positions.index.intersection(prices.index)
@@ -89,22 +72,10 @@ class Portfolio:
             'short_holdings_value': short_holdings_value,
         })
 
-    def execute_trade(self, symbol: str, quantity: float, price: float, transaction_cost_rates: Union[float, Tuple[float, float]], trade_date: pd.Timestamp):
-        """
-        Executes a single trade and updates portfolio state.
-        
-        Parameters
-        ----------
-        symbol : str
-            The asset symbol.
-        quantity : float
-            Number of shares to trade. Positive for buy, negative for sell.
-        price : float
-            Execution price per share.
-        transaction_cost_rates : Union[float, Tuple[float, float]]
-            Transaction cost. Can be a single float (e.g., 0.001) for both buy/sell,
-            or a tuple (buy_cost_rate, sell_cost_rate) for separate rates.
-        """
+    def execute_trade(self, symbol: str, quantity: float, price: float, 
+                     transaction_cost_rates: Union[float, Tuple[float, float]], 
+                     trade_date: pd.Timestamp):
+        """Execute a single trade and update portfolio state."""
         if isinstance(transaction_cost_rates, (list, tuple)):
             buy_cost_rate = transaction_cost_rates[0]
             sell_cost_rate = transaction_cost_rates[1]
@@ -139,8 +110,6 @@ class Portfolio:
         else:
             self.positions.loc[symbol] = new_quantity
     
-    # ==================== Data Access ====================
-    
     def get_history_df(self) -> pd.DataFrame:
         """Return the portfolio history as a DataFrame."""
         if not self.history:
@@ -162,17 +131,9 @@ class Portfolio:
 
 class Backtester:
     """
-    Professional backtesting engine with unified Factor format.
+    Professional backtesting engine with 3-column Factor format.
     
-    Implements dollar-neutral factor strategies using a portfolio-based approach.
-    Automatically rebalances positions based on factor signals, tracks performance,
-    and calculates comprehensive metrics including Sharpe ratio, drawdown, etc.
-    
-    The engine supports:
-    - Separate buy/sell transaction costs
-    - Dollar-neutral strategy (long-short with zero net exposure)
-    - Daily rebalancing with lookback signal
-    - Complete trade logging for analysis
+    Optimized for fast backtesting with [timestamp, symbol, factor] format.
     """
     
     def __init__(
@@ -183,7 +144,7 @@ class Backtester:
         initial_capital: float = 100000
     ):
         """
-        Initialize backtester with unified Factor format.
+        Initialize backtester with 3-column Factor format.
         
         Parameters
         ----------
@@ -192,8 +153,7 @@ class Backtester:
         strategy_factor : Factor
             Strategy factor for position weights
         transaction_cost : Union[float, Tuple[float, float]], default 0.001
-            Transaction cost. Can be a single float (e.g., 0.001) for both buy/sell,
-            or a tuple (buy_cost_rate, sell_cost_rate) for separate rates.
+            Transaction cost rate(s)
         initial_capital : float, default 100000
             Initial capital for backtesting
         """
@@ -217,19 +177,18 @@ class Backtester:
         self.metrics = {}
         self.detailed_history = []
     
-    # ==================== Core Backtesting ====================
-    
     def run(self) -> 'Backtester':
         """
-        Execute backtest using Factor objects.
+        Execute backtest using 3-column Factor format.
         
         Returns
         -------
         Backtester
             Self for method chaining
         """
-        price_dates = set(self.price_factor.data.index.get_level_values('timestamp'))
-        strategy_dates = set(self.strategy_factor.data.index.get_level_values('timestamp'))
+        # Get unique dates from both factors (3-column format)
+        price_dates = set(self.price_factor.data['timestamp'].unique())
+        strategy_dates = set(self.strategy_factor.data['timestamp'].unique())
         common_dates = sorted(price_dates & strategy_dates)
         
         if len(common_dates) < 2:
@@ -252,44 +211,58 @@ class Backtester:
             prev_date = common_dates[i - 1] if i > 0 else None
             
             try:
+                # Get current prices (3-column format)
                 current_prices = self._get_factor_data(self.price_factor, current_date)
                 if current_prices.empty:
                     continue
                 
+                # Get strategy factors
                 current_strategy_factors = self._get_factor_data(self.strategy_factor, current_date)
                 prev_strategy_factors = self._get_factor_data(self.strategy_factor, prev_date) if prev_date else pd.Series(dtype=float)
                 
                 old_holdings = self.portfolio.holdings.copy()
                 old_total_value = self.portfolio.total_value
                 
+                # Update portfolio value
                 self.portfolio.update_market_value(current_date, current_prices)
                 
                 if not prev_date:
                     continue
                 
+                # Get previous day's strategy factors for signal
                 strategy_factors = self._get_factor_data(self.strategy_factor, prev_date)
                 
+                # Calculate target holdings (dollar-neutral)
                 target_holdings = self._calculate_target_holdings(strategy_factors)
                 
+                # Generate and execute orders
                 orders = self._generate_orders(target_holdings, current_prices)
                 
                 trade_pnl_by_symbol = {}
+                trade_value_by_symbol = {}
                 for symbol, quantity in orders.items():
                     if symbol in current_prices.index:
                         price = current_prices.loc[symbol]
-                        self.portfolio.execute_trade(symbol, quantity, price, self.transaction_cost_rates, current_date)
+                        self.portfolio.execute_trade(symbol, quantity, price, 
+                                                    self.transaction_cost_rates, current_date)
                         
                         trade_value = quantity * price
-                        cost = abs(trade_value) * (self.transaction_cost_rates[0] if quantity > 0 else self.transaction_cost_rates[1])
+                        trade_value_by_symbol[symbol] = trade_value
+                        cost = abs(trade_value) * (self.transaction_cost_rates[0] if quantity > 0 
+                                                   else self.transaction_cost_rates[1])
                         trade_pnl_by_symbol[symbol] = -abs(cost)
                 
-                all_symbols = set(current_prices.index) | set(current_strategy_factors.index) | set(prev_strategy_factors.index) | set(self.portfolio.holdings.index)
+                # Record detailed history
+                all_symbols = set(current_prices.index) | set(current_strategy_factors.index) | \
+                             set(prev_strategy_factors.index) | set(self.portfolio.holdings.index) | \
+                             set(target_holdings.index)
                 
                 for symbol in all_symbols:
                     current_price = current_prices.get(symbol, np.nan)
                     current_factor = current_strategy_factors.get(symbol, np.nan)
                     prev_factor = prev_strategy_factors.get(symbol, np.nan)
-                    factor_change = current_factor - prev_factor if not (pd.isna(current_factor) or pd.isna(prev_factor)) else np.nan
+                    factor_change = current_factor - prev_factor if not (pd.isna(current_factor) or 
+                                                                         pd.isna(prev_factor)) else np.nan
                     
                     current_holding_value = self.portfolio.holdings.get(symbol, 0.0)
                     old_holding_value = old_holdings.get(symbol, 0.0)
@@ -298,7 +271,9 @@ class Backtester:
                     
                     total_symbol_pnl = holding_pnl + trade_pnl
                     position_qty = self.portfolio.positions.get(symbol, 0.0)
-                    
+                    target_holding_value = target_holdings.get(symbol, 0.0)
+                    trade_value = trade_value_by_symbol.get(symbol, 0.0)
+
                     self.detailed_history.append({
                         'timestamp': current_date,
                         'symbol': symbol,
@@ -306,6 +281,9 @@ class Backtester:
                         'current_factor': current_factor,
                         'prev_factor': prev_factor,
                         'factor_change': factor_change,
+                        'opening_value': old_holding_value,
+                        'target_holding_value': target_holding_value,
+                        'trade_value': trade_value,
                         'position_qty': position_qty,
                         'holding_value': current_holding_value,
                         'holding_pnl': holding_pnl,
@@ -322,19 +300,7 @@ class Backtester:
         return self
     
     def calculate_metrics(self, risk_free_rate: float = 0.0) -> 'Backtester':
-        """
-        Calculate performance metrics.
-        
-        Parameters
-        ----------
-        risk_free_rate : float, default 0.0
-            Risk-free rate for Sharpe ratio
-            
-        Returns
-        -------
-        Backtester
-            Self for method chaining
-        """
+        """Calculate performance metrics."""
         history = self.portfolio.get_history_df()
         if history.empty or len(history) < 2:
             self.metrics = {}
@@ -376,13 +342,26 @@ class Backtester:
     # ==================== Internal Helper Methods ====================
     
     def _get_factor_data(self, factor: 'Factor', date) -> pd.Series:
-        """Extract factor data for a specific date."""
+        """
+        Extract factor data for a specific date from 3-column format.
+        
+        OPTIMIZED: Direct DataFrame query without MultiIndex overhead.
+        """
+        if date is None:
+            return pd.Series(dtype=float)
+        
         try:
-            date_data = factor.data.xs(date, level='timestamp')
+            # Fast query on 3-column DataFrame
+            date_data = factor.data[factor.data['timestamp'] == date]
+            
             if date_data.empty:
                 return pd.Series(dtype=float)
-            return date_data['factor'].dropna()
-        except KeyError:
+            
+            # Convert to Series with symbol as index
+            result = date_data.set_index('symbol')['factor'].dropna()
+            return result
+            
+        except Exception:
             return pd.Series(dtype=float)
     
     def _find_start_date(self, dates) -> int:
@@ -426,21 +405,9 @@ class Backtester:
     
     # ==================== Visualization and Reporting ====================
     
-    def plot_equity(self, figsize: tuple = (12, 6), show_summary: bool = True) -> 'Backtester':
+    def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> 'Backtester':
         """
-        Plot equity curve with enhanced visual styling and performance metrics.
-        
-        Parameters
-        ----------
-        figsize : tuple, default (12, 6)
-            Figure size
-        show_summary : bool, default True
-            Whether to display performance summary on the plot
-            
-        Returns
-        -------
-        Backtester
-            Self for method chaining
+        Plot equity curve with professional layout: equity (top) + drawdown (bottom) + turnover (third).
         """
         history = self.portfolio.get_history_df()
         if history.empty:
@@ -448,56 +415,85 @@ class Backtester:
             return self
         
         equity_curve = history['total_value']
+        equity_norm = equity_curve / equity_curve.iloc[0]
+        rolling_max = equity_norm.cummax()
+        drawdown = equity_norm / rolling_max - 1.0
+        
+        turnover_df = self.get_daily_turnover_df()
         
         plt.style.use('default')
-        fig, ax = plt.subplots(figsize=figsize, facecolor='white')
+        fig = plt.figure(figsize=figsize, constrained_layout=True)
+        gs = fig.add_gridspec(3, 1, height_ratios=[3, 1, 1])
+        ax = fig.add_subplot(gs[0, 0])
+        ax_dd = fig.add_subplot(gs[1, 0], sharex=ax)
+        ax_to = fig.add_subplot(gs[2, 0], sharex=ax)
+        
         ax.set_facecolor('#fcfcfc')
-        
         y_min = equity_curve.min()
-        y_max = equity_curve.max()
-        
         layers = [
-            (0.25, '#2563eb'),
-            (0.15, '#3b82f6'),
-            (0.08, '#60a5fa'),
-            (0.04, '#93c5fd'),
-            (0.02, '#dbeafe'),
+            (0.22, '#2563eb'),
+            (0.12, '#3b82f6'),
+            (0.06, '#60a5fa'),
+            (0.03, '#93c5fd'),
+            (0.015, '#dbeafe'),
         ]
-        
         for alpha, color in layers:
             ax.fill_between(equity_curve.index, y_min, equity_curve,
                            alpha=alpha, color=color, interpolate=True)
-        
-        ax.plot(equity_curve.index, equity_curve, color='#1e40af', linewidth=1.0, alpha=0.95)
+        ax.plot(equity_curve.index, equity_curve, color='#1e40af', linewidth=1.05, alpha=0.95)
         
         ax.set_title(f'Equity Curve ({self.strategy_factor.name})', 
-                    fontsize=12.5, fontweight='400', color='#1f2937', pad=18)
-        ax.set_xlabel('Date', fontsize=10.5, color='#6b7280')
+                    fontsize=12.5, fontweight='400', color='#1f2937', pad=14)
         ax.set_ylabel('Equity Value', fontsize=10.5, color='#6b7280')
-        
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
-        
         ax.grid(True, alpha=0.15, color='#e5e7eb', linestyle='-', linewidth=0.4)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_color('#e5e7eb')
-        ax.spines['bottom'].set_color('#e5e7eb')
-        ax.spines['left'].set_linewidth(0.5)
-        ax.spines['bottom'].set_linewidth(0.5)
-        
         ax.tick_params(axis='both', which='major', labelsize=9.5, colors='#6b7280', 
                       width=0.5, length=3)
         
         if show_summary:
             summary_text = self.summary()
-            ax.text(0.02, 0.98, summary_text, transform=ax.transAxes, fontsize=9.5, 
+            ax.text(0.015, 0.98, summary_text, transform=ax.transAxes, fontsize=9.5, 
                     verticalalignment='top', horizontalalignment='left', color='#374151',
-                    bbox=dict(boxstyle='round,pad=0.8', facecolor='white', 
-                             edgecolor='#e5e7eb', alpha=0.95, linewidth=1))
-            
-        plt.tight_layout()
-        plt.show()
+                    bbox=dict(boxstyle='round,pad=0.75', facecolor='white', 
+                             edgecolor='#e5e7eb', alpha=0.96, linewidth=1))
         
+        # Drawdown subplot
+        ax_dd.set_facecolor('#ffffff')
+        ax_dd.fill_between(drawdown.index, 0, drawdown, color='#ef4444', alpha=0.35, step='pre')
+        ax_dd.plot(drawdown.index, drawdown, color='#991b1b', linewidth=0.8)
+        ax_dd.set_ylabel('Drawdown', fontsize=10, color='#6b7280')
+        ax_dd.grid(True, alpha=0.12, color='#e5e7eb', linestyle='-', linewidth=0.4)
+        ax_dd.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
+        ax_dd.spines['top'].set_visible(False)
+        ax_dd.spines['right'].set_visible(False)
+        ax_dd.tick_params(axis='both', which='major', labelsize=9.0, colors='#6b7280', 
+                          width=0.5, length=3)
+        
+        # Turnover subplot
+        ax_to.set_facecolor('#ffffff')
+        if not turnover_df.empty:
+            ax_to.plot(turnover_df.index, turnover_df['turnover'], color='#10b981', 
+                      linewidth=0.8, alpha=0.8)
+            ax_to.set_ylabel('Turnover', fontsize=10, color='#6b7280')
+            ax_to.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
+            ax_to.grid(True, alpha=0.12, color='#e5e7eb', linestyle='-', linewidth=0.4)
+        else:
+            ax_to.text(0.5, 0.5, 'No Turnover Data', transform=ax_to.transAxes, 
+                      ha='center', va='center', fontsize=10, color='#9ca3af')
+        
+        ax_to.set_xlabel('Date', fontsize=10.5, color='#6b7280')
+        ax_to.spines['top'].set_visible(False)
+        ax_to.spines['right'].set_visible(False)
+        ax_to.tick_params(axis='both', which='major', labelsize=9.0, colors='#6b7280', 
+                          width=0.5, length=3)
+        
+        # Hide x-axis labels for upper plots
+        plt.setp(ax.get_xticklabels(), visible=False)
+        plt.setp(ax_dd.get_xticklabels(), visible=False)
+        
+        plt.show()
         return self
     
     def summary(self) -> str:
@@ -511,41 +507,68 @@ class Backtester:
         if not equity_curve.empty:
             start = equity_curve.index[0].strftime('%Y-%m-%d')
             end = equity_curve.index[-1].strftime('%Y-%m-%d')
+            
+            # Calculate and append Average Turnover (annualized)
+            turnover_df = self.get_daily_turnover_df()
+            avg_turnover = turnover_df['turnover'].mean() * 365 if not turnover_df.empty else 0
+            
             summary_lines.extend([
                 f"Period: {start} to {end}",
                 f"Total Return: {self.metrics.get('total_return', 0):.2%}",
                 f"Annual Return: {self.metrics.get('annual_return', 0):.2%}",
                 f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}",
-                f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}"
+                f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}",
+                f"Avg. Annual Turnover: {avg_turnover:.2%}"
             ])
         
         return "\n".join(summary_lines)
 
     def calculate_total_transaction_cost(self) -> float:
-        """
-        Calculate the total transaction cost incurred during the backtest.
-        
-        Returns
-        -------
-        float
-            Total transaction cost.
-        """
+        """Calculate the total transaction cost incurred during the backtest."""
         trade_log_df = self.portfolio.get_trade_log_df()
         if trade_log_df.empty:
             return 0.0
         return trade_log_df['cost'].sum()
 
-    def show_daily_returns(self, top_days: int = 20, show_summary: bool = True) -> None:
+    def get_daily_turnover_df(self) -> pd.DataFrame:
         """
-        Display daily returns by symbol in a clean format.
+        Calculate daily portfolio turnover.
         
-        Parameters
-        ----------
-        top_days : int, default 20
-            Number of recent days to show per symbol
-        show_summary : bool, default True
-            Whether to show summary statistics per symbol
+        Turnover is defined as the total absolute dollar value of trades 
+        (buys + sells) divided by the total portfolio value (NAV).
+        
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with 'turnover' column, indexed by date.
         """
+        trade_log_df = self.portfolio.get_trade_log_df()
+        history_df = self.portfolio.get_history_df()
+        
+        if trade_log_df.empty or history_df.empty:
+            return pd.DataFrame()
+            
+        # Total absolute dollar value of trades (buys + sells) per day
+        # trade_value is positive for buy, negative for sell
+        daily_trade_value = trade_log_df['trade_value'].abs().groupby(level='date').sum()
+        
+        # Total portfolio value (NAV) at the end of the day (used as denominator)
+        daily_nav = history_df['total_value']
+        
+        # Combine and calculate turnover
+        combined = pd.DataFrame({
+            'daily_trade_value': daily_trade_value,
+            'daily_nav': daily_nav
+        }).dropna()
+        
+        if combined.empty:
+            return pd.DataFrame()
+            
+        combined['turnover'] = combined['daily_trade_value'] / combined['daily_nav']
+        return combined[['turnover']]
+
+    def show_daily_returns(self, top_days: int = 20, show_summary: bool = True) -> None:
+        """Display daily returns by symbol in a clean format."""
         if not self.detailed_history:
             print("No detailed data available. Run backtest first.")
             return
@@ -554,7 +577,7 @@ class Backtester:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df['pnl_pct'] = df['total_pnl'] / df['portfolio_total_value'] * 100
         
-        print(f"{self.strategy_factor.name} - Daily Returns by Symbol")
+        print(f"\n{self.strategy_factor.name} - Daily Returns by Symbol")
         print("=" * 60)
         
         for symbol in sorted(df['symbol'].unique()):
@@ -594,14 +617,7 @@ class Backtester:
                       f"最糟{worst_day_pct:+.2f}% | {trading_days}天")
 
     def get_symbol_daily_returns(self) -> pd.DataFrame:
-        """
-        Get daily returns data structured by symbol.
-        
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with columns: timestamp, symbol, pnl_pct, total_pnl, etc.
-        """
+        """Get daily returns data structured by symbol."""
         if not self.detailed_history:
             return pd.DataFrame()
         
@@ -612,26 +628,7 @@ class Backtester:
                   'position_qty', 'holding_value']].sort_values(['symbol', 'timestamp'])
 
     def get_detailed_data(self) -> pd.DataFrame:
-        """
-        Get comprehensive daily data per symbol with MultiIndex (timestamp, symbol).
-        
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with detailed daily records including:
-            - price: Current asset price
-            - current_factor: Current day factor value
-            - prev_factor: Previous day factor value  
-            - factor_change: Change in factor value
-            - position_qty: Current position quantity
-            - holding_value: Current holding value in USD
-            - holding_pnl: Daily holding P&L from price movements
-            - trade_pnl: Daily trade P&L from position adjustments
-            - total_pnl: Total daily P&L per symbol
-            - pnl_pct: Daily P&L as percentage of portfolio value
-            - portfolio_total_value: Total portfolio value
-            - portfolio_daily_pnl: Total portfolio daily P&L
-        """
+        """Get comprehensive daily data per symbol with MultiIndex (timestamp, symbol)."""
         if not self.detailed_history:
             return pd.DataFrame()
         
@@ -643,19 +640,7 @@ class Backtester:
         return df
 
     def export_detailed_data(self, filename: str = None) -> str:
-        """
-        Export comprehensive backtest data to CSV file.
-        
-        Parameters
-        ----------
-        filename : str, optional
-            Output filename. If not provided, auto-generates based on strategy name.
-            
-        Returns
-        -------
-        str
-            Path to the exported CSV file
-        """
+        """Export comprehensive backtest data to CSV file."""
         if not filename:
             strategy_name = self.strategy_factor.name.replace(' ', '_').replace('+', 'plus')
             filename = f"backtest_detailed_{strategy_name}.csv"
@@ -687,19 +672,7 @@ class Backtester:
         return filename
 
     def __add__(self, other: 'Backtester') -> 'Backtester':
-        """
-        Combine two backtest results with equal-weight capital allocation.
-        
-        Parameters
-        ----------
-        other : Backtester
-            Another backtester to combine with
-            
-        Returns
-        -------
-        Backtester
-            Combined backtester instance
-        """
+        """Combine two backtest results with equal-weight capital allocation."""
         if not isinstance(other, Backtester):
             raise TypeError("Can only combine Backtester objects")
         
@@ -788,7 +761,7 @@ def backtest(
     auto_run: bool = True
 ) -> Backtester:
     """
-    Convenience function for quick backtesting with unified Factor format.
+    Convenience function for quick backtesting with 3-column Factor format.
     
     Parameters
     ----------
