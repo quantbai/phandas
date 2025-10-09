@@ -1,15 +1,8 @@
 """
 Functional operator API for Factor operations.
 
-Provides standalone functions as an alternative to method chaining.
-All functions are wrappers around Factor methods for functional programming style.
-
-Categories:
-- Time-series operations (ts_*)
-- Cross-sectional operations (rank, normalize, etc.)
-- Mathematical operations (log, sqrt, power, etc.)
-- Neutralization operations (group, vector, regression)
-- Comparison and conditional operations
+Provides standalone functions as an alternative to Factor method chaining.
+All functions are simple wrappers around Factor methods.
 """
 
 from typing import Union, List, Optional

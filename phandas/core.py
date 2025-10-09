@@ -4,24 +4,17 @@ Core factor computation engine for quantitative analysis.
 Provides efficient factor matrix operations with pandas-like API.
 
 The Factor class supports:
-- Time-series operations (rolling windows, delays, correlations)
-- Cross-sectional operations (ranking, normalization, scaling)
+- Time-series, cross-sectional, and mathematical operations
 - Neutralization (group, vector, regression)
-- Mathematical operations (arithmetic, power, logarithms)
-- Method chaining for complex factor expressions
-
-Internal format: 3-column DataFrame [timestamp, symbol, factor]
-Optimized for time-series operations (ts_mean, ts_regression, etc.)
+- Method chaining
+- Boolean operations (including ~ NOT operator)
 """
 
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
-from typing import Union, Optional, Callable, List, TYPE_CHECKING
+from typing import Union, Optional, Callable, List
 from scipy.stats import rankdata, norm, uniform, cauchy
-
-if TYPE_CHECKING:
-    from .panel import Panel
 
 
 class Factor:
@@ -32,6 +25,7 @@ class Factor:
     Optimized for fast time-series operations.
     """
     
+    
     def __init__(self, data: Union[pd.DataFrame, str], name: Optional[str] = None):
         """
         Initialize factor matrix.
@@ -39,21 +33,19 @@ class Factor:
         Parameters
         ----------
         data : DataFrame or str
-            Factor data or CSV path with [timestamp, symbol, factor] columns
+            Factor data or CSV path with [timestamp, symbol, factor] columns.
         name : str, optional
-            Factor name for identification
+            Factor name for identification.
         """
         if isinstance(data, str):
             df = pd.read_csv(data, parse_dates=['timestamp'])
         else:
             df = data.copy()
         
-        # Convert to 3-column format if needed
+        # Standardize data format to 3 columns: [timestamp, symbol, factor]
         if isinstance(df.index, pd.MultiIndex):
-            # From MultiIndex to flat
             df = df.reset_index()
         
-        # Standardize column names
         if len(df.columns) == 3 and 'factor' not in df.columns:
             df.columns = ['timestamp', 'symbol', 'factor']
         elif 'factor' not in df.columns:
@@ -64,7 +56,6 @@ class Factor:
             df = df[['timestamp', 'symbol', factor_cols[0]]]
             df.columns = ['timestamp', 'symbol', 'factor']
         
-        # Ensure correct format and sort
         self.data = df[['timestamp', 'symbol', 'factor']].copy()
         self.data['timestamp'] = pd.to_datetime(self.data['timestamp'])
         self.data = self.data.sort_values(['symbol', 'timestamp']).reset_index(drop=True)
@@ -674,7 +665,35 @@ class Factor:
         return Factor(result, f"inverse({self.name})")
 
     def where(self, cond: 'Factor', other: Union['Factor', float] = np.nan) -> 'Factor':
-        """Replace values where the condition is False."""
+        """
+        Replace values where the condition is False.
+        
+        Parameters
+        ----------
+        cond : Factor
+            Boolean condition factor (will be converted to bool)
+        other : Factor or float, default np.nan
+            Value to use where condition is False
+            
+        Returns
+        -------
+        Factor
+            New factor with values replaced where condition is False
+            
+        Examples
+        --------
+        >>> # Keep only positive values, replace negative with 0
+        >>> factor.where(factor > 0, 0)
+        
+        >>> # Keep only top 50% ranked values
+        >>> factor.where(factor.rank() > 0.5, np.nan)
+        
+        Notes
+        -----
+        This follows pandas/numpy convention:
+        - where(True) -> keep original value
+        - where(False) -> replace with 'other'
+        """
         if not isinstance(cond, Factor):
             raise TypeError("cond must be a Factor object.")
 
@@ -699,6 +718,33 @@ class Factor:
     def __neg__(self) -> 'Factor':
         """Unary negation: -factor"""
         return self.multiply(-1)
+    
+    def __invert__(self) -> 'Factor':
+        """
+        Bitwise NOT operator: ~factor
+        Converts factor to boolean and inverts (NOT operation).
+        
+        Returns
+        -------
+        Factor
+            Factor with boolean NOT applied (True->False, False->True)
+            Non-zero values become 0, zero/NaN values become 1
+            
+        Examples
+        --------
+        >>> # Invert a boolean condition
+        >>> positive = factor > 0  # 1 where positive, 0 otherwise
+        >>> negative = ~positive   # 1 where negative or zero, 0 where positive
+        
+        >>> # Combine with other conditions
+        >>> result = factor.where(~(factor.rank() < 0.2), 0)  # Keep only top 80%
+        """
+        result = self.data.copy()
+        # Convert to boolean: non-zero and non-NaN -> True -> 1
+        bool_values = result['factor'].fillna(0).astype(bool)
+        # Invert: True -> False (0), False -> True (1)
+        result['factor'] = (~bool_values).astype(int)
+        return Factor(result, f"~{self.name}")
     
     def reverse(self) -> 'Factor':
         """Reverse sign of factor: -factor"""
@@ -884,7 +930,13 @@ class Factor:
     # ==================== Correlation and Regression ====================
     
     def ts_corr(self, other: 'Factor', window: int) -> 'Factor':
-        """Returns Pearson correlation of two factors for the past d days."""
+        """
+        Returns Pearson correlation of two factors for the past d days.
+        
+        Handles edge cases:
+        - Returns NaN when either series is constant (std=0)
+        - Returns NaN when window has insufficient non-NaN data
+        """
         if window <= 0:
             raise ValueError("Window must be positive")
         
@@ -898,18 +950,42 @@ class Factor:
         if merged.empty:
             raise ValueError("No common data between factors")
         
+        def safe_corr(group):
+            """Safely compute correlation, handling constant series."""
+            x = group['factor_x']
+            y = group['factor_y']
+            
+            # Need at least 2 valid pairs
+            valid_mask = x.notna() & y.notna()
+            if valid_mask.sum() < 2:
+                return pd.Series(np.nan, index=group.index)
+            
+            # Check if either series is constant
+            if x[valid_mask].std() == 0 or y[valid_mask].std() == 0:
+                return pd.Series(np.nan, index=group.index)
+            
+            # Compute rolling correlation
+            corr_result = group[['factor_x', 'factor_y']].rolling(
+                window, min_periods=window
+            ).corr().iloc[0::2, -1]
+            
+            return corr_result
+        
         result = merged.copy()
-        result['factor'] = (merged.groupby('symbol')[['factor_x', 'factor_y']]
-                           .rolling(window, min_periods=window)
-                           .corr()
-                           .iloc[0::2, -1]  # Extract correlation values
-                           .values)
+        result['factor'] = merged.groupby('symbol', group_keys=False).apply(
+            safe_corr, include_groups=False
+        ).values
         
         result = result[['timestamp', 'symbol', 'factor']]
         return Factor(result, f"ts_corr({self.name},{other.name},{window})")
     
     def ts_covariance(self, other: 'Factor', window: int) -> 'Factor':
-        """Returns covariance of self and other for the past d days."""
+        """
+        Returns covariance of self and other for the past d days.
+        
+        Handles edge cases:
+        - Returns NaN when window has insufficient non-NaN data
+        """
         if window <= 0:
             raise ValueError("Window must be positive")
         
@@ -923,25 +999,73 @@ class Factor:
         if merged.empty:
             raise ValueError("No common data between factors")
         
+        def safe_cov(group):
+            """Safely compute covariance."""
+            x = group['factor_x']
+            y = group['factor_y']
+            
+            # Need at least 2 valid pairs
+            valid_mask = x.notna() & y.notna()
+            if valid_mask.sum() < 2:
+                return pd.Series(np.nan, index=group.index)
+            
+            # Compute rolling covariance
+            cov_result = group[['factor_x', 'factor_y']].rolling(
+                window, min_periods=window
+            ).cov().iloc[0::2, -1]
+            
+            return cov_result
+        
         result = merged.copy()
-        result['factor'] = (merged.groupby('symbol')[['factor_x', 'factor_y']]
-                           .rolling(window, min_periods=window)
-                           .cov()
-                           .iloc[0::2, -1]  # Extract covariance values
-                           .values)
+        result['factor'] = merged.groupby('symbol', group_keys=False).apply(
+            safe_cov, include_groups=False
+        ).values
 
         result = result[['timestamp', 'symbol', 'factor']]
         return Factor(result, f"ts_covariance({self.name},{other.name},{window})")
 
     def ts_regression(self, x_factor: 'Factor', window: int, lag: int = 0, rettype: int = 0) -> 'Factor':
-        """Performs rolling OLS linear regression - OPTIMIZED for 3-column format."""
+        """
+        Rolling time-series linear regression: Y = alpha + beta * X
+        
+        Parameters
+        ----------
+        x_factor : Factor
+            Independent variable (X)
+        window : int
+            Rolling window size
+        lag : int, default 0
+            Lag to apply to X factor
+        rettype : int, default 0
+            Return type:
+            0: Error Term (residual at current point)
+            1: Alpha (y-intercept)
+            2: Beta (slope)
+            3: Y-estimate (predicted value at current point)
+            4: SSE (Sum of Squares Error)
+            5: SST (Sum of Squares Total)
+            6: R-Square
+            7: MSE (Mean Square Error)
+            8: Std Error of Beta
+            9: Std Error of Alpha
+            
+        Returns
+        -------
+        Factor
+            Selected regression statistic
+            
+        Notes
+        -----
+        - Returns NaN when X is constant (no variation)
+        - Returns NaN for insufficient data or multicollinearity
+        """
         if window <= 0:
             raise ValueError("Window must be positive")
-        if not isinstance(x_factor, Factor):
-            raise TypeError("x_factor must be a Factor object.")
+        if lag < 0:
+            raise ValueError("Lag must be non-negative")
         if not 0 <= rettype <= 9:
-            raise ValueError("rettype must be between 0 and 9.")
-
+            raise ValueError("rettype must be between 0 and 9")
+        
         # Prepare data
         y_data = self.data.rename(columns={'factor': 'y'})
         x_data = x_factor.data.rename(columns={'factor': 'x'})
@@ -958,7 +1082,6 @@ class Factor:
         merged = merged.sort_values(['symbol', 'timestamp'])
 
         def rolling_regression(group):
-            """Apply regression to each symbol's time series."""
             results = []
             
             for i in range(len(group)):
@@ -977,7 +1100,12 @@ class Factor:
                 X = clean_data['x'].values
                 
                 try:
-                    # Add constant for intercept
+                    # Check if X is constant
+                    if X.std() == 0:
+                        results.append(np.nan)
+                        continue
+                    
+                    # Add constant
                     X_with_const = np.column_stack([np.ones(len(X)), X])
                     
                     # Check for multicollinearity
@@ -985,7 +1113,7 @@ class Factor:
                         results.append(np.nan)
                         continue
                     
-                    # OLS: beta = (X'X)^-1 X'y
+                    # OLS calculation
                     XtX = X_with_const.T @ X_with_const
                     Xty = X_with_const.T @ Y
                     params = np.linalg.solve(XtX, Xty)
@@ -993,11 +1121,11 @@ class Factor:
                     alpha = params[0]
                     beta = params[1]
                     
-                    # Predictions and residuals
+                    # Predictions & residuals
                     y_pred = X_with_const @ params
                     residuals = Y - y_pred
                     
-                    # Last value
+                    # Last window value
                     y_estimate = y_pred[-1]
                     error_term = residuals[-1]
                     
@@ -1075,14 +1203,6 @@ class Factor:
         self.data.to_csv(path, index=False)
         return path
     
-    def to_multiindex(self) -> pd.Series:
-        """Convert to MultiIndex Series for compatibility."""
-        return self.data.set_index(['timestamp', 'symbol'])['factor']
-    
-    def to_flat(self) -> pd.DataFrame:
-        """Return flat DataFrame (already in this format)."""
-        return self.data.copy()
-    
     def info(self) -> dict:
         """Get factor information."""
         return {
@@ -1105,33 +1225,3 @@ class Factor:
         """User-friendly string representation."""
         n_symbols = self.data['symbol'].nunique()
         return f"Factor({self.name}): {len(self.data)} obs, {n_symbols} symbols"
-
-
-# ==================== Factory Functions ====================
-
-def load_factor(data: Union[str, pd.DataFrame, 'Panel'], column: str, name: Optional[str] = None) -> Factor:
-    """
-    Load factor from data source.
-    
-    Deprecated: Use panel['column'] or panel.get_factor() instead.
-    """
-    from .panel import Panel
-    
-    if isinstance(data, Panel):
-        return data.get_factor(column, name)
-    elif isinstance(data, str):
-        df = pd.read_csv(data, parse_dates=['timestamp'])
-    else:
-        df = data.copy()
-        if isinstance(df.index, pd.MultiIndex):
-            df = df.reset_index()
-        if 'timestamp' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-    
-    if column not in df.columns:
-        raise ValueError(f"Column '{column}' not found")
-    
-    factor_data = df[['timestamp', 'symbol', column]].copy()
-    factor_data.columns = ['timestamp', 'symbol', 'factor']
-    
-    return Factor(factor_data, name or column)

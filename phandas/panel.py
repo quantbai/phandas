@@ -1,12 +1,9 @@
 """
-Multi-column market data container with unified MultiIndex structure.
-
-Panel serves as a general-purpose data container for OHLCV and custom factors.
-Efficient extraction to Factor objects and data manipulation operations.
+Multi-column market data container (OHLCV, Factors)
+with unified MultiIndex structure.
 """
 
 import pandas as pd
-import numpy as np
 from typing import Union, Optional, List
 from .core import Factor
 
@@ -16,7 +13,7 @@ class Panel:
     Multi-column market data container.
     
     Internal format: MultiIndex DataFrame with (timestamp, symbol) index.
-    Supports OHLCV data and custom factor columns.
+    Supports data extraction to Factor objects.
     """
     
     def __init__(self, data: pd.DataFrame):
@@ -48,10 +45,6 @@ class Panel:
         path : str
             CSV file path
             
-        Returns
-        -------
-        Panel
-            Panel object loaded from CSV
         """
         df = pd.read_csv(path, parse_dates=['timestamp'])
         if 'timestamp' in df.columns and 'symbol' in df.columns:
@@ -69,10 +62,6 @@ class Panel:
         name : str, optional
             Factor name (defaults to column name)
             
-        Returns
-        -------
-        Factor
-            Factor object with specified column data
         """
         if column not in self.data.columns:
             raise ValueError(f"Column '{column}' not found")
@@ -92,14 +81,9 @@ class Panel:
         name : str
             Column name for the factor
             
-        Returns
-        -------
-        Panel
-            New Panel with added column
         """
         result = self.data.copy()
         
-        # Align factor data with panel index
         factor_series = factor.data['factor']
         result[name] = factor_series
         
@@ -116,10 +100,6 @@ class Panel:
         name : str
             Column name
             
-        Returns
-        -------
-        Panel
-            New Panel with added column
         """
         result = self.data.copy()
         result[name] = data
@@ -151,10 +131,6 @@ class Panel:
         end : str, optional
             End date (inclusive)
             
-        Returns
-        -------
-        Panel
-            Sliced panel
         """
         idx = self.data.index.get_level_values('timestamp')
         
@@ -182,10 +158,6 @@ class Panel:
         symbols : str or list of str
             Symbol(s) to extract
             
-        Returns
-        -------
-        Panel
-            Sliced panel
         """
         if isinstance(symbols, str):
             symbols = [symbols]
@@ -202,33 +174,14 @@ class Panel:
         path : str
             Output file path
             
-        Returns
-        -------
-        str
-            Path to saved file
         """
         self.data.reset_index().to_csv(path, index=False)
         return path
-    
-    def to_flat(self) -> pd.DataFrame:
-        """
-        Convert to flat DataFrame with timestamp, symbol columns.
-        
-        Returns
-        -------
-        DataFrame
-            Flat format with timestamp, symbol as columns
-        """
-        return self.data.reset_index()
     
     def info(self) -> dict:
         """
         Get panel information.
         
-        Returns
-        -------
-        dict
-            Panel metadata
         """
         timestamps = self.data.index.get_level_values('timestamp')
         symbols = self.data.index.get_level_values('symbol')
@@ -238,8 +191,7 @@ class Panel:
             'columns': list(self.data.columns),
             'time_range': (timestamps.min(), timestamps.max()),
             'symbols': sorted(symbols.unique()),
-            'n_symbols': len(symbols.unique()),
-            'n_periods': len(timestamps.unique())
+            'valid_ratio': self.data.notna().values.mean(),
         }
     
     def __repr__(self):
@@ -248,12 +200,13 @@ class Panel:
         n_symbols = len(symbols.unique())
         n_periods = len(timestamps.unique())
         n_cols = len(self.data.columns)
+        valid_ratio = self.data.notna().values.mean()
         
         time_range = f"{timestamps.min().strftime('%Y-%m-%d')} to {timestamps.max().strftime('%Y-%m-%d')}"
         
         return (f"Panel(obs={self.data.shape[0]}, cols={n_cols}, "
                 f"symbols={n_symbols}, periods={n_periods}, "
-                f"range={time_range})")
+                f"valid={valid_ratio:.1%}, range={time_range})")
     
     def __str__(self):
         n_symbols = len(self.data.index.get_level_values('symbol').unique())

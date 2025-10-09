@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='phandas',
-    version='0.4.3',
+    version='0.5.0',
     author='Phantom Management',
     author_email='quantbai@gmail.com',
     description='Hedge fund-grade multi-factor quantitative trading framework for cryptocurrency markets.',

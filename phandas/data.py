@@ -1,13 +1,7 @@
 """
-Data acquisition and management for cryptocurrency markets.
+Data acquisition and management for cryptocurrency markets via CCXT.
 
-Provides efficient OHLCV data fetching from exchanges using CCXT.
-Features:
-- Multi-symbol batch downloading
-- Automatic pagination for historical data
-- Special handling for renamed tokens (e.g., MATIC->POL)
-- Data alignment and gap filling
-- Quality validation and reporting
+Features data fetching, handling of renamed tokens, alignment, and quality validation.
 """
 
 import pandas as pd
@@ -46,10 +40,6 @@ def fetch_data(
     output_path : str, optional
         CSV file path to save data
         
-    Returns
-    -------
-    Panel
-        Panel object with OHLCV data
     """
     try:
         exchange_obj = getattr(ccxt, exchange)()
@@ -210,10 +200,6 @@ def check_data_quality(data: pd.DataFrame, verbose: bool = True) -> dict:
     verbose : bool, default True
         Print summary to console
         
-    Returns
-    -------
-    dict
-        Quality report
     """
     if isinstance(data, str):
         data = pd.read_csv(data, index_col=[0, 1], parse_dates=[0])
