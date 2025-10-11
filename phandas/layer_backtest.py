@@ -103,11 +103,9 @@ class LayerBacktester(Backtester):
         sorted_factors = factors.sort_values(ascending=False)
         n_assets = len(sorted_factors)
         
-        # Use fixed counts or default to 20% of assets
         n_long = self.long_top_n if self.long_top_n is not None else max(1, int(n_assets * 0.2))
         n_short = self.short_bottom_n if self.short_bottom_n is not None else max(1, int(n_assets * 0.2))
         
-        # Cap at available assets
         n_long = min(n_long, n_assets)
         n_short = min(n_short, n_assets)
         
@@ -178,28 +176,6 @@ def backtest_layer(
     LayerBacktester
         Backtester instance
         
-    Examples
-    --------
-    >>> from phandas import Panel, backtest_layer
-    >>> panel = Panel.from_csv('data.csv')
-    >>> 
-    >>> # Example 1: Symmetric (long 2, short 2)
-    >>> bt = backtest_layer(
-    ...     price_factor=panel['open'],
-    ...     strategy_factor=my_factor,
-    ...     long_top_n=2,
-    ...     short_bottom_n=2
-    ... )
-    >>> 
-    >>> # Example 2: Asymmetric (long 2, short 4)
-    >>> bt = backtest_layer(
-    ...     price_factor=panel['open'],
-    ...     strategy_factor=my_factor,
-    ...     long_top_n=2,
-    ...     short_bottom_n=4
-    ... )
-    >>> bt.plot_equity()
-    
     Notes
     -----
     Capital allocation (market-neutral):

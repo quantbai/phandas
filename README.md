@@ -16,11 +16,11 @@
 
 ## English
 
-Hedge fund-grade multi-factor quantitative trading framework for cryptocurrency markets.
+A multi-factor quantitative trading framework for cryptocurrency markets.
 
 ### Overview
 
-Phandas is a professional toolkit for multi-factor quantitative trading, designed for systematic portfolio construction and risk management. Built with a pandas-like API, it provides efficient implementations of cross-sectional and time-series operations essential for factor investing and statistical arbitrage strategies.
+Phandas is a quantitative analysis framework providing high-performance data structures and tools for systematic portfolio construction, factor investing, and statistical arbitrage strategies.
 
 ### Key Features
 
@@ -83,11 +83,11 @@ Developed by Phantom Management.
 
 ## 繁體中文
 
-對沖基金級多因子量化交易框架，專為加密貨幣市場打造。
+一個專為加密貨幣市場設計的多因子量化交易框架。
 
 ### 概述
 
-Phandas 是專業的多因子量化交易工具，專為系統化投資組合構建與風險管理設計。採用類 pandas 的 API，提供因子投資與統計套利策略所需的橫截面與時間序列運算高效實現。
+Phandas 是一個量化分析框架，為系統化投資組合構建、因子投資與統計套利策略提供高效能的資料結構與工具。
 
 ### 核心功能
 

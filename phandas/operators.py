@@ -5,7 +5,7 @@ Provides standalone functions as an alternative to Factor method chaining.
 All functions are simple wrappers around Factor methods.
 """
 
-from typing import Union, List, Optional
+from typing import Union, Optional
 from .core import Factor 
 
 # ==================== Neutralization Operations ====================

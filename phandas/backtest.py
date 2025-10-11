@@ -186,7 +186,6 @@ class Backtester:
         Backtester
             Self for method chaining
         """
-        # Get unique dates from both factors (3-column format)
         price_dates = set(self.price_factor.data['timestamp'].unique())
         strategy_dates = set(self.strategy_factor.data['timestamp'].unique())
         common_dates = sorted(price_dates & strategy_dates)
@@ -211,31 +210,25 @@ class Backtester:
             prev_date = common_dates[i - 1] if i > 0 else None
             
             try:
-                # Get current prices (3-column format)
                 current_prices = self._get_factor_data(self.price_factor, current_date)
                 if current_prices.empty:
                     continue
                 
-                # Get strategy factors
                 current_strategy_factors = self._get_factor_data(self.strategy_factor, current_date)
                 prev_strategy_factors = self._get_factor_data(self.strategy_factor, prev_date) if prev_date else pd.Series(dtype=float)
                 
                 old_holdings = self.portfolio.holdings.copy()
                 old_total_value = self.portfolio.total_value
                 
-                # Update portfolio value
                 self.portfolio.update_market_value(current_date, current_prices)
                 
                 if not prev_date:
                     continue
                 
-                # Get previous day's strategy factors for signal
                 strategy_factors = self._get_factor_data(self.strategy_factor, prev_date)
                 
-                # Calculate target holdings (dollar-neutral)
                 target_holdings = self._calculate_target_holdings(strategy_factors)
                 
-                # Generate and execute orders
                 orders = self._generate_orders(target_holdings, current_prices)
                 
                 trade_pnl_by_symbol = {}
@@ -252,7 +245,6 @@ class Backtester:
                                                    else self.transaction_cost_rates[1])
                         trade_pnl_by_symbol[symbol] = -abs(cost)
                 
-                # Record detailed history
                 all_symbols = set(current_prices.index) | set(current_strategy_factors.index) | \
                              set(prev_strategy_factors.index) | set(self.portfolio.holdings.index) | \
                              set(target_holdings.index)
@@ -351,13 +343,11 @@ class Backtester:
             return pd.Series(dtype=float)
         
         try:
-            # Fast query on 3-column DataFrame
             date_data = factor.data[factor.data['timestamp'] == date]
             
             if date_data.empty:
                 return pd.Series(dtype=float)
             
-            # Convert to Series with symbol as index
             result = date_data.set_index('symbol')['factor'].dropna()
             return result
             
@@ -489,7 +479,6 @@ class Backtester:
         ax_to.tick_params(axis='both', which='major', labelsize=9.0, colors='#6b7280', 
                           width=0.5, length=3)
         
-        # Hide x-axis labels for upper plots
         plt.setp(ax.get_xticklabels(), visible=False)
         plt.setp(ax_dd.get_xticklabels(), visible=False)
         
@@ -548,14 +537,11 @@ class Backtester:
         if trade_log_df.empty or history_df.empty:
             return pd.DataFrame()
             
-        # Total absolute dollar value of trades (buys + sells) per day
         # trade_value is positive for buy, negative for sell
         daily_trade_value = trade_log_df['trade_value'].abs().groupby(level='date').sum()
         
-        # Total portfolio value (NAV) at the end of the day (used as denominator)
         daily_nav = history_df['total_value']
         
-        # Combine and calculate turnover
         combined = pd.DataFrame({
             'daily_trade_value': daily_trade_value,
             'daily_nav': daily_nav

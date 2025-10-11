@@ -54,12 +54,10 @@ def daily_ic(
     - |IC| > 0.03: Acceptable
     - |IC| < 0.02: Weak
     """
-    # Align factor and returns data
     factor_data = factor.data
     returns = price.returns(periods)
     returns_data = returns.data
     
-    # Merge on timestamp and symbol
     merged = pd.merge(
         factor_data,
         returns_data,
@@ -73,19 +71,16 @@ def daily_ic(
     if merged.empty:
         raise ValueError("No overlapping data between factor and returns")
     
-    # Calculate IC for each timestamp
     ic_list = []
     
     for ts, ts_data in merged.groupby('timestamp'):
         
-        # Remove NaN values
         valid_data = ts_data[['factor', 'return']].dropna()
         
-        if len(valid_data) < 3:  # Need at least 3 points for correlation
+        if len(valid_data) < 3:
             ic_list.append({'timestamp': ts, 'ic': np.nan})
             continue
         
-        # Calculate correlation
         corr: float
         if method == 'spearman':
             result = stats.spearmanr(valid_data['factor'], valid_data['return'])
@@ -147,7 +142,6 @@ def ic_summary(
     std_ic = ic_clean.std()
     icir = mean_ic / std_ic if std_ic > 0 else np.nan
     
-    # Newey-West adjusted ICIR
     if newey_west and len(ic_clean) > 10:
         if lag is None:
             lag = min(int(4 * (len(ic_clean) / 100) ** (2/9)), len(ic_clean) // 4)
@@ -157,10 +151,8 @@ def ic_summary(
     else:
         icir_nw = icir
     
-    # Hit rate: percentage of IC > 0
     hit_rate = (ic_clean > 0).mean()
     
-    # Additional statistics
     ic_pos_mean = ic_clean[ic_clean > 0].mean() if (ic_clean > 0).any() else 0
     ic_neg_mean = ic_clean[ic_clean < 0].mean() if (ic_clean < 0).any() else 0
     
@@ -213,13 +205,11 @@ def rolling_ic(
     -----
     Useful for detecting IC regime changes and factor decay.
     """
-    # Get daily IC first
     ic = daily_ic(factor, price, periods, method)
     
     if min_periods is None:
         min_periods = max(window // 2, 20)
     
-    # Calculate rolling statistics
     rolling_mean = ic.rolling(window, min_periods=min_periods).mean()
     
     return rolling_mean
@@ -318,12 +308,11 @@ def _newey_west_std(data: np.ndarray, lag: int) -> float:
     n = len(data)
     mean = np.mean(data)
     
-    # Variance
     var = np.sum((data - mean) ** 2) / n
     
-    # Autocovariance adjustments
     for k in range(1, lag + 1):
-        weight = 1 - k / (lag + 1)  # Bartlett kernel
+        # Bartlett kernel
+        weight = 1 - k / (lag + 1)
         autocov = np.sum((data[k:] - mean) * (data[:-k] - mean)) / n
         var += 2 * weight * autocov
     
@@ -400,11 +389,9 @@ def _plot_ic_analysis(ic: pd.Series, summary: dict, roll_ic: pd.Series,
     fig = plt.figure(figsize=(16, 10))
     gs = fig.add_gridspec(2, 3, height_ratios=[2, 1])
     
-    # Calculate MA lines
     ma20 = ic_clean.rolling(20, min_periods=10).mean()
     ma63 = ic_clean.rolling(63, min_periods=30).mean()
     
-    # Main IC time series (top, span all columns)
     ax1 = fig.add_subplot(gs[0, :])
     ax1.plot(ic_clean.index, ic_clean.values, linewidth=0.8, alpha=0.4, 
              color='#94a3b8', label='Daily IC')
@@ -423,7 +410,6 @@ def _plot_ic_analysis(ic: pd.Series, summary: dict, roll_ic: pd.Series,
     ax1.legend(loc='upper right', fontsize=9, framealpha=0.95)
     ax1.grid(True, alpha=0.2)
     
-    # Stats box
     stats_text = (
         f"Mean IC: {summary['mean_ic']:.4f}\n"
         f"ICIR (NW): {summary['icir_nw']:.3f}\n"
@@ -435,7 +421,6 @@ def _plot_ic_analysis(ic: pd.Series, summary: dict, roll_ic: pd.Series,
             bbox=dict(boxstyle='round,pad=0.6', facecolor='white', 
                      edgecolor='#d1d5db', alpha=0.95, linewidth=1))
     
-    # IC distribution with KDE (density scale)
     ax2 = fig.add_subplot(gs[1, 0])
     values = ic_clean.values
     ax2.hist(values, bins=30, density=True, color='#c7d2fe', alpha=0.9,
@@ -454,7 +439,6 @@ def _plot_ic_analysis(ic: pd.Series, summary: dict, roll_ic: pd.Series,
     ax2.set_ylabel('Density', fontsize=9)
     ax2.grid(True, alpha=0.2, axis='y')
     
-    # Rolling IC
     ax3 = fig.add_subplot(gs[1, 1])
     ax3.plot(roll_ic.index, roll_ic.values, linewidth=1.5, color='#8b5cf6')
     ax3.axhline(y=0, color='#6b7280', linestyle='--', linewidth=0.8, alpha=0.5)
@@ -464,13 +448,11 @@ def _plot_ic_analysis(ic: pd.Series, summary: dict, roll_ic: pd.Series,
     ax3.grid(True, alpha=0.2)
     ax3.tick_params(axis='x', rotation=15)
     
-    # IC decay
     ax4 = fig.add_subplot(gs[1, 2])
     ax4.plot(decay_df.index, decay_df['mean_ic'], marker='o', linewidth=2, 
             markersize=6, color='#2563eb')
     ax4.axhline(y=0, color='#6b7280', linestyle='--', linewidth=0.8, alpha=0.5)
     
-    # Annotate best lag (左上角)
     best_lag = decay_df['icir_nw'].idxmax()
     ax4.text(0.05, 0.95, f'Best: {best_lag}D', transform=ax4.transAxes,
             fontsize=9, verticalalignment='top', horizontalalignment='left',
