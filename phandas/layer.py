@@ -8,11 +8,10 @@ then tracks equal-weighted portfolio returns for each layer.
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Literal, Optional
+from typing import Literal
 
 from .core import Factor
 
-# Configure matplotlib fonts (consistent with backtest)
 plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -179,12 +178,11 @@ def analyze_layers(
     Visualization y-axis:
     - auto: switch to log-scale when spread is large (default)
     - linear: percentage cumulative return
-    - log: plot cumulative wealth in log-scale (more可視化 when top layer遠大於其他)
+    - log: plot cumulative wealth in log-scale
     """
     layer_rets = daily_layer_returns(factor, price, n_layers, periods)
     summary = layer_summary(layer_rets)
     
-    # Dollar-neutral (gross=1): 50% long top layer, 50% short bottom layer
     long_short = 0.5 * (layer_rets[f'layer_{n_layers}'] - layer_rets['layer_1'])
     long_short_cum = (1 + long_short).cumprod() - 1
     
@@ -214,11 +212,9 @@ def _plot_layer_analysis(layer_rets: pd.DataFrame, summary: pd.DataFrame,
     fig = plt.figure(figsize=(16, 10), constrained_layout=True)
     gs = fig.add_gridspec(2, 3, height_ratios=[2, 1])
     
-    # Main cumulative return curves
     ax1 = fig.add_subplot(gs[0, :])
     colors = plt.cm.viridis(np.linspace(0.1, 0.9, n_layers))
     
-    # Build cumulative wealth and returns
     cum_returns = {}
     cum_wealth = {}
     for i in range(1, n_layers + 1):
@@ -230,7 +226,6 @@ def _plot_layer_analysis(layer_rets: pd.DataFrame, summary: pd.DataFrame,
             cum_returns[i] = cr
             cum_wealth[i] = cw
     
-    # Decide y-scale
     use_log = False
     if y_scale == 'log':
         use_log = True
@@ -241,7 +236,6 @@ def _plot_layer_analysis(layer_rets: pd.DataFrame, summary: pd.DataFrame,
             if w_min > 0 and (w_max / max(w_min, 1e-8)) >= 20:
                 use_log = True
     
-    # Plot
     for i in range(1, n_layers + 1):
         if i not in cum_returns:
             continue
@@ -264,7 +258,6 @@ def _plot_layer_analysis(layer_rets: pd.DataFrame, summary: pd.DataFrame,
     ax1.legend(loc='best', fontsize=9, ncol=min(n_layers, 6), framealpha=0.95)
     ax1.grid(True, alpha=0.2)
     
-    # Stats box
     top_layer_ret = summary.loc[n_layers, 'cum_return']
     bottom_layer_ret = summary.loc[1, 'cum_return']
     monotonicity = "Yes" if (summary['cum_return'].diff().dropna() > 0).all() else "No"
@@ -281,7 +274,6 @@ def _plot_layer_analysis(layer_rets: pd.DataFrame, summary: pd.DataFrame,
             bbox=dict(boxstyle='round,pad=0.6', facecolor='white', 
                      edgecolor='#d1d5db', alpha=0.95, linewidth=1))
     
-    # Long-Short curve
     ax2 = fig.add_subplot(gs[1, 0])
     ax2.plot(long_short_cum.index, long_short_cum.values, linewidth=1.8, color='#8b5cf6')
     ax2.fill_between(long_short_cum.index, 0, long_short_cum.values,
@@ -294,7 +286,6 @@ def _plot_layer_analysis(layer_rets: pd.DataFrame, summary: pd.DataFrame,
     ax2.grid(True, alpha=0.2)
     ax2.tick_params(axis='x', rotation=15)
     
-    # Layer return distribution
     ax3 = fig.add_subplot(gs[1, 1])
     layers = summary.index.values
     cum_rets = summary['cum_return'].values
@@ -307,7 +298,6 @@ def _plot_layer_analysis(layer_rets: pd.DataFrame, summary: pd.DataFrame,
     ax3.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
     ax3.grid(True, alpha=0.2, axis='y')
     
-    # Sharpe ratio comparison
     ax4 = fig.add_subplot(gs[1, 2])
     sharpes = summary['sharpe'].values
     ax4.bar(layers, sharpes, color=colors_bar, alpha=0.8, edgecolor='white', linewidth=1)

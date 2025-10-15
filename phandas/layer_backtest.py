@@ -8,12 +8,11 @@ Implements quantile-based portfolio construction:
 """
 
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from typing import Union, Tuple
 import logging
 
-from .backtest import Portfolio, Backtester
+from .backtest import Backtester
 from .core import Factor
 
 logger = logging.getLogger(__name__)

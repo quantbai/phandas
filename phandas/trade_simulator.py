@@ -57,10 +57,8 @@ def simulate_trade_replay(
         # We need n_days of trading + 1 day lookback for the factor
         start_date_idx = len(all_dates) - n_days - 1 
 
-    # Prepare truncated factors for the short period simulation
     start_date = all_dates[start_date_idx]
     
-    # We slice the factor data to only include the relevant days + one day before for prev_factor logic
     price_data_truncated = price_factor.data[
         price_factor.data['timestamp'] >= start_date
     ].copy()
@@ -68,7 +66,6 @@ def simulate_trade_replay(
         strategy_factor.data['timestamp'] >= start_date
     ].copy()
     
-    # Create temporary Factor objects for the truncated data
     temp_price_factor = Factor(
         name=f"Price_{price_factor.name}", 
         data=price_data_truncated
@@ -78,11 +75,9 @@ def simulate_trade_replay(
         data=strategy_data_truncated
     )
     
-    # Run backtest
     bt = Backtester(temp_price_factor, temp_strategy_factor, transaction_cost, initial_capital)
     bt.run().calculate_metrics()
     
-    # Get results
     history_df = bt.portfolio.get_history_df()
     detailed_df = bt.get_detailed_data().reset_index()
     
@@ -123,7 +118,6 @@ def _print_replay(history_df, detailed_df, n_days, strategy_name, bt):
     for i in range(1, len(history_df)):
         date = history_df.index[i]
         
-        # 1. Daily Summary
         day_history = history_df.iloc[i]
         prev_day_history = history_df.iloc[i - 1]
         
@@ -143,7 +137,6 @@ def _print_replay(history_df, detailed_df, n_days, strategy_name, bt):
         )
         console.print(Align.center(summary_text))
         
-        # 2. Detailed Symbol PnL
         day_details = detailed_df[detailed_df['timestamp'] == date]
         
         total_holding_pnl = day_details['holding_pnl'].sum()
@@ -221,7 +214,7 @@ def _print_replay(history_df, detailed_df, n_days, strategy_name, bt):
             )
         
         console.print(table)
-        console.print() # Spacer
+        console.print()
 
     # Final Summary
     metrics = bt.metrics

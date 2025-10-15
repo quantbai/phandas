@@ -42,8 +42,8 @@ class Portfolio:
     def __init__(self, initial_capital: float = 100000):
         self.initial_capital = initial_capital
         self.cash = initial_capital
-        self.positions = pd.Series(dtype=float)  # symbol -> quantity
-        self.holdings = pd.Series(dtype=float)   # symbol -> market value
+        self.positions = pd.Series(dtype=float)
+        self.holdings = pd.Series(dtype=float)
         self.total_value = initial_capital
         
         self.history = []
@@ -140,7 +140,7 @@ class Backtester:
         self,
         price_factor: 'Factor',
         strategy_factor: 'Factor',
-        transaction_cost: Union[float, Tuple[float, float]] = 0.001,
+        transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
         initial_capital: float = 100000
     ):
         """
@@ -186,7 +186,6 @@ class Backtester:
         Backtester
             Self for method chaining
         """
-        # Get unique dates from both factors (3-column format)
         price_dates = set(self.price_factor.data['timestamp'].unique())
         strategy_dates = set(self.strategy_factor.data['timestamp'].unique())
         common_dates = sorted(price_dates & strategy_dates)
@@ -211,31 +210,25 @@ class Backtester:
             prev_date = common_dates[i - 1] if i > 0 else None
             
             try:
-                # Get current prices (3-column format)
                 current_prices = self._get_factor_data(self.price_factor, current_date)
                 if current_prices.empty:
                     continue
                 
-                # Get strategy factors
                 current_strategy_factors = self._get_factor_data(self.strategy_factor, current_date)
                 prev_strategy_factors = self._get_factor_data(self.strategy_factor, prev_date) if prev_date else pd.Series(dtype=float)
                 
                 old_holdings = self.portfolio.holdings.copy()
                 old_total_value = self.portfolio.total_value
                 
-                # Update portfolio value
                 self.portfolio.update_market_value(current_date, current_prices)
                 
                 if not prev_date:
                     continue
                 
-                # Get previous day's strategy factors for signal
                 strategy_factors = self._get_factor_data(self.strategy_factor, prev_date)
                 
-                # Calculate target holdings (dollar-neutral)
                 target_holdings = self._calculate_target_holdings(strategy_factors)
                 
-                # Generate and execute orders
                 orders = self._generate_orders(target_holdings, current_prices)
                 
                 trade_pnl_by_symbol = {}
@@ -252,7 +245,6 @@ class Backtester:
                                                    else self.transaction_cost_rates[1])
                         trade_pnl_by_symbol[symbol] = -abs(cost)
                 
-                # Record detailed history
                 all_symbols = set(current_prices.index) | set(current_strategy_factors.index) | \
                              set(prev_strategy_factors.index) | set(self.portfolio.holdings.index) | \
                              set(target_holdings.index)
@@ -351,13 +343,11 @@ class Backtester:
             return pd.Series(dtype=float)
         
         try:
-            # Fast query on 3-column DataFrame
             date_data = factor.data[factor.data['timestamp'] == date]
             
             if date_data.empty:
                 return pd.Series(dtype=float)
             
-            # Convert to Series with symbol as index
             result = date_data.set_index('symbol')['factor'].dropna()
             return result
             
@@ -508,7 +498,6 @@ class Backtester:
             start = equity_curve.index[0].strftime('%Y-%m-%d')
             end = equity_curve.index[-1].strftime('%Y-%m-%d')
             
-            # Calculate and append Average Turnover (annualized)
             turnover_df = self.get_daily_turnover_df()
             avg_turnover = turnover_df['turnover'].mean() * 365 if not turnover_df.empty else 0
             
@@ -548,14 +537,12 @@ class Backtester:
         if trade_log_df.empty or history_df.empty:
             return pd.DataFrame()
             
-        # Total absolute dollar value of trades (buys + sells) per day
         # trade_value is positive for buy, negative for sell
         daily_trade_value = trade_log_df['trade_value'].abs().groupby(level='date').sum()
         
         # Total portfolio value (NAV) at the end of the day (used as denominator)
         daily_nav = history_df['total_value']
         
-        # Combine and calculate turnover
         combined = pd.DataFrame({
             'daily_trade_value': daily_trade_value,
             'daily_nav': daily_nav
@@ -756,7 +743,7 @@ class Backtester:
 def backtest(
     price_factor: 'Factor',
     strategy_factor: 'Factor',
-    transaction_cost: Union[float, Tuple[float, float]] = 0.001,
+    transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
     initial_capital: float = 100000,
     auto_run: bool = True
 ) -> Backtester:

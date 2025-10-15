@@ -58,7 +58,6 @@ def fetch_data(
     
     for symbol in symbols:
         if symbol in symbol_map:
-            # Handle renamed tokens
             data = _fetch_renamed_symbol(exchange_obj, symbol_map[symbol], timeframe, since)
             if data is not None:
                 data['symbol'] = 'MATIC'  # Unified name
@@ -71,11 +70,9 @@ def fetch_data(
     if not all_data:
         raise ValueError("No data fetched")
     
-    # Combine and process
     combined = pd.concat(all_data, ignore_index=True)
     result = _process_data(combined, timeframe)
     
-    # Convert to Panel
     from .panel import Panel
     panel = Panel(result)
     
@@ -92,7 +89,6 @@ def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since) -> Option
     try:
         market_symbol = f'{symbol}/USDT'
         
-        # Load markets to check symbol availability
         exchange.load_markets()
         if market_symbol not in exchange.symbols:
             logger.warning(f"{market_symbol} not available on exchange")
@@ -101,7 +97,6 @@ def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since) -> Option
         all_ohlcv = []
         limit = 1000  # Fetch limit per request
         
-        # Use pagination to fetch all historical data
         while True:
             ohlcv = exchange.fetch_ohlcv(market_symbol, timeframe, since=since, limit=limit)
             if not ohlcv:
@@ -138,7 +133,6 @@ def _fetch_renamed_symbol(exchange, symbols: List[str], timeframe: str, since) -
     if not dfs:
         return None
     
-    # Merge chronologically
     combined = pd.concat(dfs, ignore_index=True)
     combined = combined.sort_values('timestamp').drop_duplicates(subset=['timestamp'], keep='last')
     return combined
@@ -146,11 +140,9 @@ def _fetch_renamed_symbol(exchange, symbols: List[str], timeframe: str, since) -
 
 def _process_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     """Process and align data."""
-    # Pivot to find common start date
     pivoted = df.pivot_table(index='timestamp', columns='symbol', values='close')
     common_start = pivoted.apply(lambda s: s.first_valid_index()).max()
     
-    # Create full date range
     end_date = df['timestamp'].max()
     
     freq_map = {
@@ -168,7 +160,6 @@ def _process_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     freq = freq_map.get(timeframe, 'D') # Default to daily if not found
     full_range = pd.date_range(start=common_start, end=end_date, freq=freq)
     
-    # Align and fill for each column
     ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
     aligned_data = {}
     
@@ -178,7 +169,6 @@ def _process_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         pivot = pivot.reindex(full_range).ffill().bfill()
         aligned_data[col] = pivot
     
-    # Convert back to MultiIndex format
     result_dfs = []
     for col, data in aligned_data.items():
         stacked = data.stack(future_stack=True).reset_index()

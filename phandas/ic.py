@@ -17,7 +17,6 @@ from scipy import stats
 
 from .core import Factor
 
-
 def daily_ic(
     factor: Factor,
     price: Factor,
@@ -26,6 +25,8 @@ def daily_ic(
 ) -> pd.Series:
     """
     Calculate daily Information Coefficient between factor and forward returns.
+    
+    Logic: factor[t] predicts return[t+periods]
     
     Parameters
     ----------
@@ -42,26 +43,16 @@ def daily_ic(
     -------
     pd.Series
         Daily IC time series indexed by timestamp
-        
-    Notes
-    -----
-    IC measures rank correlation between factor values at time t and 
-    forward returns from t to t+periods. Higher absolute IC indicates 
-    stronger predictive power.
-    
-    Typical interpretation:
-    - |IC| > 0.05: Strong signal
-    - |IC| > 0.03: Acceptable
-    - |IC| < 0.02: Weak
     """
-    # Align factor and returns data
-    factor_data = factor.data
+    factor_shifted = factor.data.copy()
+    factor_shifted['timestamp'] = factor_shifted.groupby('symbol')['timestamp'].shift(-periods)
+    factor_shifted = factor_shifted.dropna(subset=['timestamp'])
+    
     returns = price.returns(periods)
     returns_data = returns.data
     
-    # Merge on timestamp and symbol
     merged = pd.merge(
-        factor_data,
+        factor_shifted,
         returns_data,
         on=['timestamp', 'symbol'],
         suffixes=('_factor', '_return'),
@@ -78,14 +69,12 @@ def daily_ic(
     
     for ts, ts_data in merged.groupby('timestamp'):
         
-        # Remove NaN values
         valid_data = ts_data[['factor', 'return']].dropna()
         
-        if len(valid_data) < 3:  # Need at least 3 points for correlation
+        if len(valid_data) < 3:
             ic_list.append({'timestamp': ts, 'ic': np.nan})
             continue
         
-        # Calculate correlation
         corr: float
         if method == 'spearman':
             result = stats.spearmanr(valid_data['factor'], valid_data['return'])
@@ -147,7 +136,6 @@ def ic_summary(
     std_ic = ic_clean.std()
     icir = mean_ic / std_ic if std_ic > 0 else np.nan
     
-    # Newey-West adjusted ICIR
     if newey_west and len(ic_clean) > 10:
         if lag is None:
             lag = min(int(4 * (len(ic_clean) / 100) ** (2/9)), len(ic_clean) // 4)
@@ -157,10 +145,8 @@ def ic_summary(
     else:
         icir_nw = icir
     
-    # Hit rate: percentage of IC > 0
     hit_rate = (ic_clean > 0).mean()
     
-    # Additional statistics
     ic_pos_mean = ic_clean[ic_clean > 0].mean() if (ic_clean > 0).any() else 0
     ic_neg_mean = ic_clean[ic_clean < 0].mean() if (ic_clean < 0).any() else 0
     
@@ -213,13 +199,11 @@ def rolling_ic(
     -----
     Useful for detecting IC regime changes and factor decay.
     """
-    # Get daily IC first
     ic = daily_ic(factor, price, periods, method)
     
     if min_periods is None:
         min_periods = max(window // 2, 20)
     
-    # Calculate rolling statistics
     rolling_mean = ic.rolling(window, min_periods=min_periods).mean()
     
     return rolling_mean
@@ -470,7 +454,6 @@ def _plot_ic_analysis(ic: pd.Series, summary: dict, roll_ic: pd.Series,
             markersize=6, color='#2563eb')
     ax4.axhline(y=0, color='#6b7280', linestyle='--', linewidth=0.8, alpha=0.5)
     
-    # Annotate best lag (左上角)
     best_lag = decay_df['icir_nw'].idxmax()
     ax4.text(0.05, 0.95, f'Best: {best_lag}D', transform=ax4.transAxes,
             fontsize=9, verticalalignment='top', horizontalalignment='left',

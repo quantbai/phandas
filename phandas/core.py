@@ -13,7 +13,7 @@ The Factor class supports:
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
-from typing import Union, Optional, Callable, List
+from typing import Union, Optional, Callable, List, Dict
 from scipy.stats import rankdata, norm, uniform, cauchy
 
 
@@ -60,9 +60,7 @@ class Factor:
         self.data['timestamp'] = pd.to_datetime(self.data['timestamp'])
         self.data = self.data.sort_values(['symbol', 'timestamp']).reset_index(drop=True)
         self.name = name or 'factor'
-    
-    # ==================== Cross-Sectional Operations ====================
-    
+
     def rank(self) -> 'Factor':
         """Cross-sectional rank within each timestamp."""
         result = self.data.copy()
@@ -82,9 +80,7 @@ class Factor:
         
         result['factor'] = result.groupby('timestamp')['factor'].transform(safe_rank)
         return Factor(result, f"rank({self.name})")
-    
-    # ==================== Time-Series Operations ====================
-    
+
     def ts_rank(self, window: int) -> 'Factor':
         """Rolling time-series rank within window."""
         if window <= 0:
@@ -229,8 +225,6 @@ class Factor:
         
         return Factor(result.data, f"ts_zscore({self.name},{window})")
 
-    # ==================== Cross-Sectional Statistical Transforms ====================
-    
     def quantile(self, driver: str = "gaussian", sigma: float = 1.0) -> 'Factor':
         """Cross-sectional quantile transformation with specified driver and scale."""
         valid_drivers = {
@@ -303,8 +297,6 @@ class Factor:
         """Computes the cross-sectional Z-score of the factor."""
         return self.normalize(useStd=True)
 
-    # ==================== Neutralization Operations ====================
-    
     def group_neutralize(self, group_data: 'Factor') -> 'Factor':
         """Neutralizes the factor against specified groups (e.g., industry)."""
         if not isinstance(group_data, Factor):
@@ -325,32 +317,90 @@ class Factor:
         return Factor(result_data, name=f"group_neutralize({self.name},{group_data.name})")
 
     def vector_neut(self, other: 'Factor') -> 'Factor':
-        """Neutralizes the factor against another factor using vector projection."""
+        """
+        Performs cross-sectional vector neutralization (orthogonalization)
+        of the current factor against another factor.
+
+        This projects the current factor (`self`) onto the neutralization factor 
+        (`other`) within each timestamp and returns the residual (the component 
+        orthogonal to `other`). This is equivalent to removing the linear
+        component of `other` from `self`.
+
+        Formula: Residual = self - (self dot other / other dot other) * other
+
+        Parameters
+        ----------
+        other : Factor
+            The factor to neutralize against (the vector to project onto).
+
+        Returns
+        -------
+        Factor
+            A new Factor object representing the neutralized factor.
+        
+        Notes
+        -----
+        - Operates cross-sectionally (within each timestamp).
+        - Handles NaN values and ensures numerical stability by checking for 
+          constant neutralization vectors or near-zero norms.
+        """
         if not isinstance(other, Factor):
             raise TypeError("other must be a Factor object.")
 
         merged = pd.merge(self.data, other.data,
-                         on=['timestamp', 'symbol'],
-                         suffixes=('_target', '_neut'))
+                        on=['timestamp', 'symbol'],
+                        suffixes=('_target', '_neut'))
 
         if merged.empty:
             raise ValueError("No common data for vector neutralization.")
 
         def neutralize_single_date(group):
+            """
+            Perform vector neutralization for a single timestamp.
+            
+            Handles edge cases:
+            1. NaN values - only use valid pairs
+            2. Constant neutralization factor - return original
+            3. Near-zero norm - numerical stability
+            4. Insufficient observations - need at least 2 valid pairs
+            """
             x = group['factor_target'].values
             y = group['factor_neut'].values
             
-            if np.all(y == 0) or np.dot(y, y) == 0:
-                group['factor'] = x
-            else:
-                projection = (np.dot(x, y) / np.dot(y, y)) * y
-                group['factor'] = x - projection
+            valid_mask = ~(np.isnan(x) | np.isnan(y))
+            n_valid = valid_mask.sum()
             
-            return group['factor']
+            if n_valid < 2:
+                return pd.Series(x, index=group.index)
+            
+            x_valid = x[valid_mask]
+            y_valid = y[valid_mask]
+            
+            y_std = np.std(y_valid)
+            y_mean = np.abs(np.mean(y_valid))
+            
+            if y_std < max(1e-10, 1e-4 * y_mean):
+                return pd.Series(x, index=group.index)
+            
+            y_norm_sq = np.dot(y_valid, y_valid)
+            
+            if y_norm_sq < 1e-10:
+                return pd.Series(x, index=group.index)
+            
+            xy_dot = np.dot(x_valid, y_valid)
+            projection_coef = xy_dot / y_norm_sq
+            
+            result = x.copy()
+            
+            result[valid_mask] = x_valid - projection_coef * y_valid
+            
+            return pd.Series(result, index=group.index)
 
-        merged['factor'] = merged.groupby('timestamp', group_keys=False).apply(neutralize_single_date, include_groups=False)
-        result_data = merged[['timestamp', 'symbol', 'factor']]
+        merged['factor'] = merged.groupby('timestamp', group_keys=False).apply(
+            neutralize_single_date, include_groups=False
+        )
         
+        result_data = merged[['timestamp', 'symbol', 'factor']]
         return Factor(result_data, name=f"vector_neut({self.name},{other.name})")
 
     def regression_neut(self, neut_factors: Union['Factor', List['Factor']]) -> 'Factor':
@@ -423,8 +473,6 @@ class Factor:
         result['factor'] = result.groupby('timestamp')['factor'].transform(apply_normalize)
         return Factor(result, f"normalize({self.name},useStd={useStd},limit={limit})")
 
-    # ==================== Time-Series Advanced Operations ====================
-    
     def ts_backfill(self, window: int, k: int = 1) -> 'Factor':
         """Backfills NaN values with the k-th most recent non-NaN value."""
         if window <= 0:
@@ -499,8 +547,6 @@ class Factor:
         result = self._apply_rolling(linear_decay_func, window)
         return Factor(result, f"ts_decay_linear({self.name},{window},dense={dense})")
     
-    # ==================== Time-Series Basic Transformations ====================
-    
     def ts_delay(self, window: int) -> 'Factor':
         """Returns x value d days ago."""
         result = self.data.copy()
@@ -518,8 +564,6 @@ class Factor:
         result = self.data.copy()
         result['factor'] = result.groupby('symbol')['factor'].pct_change(periods)
         return Factor(result, f"returns({self.name},{periods})")
-    
-    # ==================== Mathematical Operations ====================
     
     def add(self, other: Union['Factor', float], filter_nan: bool = False) -> 'Factor':
         """Addition with factor or scalar, with optional NaN filtering."""
@@ -587,28 +631,56 @@ class Factor:
                 result['factor'] *= other
             return Factor(result, f"({self.name}*{other})")
     
-    # ==================== Non-Linear Mathematical Operations ====================
-    
     def log(self, base: Optional[float] = None) -> 'Factor':
-        """Logarithm of factor with optional base."""
+        """
+        Logarithm of factor with optional base.
+        
+        Safely handles non-positive values by returning NaN.
+        Only computes log for positive values.
+        """
         result = self.data.copy()
+        
         if base is None:
-            result['factor'] = np.log(result['factor'])
+            # 自然對數：只對正數計算
+            result['factor'] = np.where(
+                result['factor'] > 0,
+                np.log(result['factor']),
+                np.nan
+            )
             return Factor(result, f"log({self.name})")
         else:
-            result['factor'] = np.log(result['factor']) / np.log(base)
+            # 指定底數：檢查底數有效性
+            if base <= 0 or base == 1:
+                raise ValueError(f"Invalid log base: {base}. Base must be positive and not equal to 1.")
+            
+            result['factor'] = np.where(
+                result['factor'] > 0,
+                np.log(result['factor']) / np.log(base),
+                np.nan
+            )
             return Factor(result, f"log({self.name},base={base})")
     
     def ln(self) -> 'Factor':
-        """Natural logarithm of factor."""
-        result = self.data.copy()
-        result['factor'] = np.log(result['factor'])
-        return Factor(result, f"ln({self.name})")
+        """
+        Natural logarithm of factor.
+        
+        Safely handles non-positive values by returning NaN.
+        Equivalent to log() without base parameter.
+        """
+        return self.log()  # 重用 log 方法，保持一致性
     
     def sqrt(self) -> 'Factor':
-        """Square root of factor values."""
+        """
+        Square root of factor values.
+        
+        Safely handles negative values by returning NaN.
+        """
         result = self.data.copy()
-        result['factor'] = np.sqrt(result['factor'])
+        result['factor'] = np.where(
+            result['factor'] >= 0,
+            np.sqrt(result['factor']),
+            np.nan
+        )
         return Factor(result, f"sqrt({self.name})")
     
     def s_log_1p(self) -> 'Factor':
@@ -624,32 +696,76 @@ class Factor:
         return Factor(result, f"sign({self.name})")
     
     def signed_power(self, exponent: Union['Factor', float]) -> 'Factor':
-        """x raised to the power of y preserving sign of x."""
+        """
+        x raised to the power of y preserving sign of x.
+        
+        Computes: sign(x) * |x|^y
+        
+        Safely handles edge cases and preserves the sign of the base.
+        """
         if isinstance(exponent, Factor):
             merged = pd.merge(self.data, exponent.data,
                              on=['timestamp', 'symbol'],
                              suffixes=('_x', '_y'))
             
-            merged['factor'] = np.sign(merged['factor_x']) * (np.abs(merged['factor_x']) ** merged['factor_y'])
+            # 分離符号和絕對值
+            sign = np.sign(merged['factor_x'])
+            abs_val = np.abs(merged['factor_x'])
+            
+            # 計算 |x|^y，然後恢復符號
+            with np.errstate(invalid='ignore', divide='ignore'):
+                result_val = sign * (abs_val ** merged['factor_y'])
+            
+            # 清理 inf
+            merged['factor'] = result_val.replace([np.inf, -np.inf], np.nan)
+            
             result = merged[['timestamp', 'symbol', 'factor']]
             return Factor(result, f"signed_power({self.name},{exponent.name})")
         else:
             result = self.data.copy()
-            result['factor'] = np.sign(result['factor']) * (np.abs(result['factor']) ** exponent)
+            
+            # 分離符號和絕對值
+            sign = np.sign(result['factor'])
+            abs_val = np.abs(result['factor'])
+            
+            # 計算 |x|^y，然後恢復符號
+            with np.errstate(invalid='ignore', divide='ignore'):
+                result_val = sign * (abs_val ** exponent)
+            
+            # 清理 inf
+            result['factor'] = result_val.replace([np.inf, -np.inf], np.nan)
+            
             return Factor(result, f"signed_power({self.name},{exponent})")
     
     def power(self, exponent: Union['Factor', float]) -> 'Factor':
-        """Factor to the power of exponent."""
+        """
+        Factor to the power of exponent: factor ** exponent.
+        
+        Safely handles edge cases like negative base with non-integer exponent.
+        """
         if isinstance(exponent, Factor):
             merged = pd.merge(self.data, exponent.data,
                              on=['timestamp', 'symbol'],
                              suffixes=('_x', '_y'))
-            merged['factor'] = merged['factor_x'] ** merged['factor_y']
+            
+            # 使用 numpy 的錯誤抑制，讓非法運算自然產生 NaN
+            with np.errstate(invalid='ignore', divide='ignore'):
+                merged['factor'] = merged['factor_x'] ** merged['factor_y']
+            
+            # 清理 inf（轉為 NaN）
+            merged['factor'] = merged['factor'].replace([np.inf, -np.inf], np.nan)
+            
             result = merged[['timestamp', 'symbol', 'factor']]
             return Factor(result, f"({self.name}**{exponent.name})")
         else:
             result = self.data.copy()
-            result['factor'] = result['factor'] ** exponent
+            
+            with np.errstate(invalid='ignore', divide='ignore'):
+                result['factor'] = result['factor'] ** exponent
+            
+            # 清理 inf
+            result['factor'] = result['factor'].replace([np.inf, -np.inf], np.nan)
+            
             return Factor(result, f"({self.name}**{exponent})")
     
     def abs(self) -> 'Factor':
@@ -659,9 +775,17 @@ class Factor:
         return Factor(result, f"abs({self.name})")
     
     def inverse(self) -> 'Factor':
-        """Inverse: 1 / factor."""
+        """
+        Inverse: 1 / factor.
+        
+        Safely handles division by zero by returning NaN.
+        """
         result = self.data.copy()
-        result['factor'] = 1 / result['factor']
+        result['factor'] = np.where(
+            result['factor'] != 0,
+            1 / result['factor'],
+            np.nan
+        )
         return Factor(result, f"inverse({self.name})")
 
     def where(self, cond: 'Factor', other: Union['Factor', float] = np.nan) -> 'Factor':
@@ -713,8 +837,6 @@ class Factor:
         result = merged[['timestamp', 'symbol', 'factor']]
         return Factor(result, name=f"where({self.name})")
     
-    # ==================== Python Operator Overloading ====================
-    
     def __neg__(self) -> 'Factor':
         """Unary negation: -factor"""
         return self.multiply(-1)
@@ -740,9 +862,7 @@ class Factor:
         >>> result = factor.where(~(factor.rank() < 0.2), 0)  # Keep only top 80%
         """
         result = self.data.copy()
-        # Convert to boolean: non-zero and non-NaN -> True -> 1
         bool_values = result['factor'].fillna(0).astype(bool)
-        # Invert: True -> False (0), False -> True (1)
         result['factor'] = (~bool_values).astype(int)
         return Factor(result, f"~{self.name}")
     
@@ -784,43 +904,78 @@ class Factor:
         return self.multiply(other)
     
     def __pow__(self, other: Union['Factor', float]) -> 'Factor':
-        """Power: factor ** other"""
+        """Power: factor ** other (uses the safe power method)."""
         return self.power(other)
     
     def __rpow__(self, other: Union['Factor', float]) -> 'Factor':
-        """Right power: other ** factor"""
+        """
+        Right power: other ** factor.
+        
+        Safely handles edge cases.
+        """
         if isinstance(other, Factor):
             return other.power(self)
         else:
             result = self.data.copy()
-            result['factor'] = other ** result['factor']
+            
+            with np.errstate(invalid='ignore', divide='ignore'):
+                result['factor'] = other ** result['factor']
+            
+            result['factor'] = result['factor'].replace([np.inf, -np.inf], np.nan)
+            
             return Factor(result, f"({other}**{self.name})")
     
     def __truediv__(self, other: Union['Factor', float]) -> 'Factor':
-        """Division: factor / other"""
+        """
+        Division: factor / other.
+        
+        Safely handles division by zero by returning NaN.
+        """
         if isinstance(other, Factor):
             merged = pd.merge(self.data, other.data,
                              on=['timestamp', 'symbol'],
                              suffixes=('_x', '_y'))
-            merged['factor'] = merged['factor_x'] / merged['factor_y']
+            
+            # 安全除法：除數為0時返回 NaN
+            merged['factor'] = np.where(
+                merged['factor_y'] != 0,
+                merged['factor_x'] / merged['factor_y'],
+                np.nan
+            )
+            
             result = merged[['timestamp', 'symbol', 'factor']]
             return Factor(result, f"({self.name}/{other.name})")
         else:
             result = self.data.copy()
-            result['factor'] /= other
+            
+            if other == 0:
+                # 除以標量0：全部返回 NaN
+                result['factor'] = np.nan
+            else:
+                result['factor'] = result['factor'] / other
+            
             return Factor(result, f"({self.name}/{other})")
     
     def __rtruediv__(self, other: Union['Factor', float]) -> 'Factor':
-        """Right division: other / factor"""
+        """
+        Right division: other / factor.
+        
+        Safely handles division by zero by returning NaN.
+        """
         if isinstance(other, Factor):
             return other.__truediv__(self)
         else:
             result = self.data.copy()
-            result['factor'] = other / result['factor']
+            
+            # 安全除法：被除數為0時返回 NaN
+            result['factor'] = np.where(
+                result['factor'] != 0,
+                other / result['factor'],
+                np.nan
+            )
+            
             return Factor(result, f"({other}/{self.name})")
 
-    # ==================== Comparison Operators ====================
-    
     def __lt__(self, other: Union['Factor', float]) -> 'Factor':
         """Less than: factor < other"""
         if isinstance(other, Factor):
@@ -927,8 +1082,6 @@ class Factor:
             result['factor'] = np.minimum(result['factor'], other)
             return Factor(result, f"min({self.name},{other})")
     
-    # ==================== Correlation and Regression ====================
-    
     def ts_corr(self, other: 'Factor', window: int) -> 'Factor':
         """
         Returns Pearson correlation of two factors for the past d days.
@@ -951,20 +1104,16 @@ class Factor:
             raise ValueError("No common data between factors")
         
         def safe_corr(group):
-            """Safely compute correlation, handling constant series."""
             x = group['factor_x']
             y = group['factor_y']
             
-            # Need at least 2 valid pairs
             valid_mask = x.notna() & y.notna()
             if valid_mask.sum() < 2:
                 return pd.Series(np.nan, index=group.index)
             
-            # Check if either series is constant
             if x[valid_mask].std() == 0 or y[valid_mask].std() == 0:
                 return pd.Series(np.nan, index=group.index)
             
-            # Compute rolling correlation
             corr_result = group[['factor_x', 'factor_y']].rolling(
                 window, min_periods=window
             ).corr().iloc[0::2, -1]
@@ -1000,16 +1149,13 @@ class Factor:
             raise ValueError("No common data between factors")
         
         def safe_cov(group):
-            """Safely compute covariance."""
             x = group['factor_x']
             y = group['factor_y']
             
-            # Need at least 2 valid pairs
             valid_mask = x.notna() & y.notna()
             if valid_mask.sum() < 2:
                 return pd.Series(np.nan, index=group.index)
             
-            # Compute rolling covariance
             cov_result = group[['factor_x', 'factor_y']].rolling(
                 window, min_periods=window
             ).cov().iloc[0::2, -1]
@@ -1066,7 +1212,6 @@ class Factor:
         if not 0 <= rettype <= 9:
             raise ValueError("rettype must be between 0 and 9")
         
-        # Prepare data
         y_data = self.data.rename(columns={'factor': 'y'})
         x_data = x_factor.data.rename(columns={'factor': 'x'})
 
@@ -1078,7 +1223,6 @@ class Factor:
         if merged.empty:
             raise ValueError("No common data for regression.")
 
-        # Sort for rolling operations
         merged = merged.sort_values(['symbol', 'timestamp'])
 
         def rolling_regression(group):
@@ -1166,7 +1310,6 @@ class Factor:
             
             return results
 
-        # Apply to each symbol
         merged['factor'] = merged.groupby('symbol', group_keys=False).apply(
             lambda g: pd.Series(rolling_regression(g), index=g.index),
             include_groups=False
@@ -1175,20 +1318,18 @@ class Factor:
         result = merged[['timestamp', 'symbol', 'factor']]
         return Factor(result, name=f"ts_regression({self.name},{x_factor.name},{window},lag={lag},rettype={rettype})")
 
-    # ==================== Internal Utility Methods ====================
-    
     def _apply_rolling(self, func: Union[str, Callable], window: int) -> pd.DataFrame:
         """Apply rolling function by symbol - OPTIMIZED for 3-column format."""
         result = self.data.copy()
         
         if isinstance(func, str):
-            # Use pandas built-in functions (fastest)
+            
             result['factor'] = (result.groupby('symbol')['factor']
                                .rolling(window, min_periods=window)
                                .agg(func)
                                .reset_index(level=0, drop=True))
         else:
-            # Custom function
+            
             result['factor'] = (result.groupby('symbol')['factor']
                                .rolling(window, min_periods=window)
                                .apply(func, raw=False)
