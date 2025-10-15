@@ -1338,7 +1338,36 @@ class Factor:
         return result
     
     # ==================== Data Access and Information ====================
-    
+
+    def to_weights(self, date: Optional[Union[str, pd.Timestamp]] = None) -> dict:
+        """
+        Convert factor to dollar-neutral portfolio weights.
+        
+        Returns demeaned and normalized weights where sum(abs(weights)) = 1.
+        Multiply by portfolio value to get target dollar holdings.
+        """
+        if date is None:
+            target_date = self.data['timestamp'].max()
+        else:
+            target_date = pd.to_datetime(date)
+        
+        date_data = self.data[self.data['timestamp'] == target_date]
+        if date_data.empty:
+            return {}
+        
+        factors = date_data.set_index('symbol')['factor'].dropna()
+        if factors.empty:
+            return {}
+        
+        demeaned = factors - factors.mean()
+        abs_sum = np.abs(demeaned).sum()
+        
+        if abs_sum < 1e-10:
+            return {}
+        
+        weights = demeaned / abs_sum
+        return weights.to_dict()
+
     def to_csv(self, path: str) -> str:
         """Save to CSV file."""
         self.data.to_csv(path, index=False)

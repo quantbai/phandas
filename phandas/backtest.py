@@ -50,7 +50,6 @@ class Portfolio:
         self.trade_log = []
 
     def update_market_value(self, date, prices: pd.Series):
-        """Update holdings and total portfolio value based on new prices."""
         common_symbols = self.positions.index.intersection(prices.index)
         
         self.holdings = self.positions.loc[common_symbols] * prices.loc[common_symbols]
@@ -337,7 +336,6 @@ class Backtester:
         """
         Extract factor data for a specific date from 3-column format.
         
-        OPTIMIZED: Direct DataFrame query without MultiIndex overhead.
         """
         if date is None:
             return pd.Series(dtype=float)
@@ -512,13 +510,6 @@ class Backtester:
         
         return "\n".join(summary_lines)
 
-    def calculate_total_transaction_cost(self) -> float:
-        """Calculate the total transaction cost incurred during the backtest."""
-        trade_log_df = self.portfolio.get_trade_log_df()
-        if trade_log_df.empty:
-            return 0.0
-        return trade_log_df['cost'].sum()
-
     def get_daily_turnover_df(self) -> pd.DataFrame:
         """
         Calculate daily portfolio turnover.
@@ -537,10 +528,8 @@ class Backtester:
         if trade_log_df.empty or history_df.empty:
             return pd.DataFrame()
             
-        # trade_value is positive for buy, negative for sell
         daily_trade_value = trade_log_df['trade_value'].abs().groupby(level='date').sum()
         
-        # Total portfolio value (NAV) at the end of the day (used as denominator)
         daily_nav = history_df['total_value']
         
         combined = pd.DataFrame({
@@ -553,179 +542,8 @@ class Backtester:
             
         combined['turnover'] = combined['daily_trade_value'] / combined['daily_nav']
         return combined[['turnover']]
-
-    def show_daily_returns(self, top_days: int = 20, show_summary: bool = True) -> None:
-        """Display daily returns by symbol in a clean format."""
-        if not self.detailed_history:
-            print("No detailed data available. Run backtest first.")
-            return
-        
-        df = pd.DataFrame(self.detailed_history)
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df['pnl_pct'] = df['total_pnl'] / df['portfolio_total_value'] * 100
-        
-        print(f"\n{self.strategy_factor.name} - Daily Returns by Symbol")
-        print("=" * 60)
-        
-        for symbol in sorted(df['symbol'].unique()):
-            symbol_data = df[df['symbol'] == symbol].sort_values('timestamp')
-            
-            print(f"\n{symbol}")
-            print("-" * 35)
-            
-            recent_data = symbol_data.tail(top_days)
-            for _, row in recent_data.iterrows():
-                date = row['timestamp'].strftime('%Y-%m-%d')
-                pnl_pct = row['pnl_pct']
-                total_pnl = row['total_pnl']
-                
-                if pd.notna(pnl_pct):
-                    print(f"{date}: {pnl_pct:+6.2f}% (${total_pnl:+8.2f})")
-                else:
-                    print(f"{date}: {'N/A':>6s}% (${total_pnl:+8.2f})")
-            
-            if len(symbol_data) > top_days:
-                print(f"... ({len(symbol_data)-top_days} more days)")
-        
-        if show_summary:
-            print(f"\nSymbol Performance Summary")
-            print("-" * 40)
-            for symbol in sorted(df['symbol'].unique()):
-                symbol_data = df[df['symbol'] == symbol]
-                total_pnl = symbol_data['total_pnl'].sum()
-                total_return_pct = symbol_data['pnl_pct'].sum()
-                avg_daily_pct = symbol_data['pnl_pct'].mean()
-                best_day_pct = symbol_data['pnl_pct'].max()
-                worst_day_pct = symbol_data['pnl_pct'].min()
-                trading_days = len(symbol_data)
-                
-                print(f"{symbol:>6}: ${total_pnl:+8.1f} | {total_return_pct:+6.2f}% | "
-                      f"日均{avg_daily_pct:+.2f}% | 最佳{best_day_pct:+.2f}% | "
-                      f"最糟{worst_day_pct:+.2f}% | {trading_days}天")
-
-    def get_symbol_daily_returns(self) -> pd.DataFrame:
-        """Get daily returns data structured by symbol."""
-        if not self.detailed_history:
-            return pd.DataFrame()
-        
-        df = pd.DataFrame(self.detailed_history)
-        df['pnl_pct'] = df['total_pnl'] / df['portfolio_total_value'] * 100
-        
-        return df[['timestamp', 'symbol', 'pnl_pct', 'total_pnl', 'factor_change', 
-                  'position_qty', 'holding_value']].sort_values(['symbol', 'timestamp'])
-
-    def get_detailed_data(self) -> pd.DataFrame:
-        """Get comprehensive daily data per symbol with MultiIndex (timestamp, symbol)."""
-        if not self.detailed_history:
-            return pd.DataFrame()
-        
-        df = pd.DataFrame(self.detailed_history)
-        df['pnl_pct'] = df['total_pnl'] / df['portfolio_total_value'] * 100
-        df['portfolio_pnl_pct'] = df['portfolio_daily_pnl'] / df['portfolio_total_value'] * 100
-        df = df.set_index(['timestamp', 'symbol']).sort_index()
-        
-        return df
-
-    def export_detailed_data(self, filename: str = None) -> str:
-        """Export comprehensive backtest data to CSV file."""
-        if not filename:
-            strategy_name = self.strategy_factor.name.replace(' ', '_').replace('+', 'plus')
-            filename = f"backtest_detailed_{strategy_name}.csv"
-        
-        detailed_df = self.get_detailed_data()
-        
-        if detailed_df.empty:
-            raise ValueError("No detailed data available. Make sure to run the backtest first.")
-        
-        with open(filename, 'w', newline='', encoding='utf-8') as f:
-            f.write(f"# Backtest Detailed Export\n")
-            f.write(f"# Strategy: {self.strategy_factor.name}\n")
-            f.write(f"# Price Factor: {self.price_factor.name}\n")
-            f.write(f"# Initial Capital: {self.portfolio.initial_capital:,.0f}\n")
-            f.write(f"# Transaction Cost: {self.transaction_cost_rates[0]:.4f}, {self.transaction_cost_rates[1]:.4f}\n")
-            if self.metrics:
-                f.write(f"# Total Return: {self.metrics.get('total_return', 0):.2%}\n")
-                f.write(f"# Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.3f}\n")
-            f.write(f"# Columns: timestamp,symbol,price,current_factor,prev_factor,factor_change,position_qty,holding_value,holding_pnl,trade_pnl,total_pnl,pnl_pct,portfolio_total_value,portfolio_daily_pnl,portfolio_pnl_pct\n")
-            f.write(f"#\n")
-        
-        detailed_df.to_csv(filename, mode='a')
-        
-        print(f"Detailed backtest data exported to: {filename}")
-        print(f"Records: {len(detailed_df):,} rows")
-        print(f"Date range: {detailed_df.index.get_level_values('timestamp').min()} to {detailed_df.index.get_level_values('timestamp').max()}")
-        print(f"Symbols: {', '.join(sorted(detailed_df.index.get_level_values('symbol').unique()))}")
-        
-        return filename
-
-    def __add__(self, other: 'Backtester') -> 'Backtester':
-        """Combine two backtest results with equal-weight capital allocation."""
-        if not isinstance(other, Backtester):
-            raise TypeError("Can only combine Backtester objects")
-        
-        hist1 = self.portfolio.get_history_df()
-        hist2 = other.portfolio.get_history_df()
-        
-        if hist1.empty or hist2.empty:
-            raise ValueError("Both backtests must have historical data")
-        
-        all_dates = sorted(hist1.index.union(hist2.index))
-        if len(all_dates) < 2:
-            raise ValueError("Insufficient total dates for combination")
-        
-        combined = Backtester(
-            self.price_factor, 
-            self.strategy_factor,
-            self.transaction_cost_rates[0],
-            self.portfolio.initial_capital + other.portfolio.initial_capital
-        )
-        
-        combined.portfolio.history = []
-        cumulative_value = self.portfolio.initial_capital + other.portfolio.initial_capital
-        
-        for date in all_dates:
-            has_hist1 = date in hist1.index
-            has_hist2 = date in hist2.index
-            total_daily_pnl = 0
-            total_cash = 0
-            total_holdings = 0
-            
-            if has_hist1:
-                if 'daily_pnl' in hist1.columns:
-                    pnl1 = hist1.loc[date, 'daily_pnl']
-                    if not pd.isna(pnl1):
-                        total_daily_pnl += pnl1
-                total_cash += hist1.loc[date, 'cash']
-                total_holdings += hist1.loc[date, 'holdings_value']
-            
-            if has_hist2:
-                if 'daily_pnl' in hist2.columns:
-                    pnl2 = hist2.loc[date, 'daily_pnl']
-                    if not pd.isna(pnl2):
-                        total_daily_pnl += pnl2
-                total_cash += hist2.loc[date, 'cash']
-                total_holdings += hist2.loc[date, 'holdings_value']
-            
-            cumulative_value += total_daily_pnl
-            
-            combined.portfolio.history.append({
-                'date': date,
-                'total_value': cumulative_value,
-                'daily_pnl': total_daily_pnl,
-                'cash': total_cash,
-                'holdings_value': total_holdings,
-            })
-        
-        if combined.portfolio.history:
-            combined.portfolio.total_value = combined.portfolio.history[-1]['total_value']
-        
-        combined.calculate_metrics()
-        combined.strategy_factor.name = f"{self.strategy_factor.name} + {other.strategy_factor.name}"
-        combined.detailed_history = self.detailed_history + other.detailed_history
-        combined.detailed_history.sort(key=lambda x: (x['timestamp'], x['symbol']))
-        
-        return combined
-
+    
+    
     def __repr__(self):
         """Professional representation of Backtester."""
         history = self.portfolio.get_history_df()
@@ -753,14 +571,11 @@ def backtest(
     Parameters
     ----------
     price_factor : Factor
-        Price factor for entry/exit prices (e.g., open price)
     strategy_factor : Factor
-        Strategy factor for position weights
     transaction_cost : Union[float, Tuple[float, float]], default 0.001
-        Transaction cost. Can be a single float (e.g., 0.001) for both buy/sell,
+        Can be a single float (e.g., 0.001) for both buy/sell,
         or a tuple (buy_cost_rate, sell_cost_rate) for separate rates.
     initial_capital : float, default 100000
-        Initial capital
     auto_run : bool, default True
         Automatically run backtest and calculate metrics
         
