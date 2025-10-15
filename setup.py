@@ -5,7 +5,7 @@ setup(
     version='0.5.5',
     author='Phantom Management',
     author_email='quantbai@gmail.com',
-    description='Hedge fund-grade multi-factor quantitative trading framework for cryptocurrency markets.',
+    description='A multi-factor quantitative trading framework for cryptocurrency markets.',
     long_description=open('README.md', encoding='utf-8').read(),
     long_description_content_type='text/markdown',
     url='https://github.com/quantbai/phandas',
