@@ -127,9 +127,3 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-
-size.py
-skewness.py
-momentum.py
-cir_factor.py
-crypto_1d.csv
