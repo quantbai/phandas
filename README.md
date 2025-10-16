@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/quantbai/phandas/main/assets/PHANDAS.png" alt="Phandas" width="500">
+<img src="https://raw.githubusercontent.com/quantbai/phandas/main/assets/PHANDAS2.png" alt="Phandas" width="500">
 
 </div>
 
