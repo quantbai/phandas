@@ -936,9 +936,9 @@ class Factor:
                              on=['timestamp', 'symbol'],
                              suffixes=('_x', '_y'))
             
-            # 安全除法：除數為0時返回 NaN
+            # adding small epsilon to denominator to avoid division by zero
             merged['factor'] = np.where(
-                merged['factor_y'] != 0,
+                np.abs(merged['factor_y']) > 1e-10, # adding small epsilon
                 merged['factor_x'] / merged['factor_y'],
                 np.nan
             )
