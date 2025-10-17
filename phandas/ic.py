@@ -48,7 +48,7 @@ def daily_ic(
     factor_shifted['timestamp'] = factor_shifted.groupby('symbol')['timestamp'].shift(-periods)
     factor_shifted = factor_shifted.dropna(subset=['timestamp'])
     
-    returns = price.returns(periods)
+    returns = (price / price.ts_delay(periods)) - 1
     returns_data = returns.data
     
     merged = pd.merge(
