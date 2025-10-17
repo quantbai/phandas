@@ -28,6 +28,14 @@ def rank(factor: 'Factor') -> 'Factor':
     """Cross-sectional rank within each timestamp."""
     return factor.rank()
 
+def mean(factor: 'Factor') -> 'Factor':
+    """Cross-sectional mean within each timestamp."""
+    return factor.mean()
+
+def median(factor: 'Factor') -> 'Factor':
+    """Cross-sectional median within each timestamp."""
+    return factor.median()
+
 # ==================== Time-Series Operations ====================
 
 def ts_rank(factor: 'Factor', window: int) -> 'Factor':

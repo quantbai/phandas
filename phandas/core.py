@@ -62,7 +62,10 @@ class Factor:
         self.name = name or 'factor'
 
     def rank(self) -> 'Factor':
-        """Cross-sectional rank within each timestamp."""
+        """
+        Cross-sectional rank within each timestamp.
+        If any value is NaN in a timestamp, all ranks for that timestamp are NaN.
+        """
         result = self.data.copy()
         result['factor'] = pd.to_numeric(result['factor'], errors='coerce')
         
@@ -70,25 +73,36 @@ class Factor:
             raise ValueError("All factor values are NaN")
         
         def safe_rank(group):
-            valid_mask = group.notna()
-            if valid_mask.sum() == 0:
-                return group
+            # 如果該時間點有任何 NaN,整個截面都返回 NaN
+            if group.isna().any():
+                return pd.Series(np.nan, index=group.index)
             
-            ranked = group.copy()
-            ranked[valid_mask] = group[valid_mask].rank(method='min', pct=True)
-            return ranked
+            # 如果所有值都相同,返回 NaN (避免標準差為 0)
+            if group.nunique() == 1:
+                return pd.Series(np.nan, index=group.index)
+            
+            return group.rank(method='min', pct=True)
         
         result['factor'] = result.groupby('timestamp')['factor'].transform(safe_rank)
         return Factor(result, f"rank({self.name})")
 
     def ts_rank(self, window: int) -> 'Factor':
-        """Rolling time-series rank within window."""
+        """
+        Rolling time-series rank within window.
+        If any value is NaN in the window, result is NaN.
+        """
         if window <= 0:
             raise ValueError("Window must be positive")
         
         def safe_ts_rank(x: pd.Series) -> float:
-            if x.notna().sum() < window:
+            # 要求窗口內所有值都有效
+            if x.isna().any() or len(x) < window:
                 return np.nan
+            
+            # 如果所有值都相同,返回 NaN (避免標準差為 0)
+            if x.nunique() == 1:
+                return np.nan
+            
             ranks = rankdata(x.to_numpy(), method='min')
             return ranks[-1] / len(ranks)
         
@@ -224,6 +238,54 @@ class Factor:
         result.data['factor'] = result.data['factor'].replace([np.inf, -np.inf], np.nan)
         
         return Factor(result.data, f"ts_zscore({self.name},{window})")
+
+    def mean(self) -> 'Factor':
+        """
+        Cross-sectional mean within each timestamp.
+        Returns the mean value across all symbols at each timestamp.
+        If any value is NaN in a timestamp, all values for that timestamp are NaN.
+        """
+        result = self.data.copy()
+        result['factor'] = pd.to_numeric(result['factor'], errors='coerce')
+        
+        if result['factor'].isna().all():
+            raise ValueError("All factor values are NaN")
+        
+        def safe_mean(group):
+            # 如果該時間點有任何 NaN,整個截面都返回 NaN
+            if group.isna().any():
+                return pd.Series(np.nan, index=group.index)
+            
+            # 計算平均值並廣播到所有股票
+            mean_val = group.mean()
+            return pd.Series(mean_val, index=group.index)
+        
+        result['factor'] = result.groupby('timestamp')['factor'].transform(safe_mean)
+        return Factor(result, f"mean({self.name})")
+
+    def median(self) -> 'Factor':
+        """
+        Cross-sectional median within each timestamp.
+        Returns the median value across all symbols at each timestamp.
+        If any value is NaN in a timestamp, all values for that timestamp are NaN.
+        """
+        result = self.data.copy()
+        result['factor'] = pd.to_numeric(result['factor'], errors='coerce')
+        
+        if result['factor'].isna().all():
+            raise ValueError("All factor values are NaN")
+        
+        def safe_median(group):
+            # 如果該時間點有任何 NaN,整個截面都返回 NaN
+            if group.isna().any():
+                return pd.Series(np.nan, index=group.index)
+            
+            # 計算中位數並廣播到所有股票
+            median_val = group.median()
+            return pd.Series(median_val, index=group.index)
+        
+        result['factor'] = result.groupby('timestamp')['factor'].transform(safe_median)
+        return Factor(result, f"median({self.name})")
 
     def quantile(self, driver: str = "gaussian", sigma: float = 1.0) -> 'Factor':
         """Cross-sectional quantile transformation with specified driver and scale."""
@@ -559,12 +621,6 @@ class Factor:
         result['factor'] = result.groupby('symbol')['factor'].diff(window)
         return Factor(result, f"ts_delta({self.name},{window})")
         
-    def returns(self, periods: int = 1) -> 'Factor':
-        """Percentage returns over periods."""
-        result = self.data.copy()
-        result['factor'] = result.groupby('symbol')['factor'].pct_change(periods)
-        return Factor(result, f"returns({self.name},{periods})")
-    
     def add(self, other: Union['Factor', float], filter_nan: bool = False) -> 'Factor':
         """Addition with factor or scalar, with optional NaN filtering."""
         if isinstance(other, Factor):

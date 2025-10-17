@@ -54,7 +54,7 @@ def daily_layer_returns(
     2. Divide into n_layers equal groups
     3. Calculate equal-weighted return for each layer over next 'periods' days
     """
-    returns = price.returns(periods)
+    returns = (price / price.ts_delay(periods)) - 1
     
     factor_data = factor.data
     returns_data = returns.data
