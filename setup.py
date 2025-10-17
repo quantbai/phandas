@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='phandas',
-    version='0.6.0',
+    version='0.6.1',
     author='Phantom Management',
     author_email='quantbai@gmail.com',
     description='A multi-factor quantitative trading framework for cryptocurrency markets.',
@@ -36,6 +36,8 @@ setup(
         'Topic :: Office/Business :: Financial :: Investment',
         'Topic :: Scientific/Engineering',
         'Topic :: Scientific/Engineering :: Information Analysis',
+        'Topic :: Scientific/Engineering :: Mathematics',
+        'Topic :: Scientific/Engineering :: Quantitative Methods',
         'Topic :: Software Development :: Libraries :: Python Modules',
     ],
     python_requires='>=3.8',
