@@ -1,12 +1,7 @@
 """
 Information Coefficient (IC) analysis for factor evaluation.
 
-Core metrics:
-- Daily/period IC (Pearson, Spearman, Kendall)
-- IC Information Ratio (ICIR)
-- Rolling IC analysis
-- IC autocorrelation
-- Newey-West adjusted statistics
+Core metrics: Daily/period IC (Pearson, Spearman, Kendall), ICIR, rolling IC, autocorr, Newey-West adjustment.
 """
 
 import pandas as pd
@@ -24,16 +19,14 @@ def daily_ic(
     method: Literal['spearman', 'pearson', 'kendall'] = 'spearman'
 ) -> pd.Series:
     """
-    Calculate daily Information Coefficient between factor and forward returns.
-    
-    Logic: factor[t] predicts return[t+periods]
+    Calculate IC between factor and forward returns (factor[t] predicts return[t+periods]).
     
     Parameters
     ----------
     factor : Factor
         Factor values (predictors)
     price : Factor
-        Price factor for computing returns
+        Price factor for returns
     periods : int, default 1
         Forward return periods
     method : {'spearman', 'pearson', 'kendall'}, default 'spearman'
@@ -42,7 +35,7 @@ def daily_ic(
     Returns
     -------
     pd.Series
-        Daily IC time series indexed by timestamp
+        IC time series indexed by timestamp
     """
     factor_shifted = factor.data.copy()
     factor_shifted['timestamp'] = factor_shifted.groupby('symbol')['timestamp'].shift(-periods)
@@ -64,7 +57,6 @@ def daily_ic(
     if merged.empty:
         raise ValueError("No overlapping data between factor and returns")
     
-    # Calculate IC for each timestamp
     ic_list = []
     
     for ts, ts_data in merged.groupby('timestamp'):
@@ -100,31 +92,21 @@ def ic_summary(
     lag: Optional[int] = None
 ) -> dict:
     """
-    Calculate comprehensive IC statistics.
+    Calculate IC statistics (mean, std, ICIR, hit rate, etc).
     
     Parameters
     ----------
     ic : pd.Series
-        IC time series from daily_ic()
+        IC time series
     newey_west : bool, default True
-        Apply Newey-West correction for autocorrelation
+        Apply Newey-West autocorrelation adjustment
     lag : int, optional
-        Lag for Newey-West correction (default: auto)
+        Lag for Newey-West (default: auto)
         
     Returns
     -------
     dict
-        Statistics including mean IC, ICIR, hit rate, etc.
-        
-    Notes
-    -----
-    ICIR (IC Information Ratio) = mean(IC) / std(IC)
-    - ICIR > 0.5: Excellent
-    - ICIR > 0.3: Good
-    - ICIR > 0.1: Acceptable
-    
-    Newey-West adjustment accounts for autocorrelation in IC series,
-    providing more conservative standard error estimates.
+        Statistics: mean_ic, std_ic, icir, icir_nw, hit_rate, n_periods, etc.
     """
     ic_clean = ic.dropna()
     
@@ -182,22 +164,18 @@ def rolling_ic(
     price : Factor
         Price factor
     window : int, default 63
-        Rolling window size (e.g., 63 trading days ~ 3 months)
+        Rolling window size (trading days)
     periods : int, default 1
         Forward return periods
     method : {'spearman', 'pearson', 'kendall'}, default 'spearman'
         Correlation method
     min_periods : int, optional
-        Minimum observations in window (default: window // 2)
+        Minimum observations per window
         
     Returns
     -------
     pd.Series
         Rolling IC time series
-        
-    Notes
-    -----
-    Useful for detecting IC regime changes and factor decay.
     """
     ic = daily_ic(factor, price, periods, method)
     
@@ -218,17 +196,12 @@ def ic_autocorr(ic: pd.Series, max_lag: int = 10) -> pd.Series:
     ic : pd.Series
         IC time series
     max_lag : int, default 10
-        Maximum lag to compute
+        Maximum lag
         
     Returns
     -------
     pd.Series
-        Autocorrelation coefficients indexed by lag
-        
-    Notes
-    -----
-    High IC autocorrelation suggests persistent factor signals.
-    Low autocorrelation indicates more independent daily signals.
+        Autocorrelation coefficients by lag
     """
     ic_clean = ic.dropna()
     
@@ -260,20 +233,14 @@ def ic_decay(
     price : Factor
         Price factor
     lags : list of int, default [1, 2, 3, 5, 10, 20]
-        Forward return periods to test
+        Forward return periods
     method : {'spearman', 'pearson', 'kendall'}, default 'spearman'
         Correlation method
         
     Returns
     -------
     pd.DataFrame
-        IC statistics for each lag period
-        
-    Notes
-    -----
-    Factor decay shows how predictive power changes with horizon.
-    Fast decay suggests high-frequency signal.
-    Slow decay suggests persistent/momentum-like signal.
+        IC statistics for each lag (mean_ic, icir, icir_nw, hit_rate)
     """
     results = []
     
@@ -293,21 +260,14 @@ def ic_decay(
 
 
 def _newey_west_std(data: np.ndarray, lag: int) -> float:
-    """
-    Calculate Newey-West adjusted standard error.
-    
-    Accounts for autocorrelation in time series data by adjusting
-    the variance estimate using a kernel-weighted sum of autocovariances.
-    """
+    """Calculate Newey-West adjusted standard error accounting for autocorrelation."""
     n = len(data)
     mean = np.mean(data)
     
-    # Variance
     var = np.sum((data - mean) ** 2) / n
     
-    # Autocovariance adjustments
     for k in range(1, lag + 1):
-        weight = 1 - k / (lag + 1)  # Bartlett kernel
+        weight = 1 - k / (lag + 1)
         autocov = np.sum((data[k:] - mean) * (data[:-k] - mean)) / n
         var += 2 * weight * autocov
     
@@ -329,7 +289,7 @@ def analyze_ic(
     decay_lags: list[int] = None
 ) -> dict:
     """
-    IC analysis with visualization.
+    Comprehensive IC analysis with visualization.
     
     Parameters
     ----------
@@ -342,7 +302,7 @@ def analyze_ic(
     method : {'spearman', 'pearson', 'kendall'}, default 'spearman'
         Correlation method
     rolling_window : int, default 63
-        Rolling window (~3 months)
+        Rolling window size
     decay_lags : list of int, optional
         Forward periods for decay analysis
         
@@ -350,11 +310,6 @@ def analyze_ic(
     -------
     dict
         Results with ic, summary, rolling_ic, decay
-        
-    Notes
-    -----
-    lag=1: factor[t] vs return[t→t+1]
-    lag=20: factor[t] vs return[t→t+20]
     """
     if decay_lags is None:
         decay_lags = [1, 2, 3, 5, 10, 20]
@@ -384,11 +339,9 @@ def _plot_ic_analysis(ic: pd.Series, summary: dict, roll_ic: pd.Series,
     fig = plt.figure(figsize=(16, 10))
     gs = fig.add_gridspec(2, 3, height_ratios=[2, 1])
     
-    # Calculate MA lines
     ma20 = ic_clean.rolling(20, min_periods=10).mean()
     ma63 = ic_clean.rolling(63, min_periods=30).mean()
     
-    # Main IC time series (top, span all columns)
     ax1 = fig.add_subplot(gs[0, :])
     ax1.plot(ic_clean.index, ic_clean.values, linewidth=0.8, alpha=0.4, 
              color='#94a3b8', label='Daily IC')
@@ -407,7 +360,6 @@ def _plot_ic_analysis(ic: pd.Series, summary: dict, roll_ic: pd.Series,
     ax1.legend(loc='upper right', fontsize=9, framealpha=0.95)
     ax1.grid(True, alpha=0.2)
     
-    # Stats box
     stats_text = (
         f"Mean IC: {summary['mean_ic']:.4f}\n"
         f"ICIR (NW): {summary['icir_nw']:.3f}\n"
@@ -419,7 +371,6 @@ def _plot_ic_analysis(ic: pd.Series, summary: dict, roll_ic: pd.Series,
             bbox=dict(boxstyle='round,pad=0.6', facecolor='white', 
                      edgecolor='#d1d5db', alpha=0.95, linewidth=1))
     
-    # IC distribution with KDE (density scale)
     ax2 = fig.add_subplot(gs[1, 0])
     values = ic_clean.values
     ax2.hist(values, bins=30, density=True, color='#c7d2fe', alpha=0.9,
@@ -438,7 +389,6 @@ def _plot_ic_analysis(ic: pd.Series, summary: dict, roll_ic: pd.Series,
     ax2.set_ylabel('Density', fontsize=9)
     ax2.grid(True, alpha=0.2, axis='y')
     
-    # Rolling IC
     ax3 = fig.add_subplot(gs[1, 1])
     ax3.plot(roll_ic.index, roll_ic.values, linewidth=1.5, color='#8b5cf6')
     ax3.axhline(y=0, color='#6b7280', linestyle='--', linewidth=0.8, alpha=0.5)
@@ -448,7 +398,6 @@ def _plot_ic_analysis(ic: pd.Series, summary: dict, roll_ic: pd.Series,
     ax3.grid(True, alpha=0.2)
     ax3.tick_params(axis='x', rotation=15)
     
-    # IC decay
     ax4 = fig.add_subplot(gs[1, 2])
     ax4.plot(decay_df.index, decay_df['mean_ic'], marker='o', linewidth=2, 
             markersize=6, color='#2563eb')

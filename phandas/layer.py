@@ -1,8 +1,7 @@
 """
 Layer test (stratified test) for factor evaluation.
 
-Stratifies assets into N quantile groups by factor values each day,
-then tracks equal-weighted portfolio returns for each layer.
+Stratifies assets into N quantile groups daily, tracks equal-weighted portfolio returns for each layer.
 """
 
 import pandas as pd
@@ -38,21 +37,14 @@ def daily_layer_returns(
     price : Factor
         Price factor for return calculation
     n_layers : int, default 5
-        Number of layers to divide assets into
+        Number of layers
     periods : int, default 1
-        Holding period in days
+        Holding period (days)
         
     Returns
     -------
     pd.DataFrame
-        Daily returns for each layer, indexed by timestamp, columns are layer numbers
-        
-    Notes
-    -----
-    Each day:
-    1. Rank all assets by factor values
-    2. Divide into n_layers equal groups
-    3. Calculate equal-weighted return for each layer over next 'periods' days
+        Daily returns by layer, indexed by timestamp
     """
     returns = (price / price.ts_delay(periods)) - 1
     
@@ -105,8 +97,7 @@ def layer_summary(layer_returns: pd.DataFrame) -> pd.DataFrame:
     Returns
     -------
     pd.DataFrame
-        Statistics for each layer including cumulative return, annualized return,
-        volatility, Sharpe ratio, and max drawdown
+        Statistics: cum_return, ann_return, ann_vol, sharpe, max_drawdown, n_periods
     """
     stats_list = []
     
@@ -161,24 +152,13 @@ def analyze_layers(
         Number of layers
     periods : int, default 1
         Holding period
+    y_scale : {'auto', 'linear', 'log'}, default 'auto'
+        Plot scale (auto switches to log if spread > 20x)
         
     Returns
     -------
     dict
-        Results with layer_returns, summary, long_short
-        
-    Notes
-    -----
-    Layer test divides assets into quantile groups by factor values each day.
-    Layer 1 = lowest factor values (bottom 20% if n_layers=5)
-    Layer N = highest factor values (top 20% if n_layers=5)
-    
-    Long-Short = Layer N - Layer 1 (buying high factor, shorting low factor)
-    
-    Visualization y-axis:
-    - auto: switch to log-scale when spread is large (default)
-    - linear: percentage cumulative return
-    - log: plot cumulative wealth in log-scale
+        Results with layer_returns, summary, long_short, long_short_stats
     """
     layer_rets = daily_layer_returns(factor, price, n_layers, periods)
     summary = layer_summary(layer_rets)
