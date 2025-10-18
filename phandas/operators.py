@@ -36,6 +36,22 @@ def median(factor: 'Factor') -> 'Factor':
     """Cross-sectional median within each timestamp."""
     return factor.median()
 
+def normalize(factor: 'Factor', useStd: bool = False, limit: float = 0.0) -> 'Factor':
+    """Cross-sectional normalization with optional standardization and clipping."""
+    return factor.normalize(useStd, limit)
+
+def quantile(factor: 'Factor', driver: str = "gaussian", sigma: float = 1.0) -> 'Factor':
+    """Cross-sectional quantile transformation."""
+    return factor.quantile(driver, sigma)
+
+def scale(factor: 'Factor', scale: float = 1.0, longscale: float = -1.0, shortscale: float = -1.0) -> 'Factor':
+    """Scale to target position size with optional long/short asymmetry."""
+    return factor.scale(scale, longscale, shortscale)
+
+def zscore(factor: 'Factor') -> 'Factor':
+    """Cross-sectional Z-score normalization."""
+    return factor.zscore()
+
 # ==================== Time-Series Operations ====================
 
 def ts_rank(factor: 'Factor', window: int) -> 'Factor':
@@ -120,22 +136,6 @@ def ts_zscore(factor: 'Factor', window: int) -> 'Factor':
     """Rolling Z-score normalization."""
     return factor.ts_zscore(window)
 
-def normalize(factor: 'Factor', useStd: bool = False, limit: float = 0.0) -> 'Factor':
-    """Cross-sectional normalization with optional standardization and clipping."""
-    return factor.normalize(useStd, limit)
-
-def quantile(factor: 'Factor', driver: str = "gaussian", sigma: float = 1.0) -> 'Factor':
-    """Cross-sectional quantile transformation."""
-    return factor.quantile(driver, sigma)
-
-def scale(factor: 'Factor', scale: float = 1.0, longscale: float = -1.0, shortscale: float = -1.0) -> 'Factor':
-    """Scale to target position size with optional long/short asymmetry."""
-    return factor.scale(scale, longscale, shortscale)
-
-def zscore(factor: 'Factor') -> 'Factor':
-    """Cross-sectional Z-score normalization."""
-    return factor.zscore()
-
 def ts_backfill(factor: 'Factor', window: int, k: int = 1) -> 'Factor':
     """Fill NaN with k-th most recent non-NaN value."""
     return factor.ts_backfill(window, k)
@@ -147,6 +147,10 @@ def ts_decay_exp_window(factor: 'Factor', window: int, factor_arg: float = 1.0, 
 def ts_decay_linear(factor: 'Factor', window: int, dense: bool = False) -> 'Factor':
     """Linearly weighted rolling average."""
     return factor.ts_decay_linear(window, dense)
+
+def ts_regression(y: 'Factor', x: 'Factor', window: int, lag: int = 0, rettype: int = 0) -> 'Factor':
+    """Rolling linear regression. rettype: 0=residuals, 1=intercept, 2=slope, 3=fitted, 4=SSE, 5=SST, 6=R², 7=MSE, 8=SE(beta), 9=SE(alpha)."""
+    return y.ts_regression(x, window, lag, rettype)
 
 # ==================== Mathematical Operations ====================
 
@@ -180,23 +184,23 @@ def minimum(factor1: 'Factor', factor2: Union['Factor', float]) -> 'Factor':
 
 def divide(factor1: 'Factor', factor2: Union['Factor', float]) -> 'Factor':
     """Division."""
-    return factor1 / factor2
+    return factor1.divide(factor2)
 
 def inverse(factor: 'Factor') -> 'Factor':
     """Reciprocal: 1 / factor."""
     return factor.inverse()
 
-def add(factor1: 'Factor', factor2: Union['Factor', float], filter_nan: bool = False) -> 'Factor':
-    """Addition with optional NaN filtering."""
-    return factor1.add(factor2, filter_nan)
+def add(factor1: 'Factor', factor2: Union['Factor', float]) -> 'Factor':
+    """Addition. NaN values propagate through the operation."""
+    return factor1.add(factor2)
 
-def multiply(factor1: 'Factor', factor2: Union['Factor', float], filter_nan: bool = False) -> 'Factor':
-    """Multiplication with optional NaN filtering."""
-    return factor1.multiply(factor2, filter_nan)
+def multiply(factor1: 'Factor', factor2: Union['Factor', float]) -> 'Factor':
+    """Multiplication. NaN values propagate through the operation."""
+    return factor1.multiply(factor2)
 
-def subtract(factor1: 'Factor', factor2: Union['Factor', float], filter_nan: bool = False) -> 'Factor':
-    """Subtraction with optional NaN filtering."""
-    return factor1.subtract(factor2, filter_nan)
+def subtract(factor1: 'Factor', factor2: Union['Factor', float]) -> 'Factor':
+    """Subtraction. NaN values propagate through the operation."""
+    return factor1.subtract(factor2)
 
 def power(base: 'Factor', exponent: Union['Factor', float]) -> 'Factor':
     """Power operation."""
@@ -209,29 +213,3 @@ def reverse(factor: 'Factor') -> 'Factor':
 def signed_power(base: 'Factor', exponent: Union['Factor', float]) -> 'Factor':
     """Power operation preserving sign of base."""
     return base.signed_power(exponent)
-
-def ts_regression(y: 'Factor', x: 'Factor', window: int, lag: int = 0, rettype: int = 0) -> 'Factor':
-    """
-    Rolling linear regression of y on x.
-
-    Parameters
-    ----------
-    y : Factor
-        Dependent variable
-    x : Factor
-        Independent variable
-    window : int
-        Rolling window size
-    lag : int, optional
-        Lag for independent variable (default: 0)
-    rettype : int, optional
-        Return type (default: 0):
-        0: residuals, 1: intercept, 2: slope, 3: fitted values,
-        4: SSE, 5: SST, 6: R², 7: MSE, 8: SE(beta), 9: SE(alpha)
-
-    Returns
-    -------
-    Factor
-        Requested regression statistic
-    """
-    return y.ts_regression(x, window, lag, rettype)

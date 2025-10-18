@@ -156,13 +156,6 @@ class Backtester:
         initial_capital : float, default 100000
             Initial capital for backtesting
         """
-        from .core import Factor
-        
-        if not isinstance(price_factor, Factor):
-            raise TypeError("price_factor must be a Factor object")
-        if not isinstance(strategy_factor, Factor):
-            raise TypeError("strategy_factor must be a Factor object")
-        
         self.price_factor = price_factor
         self.strategy_factor = strategy_factor
         
@@ -509,6 +502,11 @@ class Backtester:
             ])
         
         return "\n".join(summary_lines)
+
+    def print_summary(self) -> 'Backtester':
+        """Print concise performance summary to console."""
+        print(self.summary())
+        return self
 
     def get_daily_turnover_df(self) -> pd.DataFrame:
         """

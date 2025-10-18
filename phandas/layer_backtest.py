@@ -25,16 +25,8 @@ class LayerBacktester(Backtester):
     """
     Layer-based backtesting for quantile long-short strategies.
     
-    Constructs portfolio by:
-    1. Ranking assets by factor values each day
-    2. Going long top quantile (e.g., top 20%)
-    3. Going short bottom quantile (e.g., bottom 20%)
-    4. Equal-weighted within each quantile
-    5. 50% capital allocated to long, 50% to short (dollar-neutral)
-    
-    Differences from standard Backtester:
-    - Standard: Uses all assets with factor-proportional weights
-    - Layer: Only uses top/bottom quantiles with equal weights
+    Daily: rank assets by factor, go long top quantile, short bottom quantile, equal-weight within each.
+    Capital: 50% long (equally split), 50% short (equally split).
     """
     
     def __init__(
@@ -56,23 +48,13 @@ class LayerBacktester(Backtester):
         strategy_factor : Factor
             Strategy factor for ranking
         long_top_n : int, optional
-            Number of top-ranked assets to go long. If None, uses top 20%.
+            Top-ranked assets to long. If None, uses top 20%.
         short_bottom_n : int, optional
-            Number of bottom-ranked assets to go short. If None, uses bottom 20%.
+            Bottom-ranked assets to short. If None, uses bottom 20%.
         transaction_cost : Union[float, Tuple[float, float]], default (0.0003, 0.0003)
             Transaction cost rate(s)
         initial_capital : float, default 100000
             Initial capital
-            
-        Notes
-        -----
-        Capital allocation:
-        - 50% capital → equally split among long_top_n assets
-        - 50% capital → equally split among short_bottom_n assets
-        
-        Example: long_top_n=2, short_bottom_n=4
-        - Each long position: 50% / 2 = 25% capital
-        - Each short position: 50% / 4 = 12.5% capital
         """
         super().__init__(price_factor, strategy_factor, transaction_cost, initial_capital)
         
@@ -86,15 +68,9 @@ class LayerBacktester(Backtester):
     
     def _calculate_target_holdings(self, factors: pd.Series) -> pd.Series:
         """
-        Calculate target holdings using fixed-count selection.
+        Calculate target holdings: top N equal-weighted longs (50% capital), bottom N equal-weighted shorts (50%).
         
-        Strategy:
-        - Top N assets: 50% capital, equal-weighted longs
-        - Bottom N assets: 50% capital, equal-weighted shorts
-        - Middle: no position
-        
-        Daily rebalance: recalculates target holdings based on new factor rankings.
-        Only trades the difference between current and target positions.
+        Daily rebalance trades the difference between current and target positions.
         """
         if len(factors) < 2:
             return pd.Series(0.0, index=factors.index)
@@ -153,7 +129,7 @@ def backtest_layer(
     auto_run: bool = True
 ) -> LayerBacktester:
     """
-    Convenience function for layer-based backtesting.
+    Layer-based backtesting (convenience function).
     
     Parameters
     ----------
@@ -162,9 +138,9 @@ def backtest_layer(
     strategy_factor : Factor
         Strategy factor for ranking
     long_top_n : int, optional
-        Number of top-ranked assets to go long. If None, uses top 20%.
+        Top-ranked assets to long (default: 20%)
     short_bottom_n : int, optional
-        Number of bottom-ranked assets to go short. If None, uses bottom 20%.
+        Bottom-ranked assets to short (default: 20%)
     transaction_cost : Union[float, Tuple[float, float]], default (0.0003, 0.0003)
         Transaction cost rate(s)
     initial_capital : float, default 100000
@@ -176,50 +152,6 @@ def backtest_layer(
     -------
     LayerBacktester
         Backtester instance
-        
-    Examples
-    --------
-    >>> from phandas import Panel, backtest_layer
-    >>> panel = Panel.from_csv('data.csv')
-    >>> 
-    >>> # Example 1: Symmetric (long 2, short 2)
-    >>> bt = backtest_layer(
-    ...     price_factor=panel['open'],
-    ...     strategy_factor=my_factor,
-    ...     long_top_n=2,
-    ...     short_bottom_n=2
-    ... )
-    >>> 
-    >>> # Example 2: Asymmetric (long 2, short 4)
-    >>> bt = backtest_layer(
-    ...     price_factor=panel['open'],
-    ...     strategy_factor=my_factor,
-    ...     long_top_n=2,
-    ...     short_bottom_n=4
-    ... )
-    >>> bt.plot_equity()
-    
-    Notes
-    -----
-    Capital allocation (market-neutral):
-    - 50% capital → equally split among long_top_n assets
-    - 50% capital → equally split among short_bottom_n assets
-    - Net exposure = 0%
-    
-    Example: long_top_n=2, short_bottom_n=4, initial_capital=100k
-    - Each long position: 50k / 2 = 25k (25% of portfolio)
-    - Each short position: 50k / 4 = 12.5k (12.5% of portfolio)
-    
-    Daily rebalance:
-    1. Rank all assets by factor values
-    2. Select top N for long, bottom N for short
-    3. Calculate target holdings (equal-weight within each side)
-    4. Execute trades = target - current holdings
-    5. Only trades the difference (not full liquidation)
-    
-    Comparison with standard backtest():
-    - standard: All assets, factor-proportional weights
-    - layer: Only top/bottom N, equal weights
     """
     bt = LayerBacktester(price_factor, strategy_factor, long_top_n, short_bottom_n,
                         transaction_cost, initial_capital)

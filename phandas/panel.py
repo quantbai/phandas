@@ -178,21 +178,23 @@ class Panel:
         self.data.reset_index().to_csv(path, index=False)
         return path
     
-    def info(self) -> dict:
+    def info(self) -> None:
         """
-        Get panel information.
-        
+        Print panel data quality: metadata and NaN statistics per column.
         """
         timestamps = self.data.index.get_level_values('timestamp')
         symbols = self.data.index.get_level_values('symbol')
+        n_symbols = len(symbols.unique())
+        n_periods = len(timestamps.unique())
         
-        return {
-            'shape': self.data.shape,
-            'columns': list(self.data.columns),
-            'time_range': (timestamps.min(), timestamps.max()),
-            'symbols': sorted(symbols.unique()),
-            'valid_ratio': self.data.notna().values.mean(),
-        }
+        print(f"Panel: {self.data.shape[0]} obs, {len(self.data.columns)} columns")
+        print(f"  symbols={n_symbols}, periods={n_periods}")
+        print(f"  time: {timestamps.min().strftime('%Y-%m-%d')} to {timestamps.max().strftime('%Y-%m-%d')}")
+        print("  NaN per column:")
+        for col in self.data.columns:
+            n_nan = self.data[col].isna().sum()
+            nan_ratio = n_nan / len(self.data)
+            print(f"    {col}: {n_nan} ({nan_ratio:.1%})")
     
     def __repr__(self):
         timestamps = self.data.index.get_level_values('timestamp')

@@ -7,7 +7,7 @@ research, particularly in cryptocurrency markets.
 """
 
 __author__ = "Phantom Management"
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 
 from .core import Factor
 from .panel import Panel
@@ -23,7 +23,7 @@ from .operators import (
     
     group_neutralize, vector_neut, regression_neut
 )
-from .data import fetch_data, check_data_quality
+from .data import fetch_data
 from .backtest import Backtester, backtest
 from .layer_backtest import backtest_layer
 from .layer import analyze_layers
@@ -33,7 +33,7 @@ from .ic import analyze_ic
 __all__ = [
     'Factor', 'Panel',
     
-    'fetch_data', 'check_data_quality',
+    'fetch_data',
     
     'Backtester', 'backtest', 'backtest_layer',
     

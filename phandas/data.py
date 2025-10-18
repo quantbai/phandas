@@ -95,16 +95,14 @@ def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since) -> Option
             return None
         
         all_ohlcv = []
-        limit = 1000  # Fetch limit per request
+        limit = 1000
         
         while True:
             ohlcv = exchange.fetch_ohlcv(market_symbol, timeframe, since=since, limit=limit)
             if not ohlcv:
                 break
             all_ohlcv.extend(ohlcv)
-            # Update since to continue from last timestamp + 1ms
             since = ohlcv[-1][0] + 1
-            # Respect rate limits
             time.sleep(exchange.rateLimit / 1000)
         
         if not all_ohlcv:
@@ -157,7 +155,7 @@ def _process_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         '1M': 'MS',
     }
     
-    freq = freq_map.get(timeframe, 'D') # Default to daily if not found
+    freq = freq_map.get(timeframe, 'D')
     full_range = pd.date_range(start=common_start, end=end_date, freq=freq)
     
     ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
@@ -178,38 +176,3 @@ def _process_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     result = pd.concat(result_dfs, axis=1)
     return result.sort_index()
 
-
-def check_data_quality(data: pd.DataFrame, verbose: bool = True) -> dict:
-    """
-    Check data quality and return summary.
-    
-    Parameters
-    ----------
-    data : DataFrame
-        OHLCV data to check
-    verbose : bool, default True
-        Print summary to console
-        
-    """
-    if isinstance(data, str):
-        data = pd.read_csv(data, index_col=[0, 1], parse_dates=[0])
-    
-    report = {
-        'shape': data.shape,
-        'symbols': list(data.index.get_level_values('symbol').unique()),
-        'time_range': (data.index.get_level_values('timestamp').min(),
-                      data.index.get_level_values('timestamp').max()),
-        'missing_values': data.isnull().sum().to_dict(),
-        'duplicates': data.index.duplicated().sum()
-    }
-    
-    if verbose:
-        print(f"Data shape: {report['shape']}")
-        print(f"Symbols: {len(report['symbols'])}")
-        print(f"Time range: {report['time_range'][0]} to {report['time_range'][1]}")
-        if any(report['missing_values'].values()):
-            print("Missing values:", {k: v for k, v in report['missing_values'].items() if v > 0})
-        if report['duplicates'] > 0:
-            print(f"Duplicate timestamps: {report['duplicates']}")
-    
-    return report
