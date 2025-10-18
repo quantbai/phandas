@@ -1,7 +1,4 @@
-"""
-Multi-column market data container (OHLCV, Factors)
-with unified MultiIndex structure.
-"""
+"""Multi-column market data container with unified MultiIndex structure."""
 
 import pandas as pd
 from typing import Union, Optional, List
@@ -9,22 +6,10 @@ from .core import Factor
 
 
 class Panel:
-    """
-    Multi-column market data container.
-    
-    Internal format: MultiIndex DataFrame with (timestamp, symbol) index.
-    Supports data extraction to Factor objects.
-    """
+    """Multi-column market data container with (timestamp, symbol) MultiIndex."""
     
     def __init__(self, data: pd.DataFrame):
-        """
-        Initialize Panel from DataFrame.
-        
-        Parameters
-        ----------
-        data : DataFrame
-            MultiIndex DataFrame with (timestamp, symbol) index
-        """
+        """Initialize Panel from DataFrame with MultiIndex (timestamp, symbol)."""
         df = data.copy()
         if not isinstance(df.index, pd.MultiIndex):
             if 'timestamp' in df.columns and 'symbol' in df.columns:
@@ -37,32 +22,14 @@ class Panel:
     
     @classmethod
     def from_csv(cls, path: str) -> 'Panel':
-        """
-        Load Panel from CSV file.
-        
-        Parameters
-        ----------
-        path : str
-            CSV file path
-            
-        """
+        """Load Panel from CSV file."""
         df = pd.read_csv(path, parse_dates=['timestamp'])
         if 'timestamp' in df.columns and 'symbol' in df.columns:
             df = df.set_index(['timestamp', 'symbol']).sort_index()
         return cls(df)
     
     def get_factor(self, column: str, name: Optional[str] = None) -> Factor:
-        """
-        Extract column as Factor object.
-        
-        Parameters
-        ----------
-        column : str
-            Column name to extract
-        name : str, optional
-            Factor name (defaults to column name)
-            
-        """
+        """Extract column as Factor object."""
         if column not in self.data.columns:
             raise ValueError(f"Column '{column}' not found")
         
@@ -71,117 +38,49 @@ class Panel:
         return Factor(factor_data, name or column)
     
     def add_factor(self, factor: Factor, name: str) -> 'Panel':
-        """
-        Add Factor as new column.
-        
-        Parameters
-        ----------
-        factor : Factor
-            Factor object to add
-        name : str
-            Column name for the factor
-            
-        """
+        """Add Factor as new column."""
         result = self.data.copy()
-        
-        factor_series = factor.data['factor']
-        result[name] = factor_series
-        
+        result[name] = factor.data['factor']
         return Panel(result)
     
     def add_column(self, data: pd.Series, name: str) -> 'Panel':
-        """
-        Add arbitrary Series as new column.
-        
-        Parameters
-        ----------
-        data : Series
-            Series with MultiIndex (timestamp, symbol)
-        name : str
-            Column name
-            
-        """
+        """Add Series with MultiIndex (timestamp, symbol) as new column."""
         result = self.data.copy()
         result[name] = data
         return Panel(result)
     
-    
     def __getitem__(self, key):
-        """
-        Access columns using bracket notation.
-        
-        Returns Factor for single column, Panel for multiple columns.
-        """
+        """Access columns: returns Factor for str, Panel for list."""
         if isinstance(key, str):
             return self.get_factor(key)
         elif isinstance(key, list):
-            subset = self.data[key].copy()
-            return Panel(subset)
+            return Panel(self.data[key].copy())
         else:
             raise TypeError("Key must be str or list of str")
     
     def slice_time(self, start: Optional[str] = None, end: Optional[str] = None) -> 'Panel':
-        """
-        Slice panel by time range.
-        
-        Parameters
-        ----------
-        start : str, optional
-            Start date (inclusive)
-        end : str, optional
-            End date (inclusive)
-            
-        """
+        """Slice panel by time range [start, end]."""
         idx = self.data.index.get_level_values('timestamp')
         
-        if start is not None:
-            start = pd.to_datetime(start)
-            mask_start = idx >= start
-        else:
-            mask_start = pd.Series(True, index=self.data.index)
+        mask_start = idx >= pd.to_datetime(start) if start else pd.Series(True, index=self.data.index)
+        mask_end = idx <= pd.to_datetime(end) if end else pd.Series(True, index=self.data.index)
         
-        if end is not None:
-            end = pd.to_datetime(end)
-            mask_end = idx <= end
-        else:
-            mask_end = pd.Series(True, index=self.data.index)
-        
-        result = self.data[mask_start & mask_end].copy()
-        return Panel(result)
+        return Panel(self.data[mask_start & mask_end].copy())
     
     def slice_symbols(self, symbols: Union[str, List[str]]) -> 'Panel':
-        """
-        Slice panel by symbols.
-        
-        Parameters
-        ----------
-        symbols : str or list of str
-            Symbol(s) to extract
-            
-        """
+        """Slice panel by symbol(s)."""
         if isinstance(symbols, str):
             symbols = [symbols]
         
-        result = self.data.loc[(slice(None), symbols), :].copy()
-        return Panel(result)
+        return Panel(self.data.loc[(slice(None), symbols), :].copy())
     
     def to_csv(self, path: str) -> str:
-        """
-        Save to CSV file.
-        
-        Parameters
-        ----------
-        path : str
-            Output file path
-            
-        """
+        """Save Panel to CSV file."""
         self.data.reset_index().to_csv(path, index=False)
         return path
     
     def info(self) -> None:
-        """
-        Print panel data quality: metadata and NaN statistics per column.
-        """
+        """Print data quality: shape, symbols, periods, time range, NaN per column."""
         timestamps = self.data.index.get_level_values('timestamp')
         symbols = self.data.index.get_level_values('symbol')
         n_symbols = len(symbols.unique())
@@ -193,25 +92,19 @@ class Panel:
         print("  NaN per column:")
         for col in self.data.columns:
             n_nan = self.data[col].isna().sum()
-            nan_ratio = n_nan / len(self.data)
-            print(f"    {col}: {n_nan} ({nan_ratio:.1%})")
+            print(f"    {col}: {n_nan} ({n_nan/len(self.data):.1%})")
     
     def __repr__(self):
         timestamps = self.data.index.get_level_values('timestamp')
         symbols = self.data.index.get_level_values('symbol')
         n_symbols = len(symbols.unique())
         n_periods = len(timestamps.unique())
-        n_cols = len(self.data.columns)
         valid_ratio = self.data.notna().values.mean()
-        
         time_range = f"{timestamps.min().strftime('%Y-%m-%d')} to {timestamps.max().strftime('%Y-%m-%d')}"
-        
-        return (f"Panel(obs={self.data.shape[0]}, cols={n_cols}, "
-                f"symbols={n_symbols}, periods={n_periods}, "
-                f"valid={valid_ratio:.1%}, range={time_range})")
+        return (f"Panel(obs={self.data.shape[0]}, cols={len(self.data.columns)}, "
+                f"symbols={n_symbols}, periods={n_periods}, valid={valid_ratio:.1%}, range={time_range})")
     
     def __str__(self):
         n_symbols = len(self.data.index.get_level_values('symbol').unique())
-        n_cols = len(self.data.columns)
-        return f"Panel: {self.data.shape[0]} obs, {n_cols} columns, {n_symbols} symbols"
+        return f"Panel: {self.data.shape[0]} obs, {len(self.data.columns)} columns, {n_symbols} symbols"
 

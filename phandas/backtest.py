@@ -1,18 +1,9 @@
 """
 Professional backtesting engine for factor strategies.
 
-Implements dollar-neutral portfolio-based backtesting with:
-- Dynamic position rebalancing
-- Transaction cost modeling (separate buy/sell rates)
-- Real-time portfolio valuation
-- Comprehensive performance metrics
-- Detailed trade logging
-
-Optimized for 3-column Factor format [timestamp, symbol, factor]
-
-Classes:
-    Portfolio: Portfolio state management and trade execution
-    Backtester: Main backtesting engine with metrics calculation
+Optimized for 3-column Factor format [timestamp, symbol, factor].
+Supports dollar-neutral portfolio-based backtesting with dynamic rebalancing,
+transaction cost modeling, and comprehensive performance metrics.
 """
 
 import pandas as pd
@@ -33,84 +24,71 @@ plt.rcParams['axes.unicode_minus'] = False
 
 
 class Portfolio:
-    """
-    Manages the state of a trading portfolio.
-    
-    Tracks cash, positions, historical equity curve, and detailed trade log.
-    Supports real-time mark-to-market valuation and trade execution.
-    """
+    """Manages trading portfolio state, positions, and trade execution."""
     def __init__(self, initial_capital: float = 100000):
         self.initial_capital = initial_capital
         self.cash = initial_capital
-        self.positions = pd.Series(dtype=float)
-        self.holdings = pd.Series(dtype=float)
+        self.positions = {}
+        self.holdings = {}
         self.total_value = initial_capital
         
         self.history = []
         self.trade_log = []
 
     def update_market_value(self, date, prices: pd.Series):
-        common_symbols = self.positions.index.intersection(prices.index)
+        """Mark-to-market portfolio valuation."""
+        holdings_value = 0.0
+        self.holdings.clear()
         
-        self.holdings = self.positions.loc[common_symbols] * prices.loc[common_symbols]
+        prices_dict = prices.to_dict()
+        for symbol, qty in self.positions.items():
+            if symbol in prices_dict:
+                value = qty * prices_dict[symbol]
+                self.holdings[symbol] = value
+                holdings_value += value
         
         previous_total_value = self.total_value
-        self.total_value = self.cash + self.holdings.sum()
-        
-        daily_pnl = self.total_value - previous_total_value
-        long_holdings_value = self.holdings[self.holdings > 0].sum()
-        short_holdings_value = self.holdings[self.holdings < 0].sum()
+        self.total_value = self.cash + holdings_value
         
         self.history.append({
             'date': date,
             'total_value': self.total_value,
             'cash': self.cash,
-            'holdings_value': self.holdings.sum(),
-            'daily_pnl': daily_pnl,
-            'long_holdings_value': long_holdings_value,
-            'short_holdings_value': short_holdings_value,
+            'holdings_value': holdings_value,
+            'daily_pnl': self.total_value - previous_total_value,
         })
 
     def execute_trade(self, symbol: str, quantity: float, price: float, 
                      transaction_cost_rates: Union[float, Tuple[float, float]], 
                      trade_date: pd.Timestamp):
-        """Execute a single trade and update portfolio state."""
+        """Execute trade with transaction costs (separate buy/sell rates)."""
         if isinstance(transaction_cost_rates, (list, tuple)):
             buy_cost_rate = transaction_cost_rates[0]
             sell_cost_rate = transaction_cost_rates[1]
         else:
-            buy_cost_rate = transaction_cost_rates
-            sell_cost_rate = transaction_cost_rates
+            buy_cost_rate = sell_cost_rate = transaction_cost_rates
             
         trade_value = quantity * price
-        
-        if quantity > 0:
-            cost = abs(trade_value) * buy_cost_rate
-        else:
-            cost = abs(trade_value) * sell_cost_rate
+        cost = abs(trade_value) * (buy_cost_rate if quantity > 0 else sell_cost_rate)
         
         self.cash -= (trade_value + cost)
         
-        current_quantity = self.positions.get(symbol, 0.0)
-        new_quantity = current_quantity + quantity
+        new_quantity = self.positions.get(symbol, 0.0) + quantity
+        
+        if abs(new_quantity) < 1e-10:
+            self.positions.pop(symbol, None)
+        else:
+            self.positions[symbol] = new_quantity
         
         self.trade_log.append({
             'date': trade_date,
             'symbol': symbol,
-            'quantity': quantity,
-            'price': price,
             'trade_value': trade_value,
             'cost': cost
         })
-
-        if np.isclose(new_quantity, 0):
-            if symbol in self.positions.index:
-                self.positions = self.positions.drop(symbol)
-        else:
-            self.positions.loc[symbol] = new_quantity
     
     def get_history_df(self) -> pd.DataFrame:
-        """Return the portfolio history as a DataFrame."""
+        """Return portfolio history as DataFrame."""
         if not self.history:
             return pd.DataFrame()
         df = pd.DataFrame(self.history)
@@ -119,7 +97,7 @@ class Portfolio:
         return df
 
     def get_trade_log_df(self) -> pd.DataFrame:
-        """Return the trade log as a DataFrame."""
+        """Return trade log as DataFrame."""
         if not self.trade_log:
             return pd.DataFrame()
         df = pd.DataFrame(self.trade_log)
@@ -130,9 +108,9 @@ class Portfolio:
 
 class Backtester:
     """
-    Professional backtesting engine with 3-column Factor format.
+    Backtesting engine with 3-column Factor format [timestamp, symbol, factor].
     
-    Optimized for fast backtesting with [timestamp, symbol, factor] format.
+    Optimized for fast backtesting with dynamic rebalancing and metrics calculation.
     """
     
     def __init__(
@@ -143,17 +121,15 @@ class Backtester:
         initial_capital: float = 100000
     ):
         """
-        Initialize backtester with 3-column Factor format.
-        
         Parameters
         ----------
         price_factor : Factor
-            Price factor for entry/exit prices (e.g., open price)
+            Price factor for entry/exit prices
         strategy_factor : Factor
             Strategy factor for position weights
-        transaction_cost : Union[float, Tuple[float, float]], default 0.001
-            Transaction cost rate(s)
-        initial_capital : float, default 100000
+        transaction_cost : Union[float, Tuple[float, float]]
+            Transaction cost rate(s) for buy/sell
+        initial_capital : float
             Initial capital for backtesting
         """
         self.price_factor = price_factor
@@ -165,19 +141,13 @@ class Backtester:
             self.transaction_cost_rates = (transaction_cost, transaction_cost)
         
         self.portfolio = Portfolio(initial_capital)
-        
         self.metrics = {}
-        self.detailed_history = []
+        
+        self._price_cache = self._build_date_cache(price_factor)
+        self._strategy_cache = self._build_date_cache(strategy_factor)
     
     def run(self) -> 'Backtester':
-        """
-        Execute backtest using 3-column Factor format.
-        
-        Returns
-        -------
-        Backtester
-            Self for method chaining
-        """
+        """Execute backtest using 3-column Factor format. Returns self for chaining."""
         price_dates = set(self.price_factor.data['timestamp'].unique())
         strategy_dates = set(self.strategy_factor.data['timestamp'].unique())
         common_dates = sorted(price_dates & strategy_dates)
@@ -206,76 +176,20 @@ class Backtester:
                 if current_prices.empty:
                     continue
                 
-                current_strategy_factors = self._get_factor_data(self.strategy_factor, current_date)
-                prev_strategy_factors = self._get_factor_data(self.strategy_factor, prev_date) if prev_date else pd.Series(dtype=float)
-                
-                old_holdings = self.portfolio.holdings.copy()
-                old_total_value = self.portfolio.total_value
-                
                 self.portfolio.update_market_value(current_date, current_prices)
                 
                 if not prev_date:
                     continue
                 
                 strategy_factors = self._get_factor_data(self.strategy_factor, prev_date)
-                
                 target_holdings = self._calculate_target_holdings(strategy_factors)
-                
                 orders = self._generate_orders(target_holdings, current_prices)
                 
-                trade_pnl_by_symbol = {}
-                trade_value_by_symbol = {}
                 for symbol, quantity in orders.items():
                     if symbol in current_prices.index:
                         price = current_prices.loc[symbol]
                         self.portfolio.execute_trade(symbol, quantity, price, 
                                                     self.transaction_cost_rates, current_date)
-                        
-                        trade_value = quantity * price
-                        trade_value_by_symbol[symbol] = trade_value
-                        cost = abs(trade_value) * (self.transaction_cost_rates[0] if quantity > 0 
-                                                   else self.transaction_cost_rates[1])
-                        trade_pnl_by_symbol[symbol] = -abs(cost)
-                
-                all_symbols = set(current_prices.index) | set(current_strategy_factors.index) | \
-                             set(prev_strategy_factors.index) | set(self.portfolio.holdings.index) | \
-                             set(target_holdings.index)
-                
-                for symbol in all_symbols:
-                    current_price = current_prices.get(symbol, np.nan)
-                    current_factor = current_strategy_factors.get(symbol, np.nan)
-                    prev_factor = prev_strategy_factors.get(symbol, np.nan)
-                    factor_change = current_factor - prev_factor if not (pd.isna(current_factor) or 
-                                                                         pd.isna(prev_factor)) else np.nan
-                    
-                    current_holding_value = self.portfolio.holdings.get(symbol, 0.0)
-                    old_holding_value = old_holdings.get(symbol, 0.0)
-                    holding_pnl = current_holding_value - old_holding_value if not pd.isna(current_price) else 0.0
-                    trade_pnl = trade_pnl_by_symbol.get(symbol, 0.0)
-                    
-                    total_symbol_pnl = holding_pnl + trade_pnl
-                    position_qty = self.portfolio.positions.get(symbol, 0.0)
-                    target_holding_value = target_holdings.get(symbol, 0.0)
-                    trade_value = trade_value_by_symbol.get(symbol, 0.0)
-
-                    self.detailed_history.append({
-                        'timestamp': current_date,
-                        'symbol': symbol,
-                        'price': current_price,
-                        'current_factor': current_factor,
-                        'prev_factor': prev_factor,
-                        'factor_change': factor_change,
-                        'opening_value': old_holding_value,
-                        'target_holding_value': target_holding_value,
-                        'trade_value': trade_value,
-                        'position_qty': position_qty,
-                        'holding_value': current_holding_value,
-                        'holding_pnl': holding_pnl,
-                        'trade_pnl': trade_pnl,
-                        'total_pnl': total_symbol_pnl,
-                        'portfolio_total_value': self.portfolio.total_value,
-                        'portfolio_daily_pnl': self.portfolio.total_value - old_total_value,
-                    })
                 
             except Exception as e:
                 logger.warning(f"Error on {current_date}: {e}")
@@ -284,7 +198,7 @@ class Backtester:
         return self
     
     def calculate_metrics(self, risk_free_rate: float = 0.0) -> 'Backtester':
-        """Calculate performance metrics."""
+        """Calculate performance metrics. Returns self for chaining."""
         history = self.portfolio.get_history_df()
         if history.empty or len(history) < 2:
             self.metrics = {}
@@ -323,27 +237,24 @@ class Backtester:
         
         return self
     
-    # ==================== Internal Helper Methods ====================
+    # ==================== Internal Methods ====================
+    
+    def _build_date_cache(self, factor: 'Factor') -> dict:
+        """Preprocess factor data into date-indexed cache for O(1) lookup."""
+        cache = {}
+        for date, group in factor.data.groupby('timestamp', sort=False):
+            cache[date] = group.set_index('symbol')['factor'].dropna()
+        return cache
     
     def _get_factor_data(self, factor: 'Factor', date) -> pd.Series:
-        """
-        Extract factor data for a specific date from 3-column format.
-        
-        """
+        """Extract factor data for specific date using cache."""
         if date is None:
             return pd.Series(dtype=float)
         
-        try:
-            date_data = factor.data[factor.data['timestamp'] == date]
-            
-            if date_data.empty:
-                return pd.Series(dtype=float)
-            
-            result = date_data.set_index('symbol')['factor'].dropna()
-            return result
-            
-        except Exception:
-            return pd.Series(dtype=float)
+        if factor is self.price_factor:
+            return self._price_cache.get(date, pd.Series(dtype=float))
+        else:
+            return self._strategy_cache.get(date, pd.Series(dtype=float))
     
     def _find_start_date(self, dates) -> int:
         """Find first date with complete data in both factors."""
@@ -374,22 +285,28 @@ class Backtester:
         """Generate trade orders based on target holdings and current prices."""
         current_holdings = self.portfolio.holdings
         
-        all_symbols = target_holdings.index.union(current_holdings.index)
+        all_symbols = set(target_holdings.index) | set(current_holdings.keys())
         
-        trade_values = target_holdings.reindex(all_symbols, fill_value=0) - \
-                       current_holdings.reindex(all_symbols, fill_value=0)
-                       
-        valid_prices = prices.reindex(trade_values.index)
-        trade_quantities = trade_values / valid_prices
+        trade_quantities = {}
+        prices_dict = prices.to_dict()
         
-        return trade_quantities.dropna().loc[lambda x: ~np.isclose(x, 0)]
+        for symbol in all_symbols:
+            if symbol not in prices_dict:
+                continue
+            
+            target_value = target_holdings.get(symbol, 0)
+            current_value = current_holdings.get(symbol, 0)
+            trade_value = target_value - current_value
+            
+            if abs(trade_value) > 1e-10:
+                trade_quantities[symbol] = trade_value / prices_dict[symbol]
+        
+        return pd.Series(trade_quantities)
     
-    # ==================== Visualization and Reporting ====================
+    # ==================== Visualization ====================
     
     def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> 'Backtester':
-        """
-        Plot equity curve with professional layout: equity (top) + drawdown (bottom) + turnover (third).
-        """
+        """Plot equity curve with drawdown and turnover subplots."""
         history = self.portfolio.get_history_df()
         if history.empty:
             logger.warning("No equity data to plot")
@@ -440,7 +357,6 @@ class Backtester:
                     bbox=dict(boxstyle='round,pad=0.75', facecolor='white', 
                              edgecolor='#e5e7eb', alpha=0.96, linewidth=1))
         
-        # Drawdown subplot
         ax_dd.set_facecolor('#ffffff')
         ax_dd.fill_between(drawdown.index, 0, drawdown, color='#ef4444', alpha=0.35, step='pre')
         ax_dd.plot(drawdown.index, drawdown, color='#991b1b', linewidth=0.8)
@@ -452,7 +368,6 @@ class Backtester:
         ax_dd.tick_params(axis='both', which='major', labelsize=9.0, colors='#6b7280', 
                           width=0.5, length=3)
         
-        # Turnover subplot
         ax_to.set_facecolor('#ffffff')
         if not turnover_df.empty:
             ax_to.plot(turnover_df.index, turnover_df['turnover'], color='#10b981', 
@@ -470,7 +385,6 @@ class Backtester:
         ax_to.tick_params(axis='both', which='major', labelsize=9.0, colors='#6b7280', 
                           width=0.5, length=3)
         
-        # Hide x-axis labels for upper plots
         plt.setp(ax.get_xticklabels(), visible=False)
         plt.setp(ax_dd.get_xticklabels(), visible=False)
         
@@ -478,7 +392,7 @@ class Backtester:
         return self
     
     def summary(self) -> str:
-        """Return concise performance summary as a string for plotting."""
+        """Return concise performance summary for plotting."""
         if not self.metrics:
             return "No metrics available."
         
@@ -504,7 +418,7 @@ class Backtester:
         return "\n".join(summary_lines)
 
     def print_summary(self) -> 'Backtester':
-        """Print concise performance summary to console."""
+        """Print performance summary to console."""
         print(self.summary())
         return self
 
@@ -512,13 +426,7 @@ class Backtester:
         """
         Calculate daily portfolio turnover.
         
-        Turnover is defined as the total absolute dollar value of trades 
-        (buys + sells) divided by the total portfolio value (NAV).
-        
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with 'turnover' column, indexed by date.
+        Turnover = total absolute dollar trades / daily NAV
         """
         trade_log_df = self.portfolio.get_trade_log_df()
         history_df = self.portfolio.get_history_df()
@@ -543,7 +451,7 @@ class Backtester:
     
     
     def __repr__(self):
-        """Professional representation of Backtester."""
+        """String representation of Backtester."""
         history = self.portfolio.get_history_df()
         if not history.empty:
             days = len(history)
@@ -564,23 +472,17 @@ def backtest(
     auto_run: bool = True
 ) -> Backtester:
     """
-    Convenience function for quick backtesting with 3-column Factor format.
+    Convenience function for quick backtesting.
     
     Parameters
     ----------
     price_factor : Factor
     strategy_factor : Factor
-    transaction_cost : Union[float, Tuple[float, float]], default 0.001
-        Can be a single float (e.g., 0.001) for both buy/sell,
-        or a tuple (buy_cost_rate, sell_cost_rate) for separate rates.
-    initial_capital : float, default 100000
-    auto_run : bool, default True
+    transaction_cost : Union[float, Tuple[float, float]]
+        Single value or (buy_cost_rate, sell_cost_rate)
+    initial_capital : float
+    auto_run : bool
         Automatically run backtest and calculate metrics
-        
-    Returns
-    -------
-    Backtester
-        Backtester instance
     """
     bt = Backtester(price_factor, strategy_factor, transaction_cost, initial_capital)
     

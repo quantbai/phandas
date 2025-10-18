@@ -1,10 +1,7 @@
 """
 Layer-based backtesting engine for long-short strategies.
 
-Implements quantile-based portfolio construction:
-- Long top quantile assets (high factor values)
-- Short bottom quantile assets (low factor values)
-- Equal-weighted within each quantile
+Long top quantile assets, short bottom quantile, equal-weight within each.
 """
 
 import pandas as pd
@@ -25,8 +22,8 @@ class LayerBacktester(Backtester):
     """
     Layer-based backtesting for quantile long-short strategies.
     
-    Daily: rank assets by factor, go long top quantile, short bottom quantile, equal-weight within each.
-    Capital: 50% long (equally split), 50% short (equally split).
+    Daily: rank by factor, long top quantile, short bottom quantile, equal-weight.
+    Capital: 50% long, 50% short.
     """
     
     def __init__(
@@ -44,13 +41,13 @@ class LayerBacktester(Backtester):
         Parameters
         ----------
         price_factor : Factor
-            Price factor for entry/exit prices
+            For entry/exit prices
         strategy_factor : Factor
-            Strategy factor for ranking
+            For ranking
         long_top_n : int, optional
-            Top-ranked assets to long. If None, uses top 20%.
+            Top N assets to long (default: top 20%)
         short_bottom_n : int, optional
-            Bottom-ranked assets to short. If None, uses bottom 20%.
+            Bottom N assets to short (default: bottom 20%)
         transaction_cost : Union[float, Tuple[float, float]], default (0.0003, 0.0003)
             Transaction cost rate(s)
         initial_capital : float, default 100000
@@ -67,11 +64,7 @@ class LayerBacktester(Backtester):
         self.short_bottom_n = short_bottom_n
     
     def _calculate_target_holdings(self, factors: pd.Series) -> pd.Series:
-        """
-        Calculate target holdings: top N equal-weighted longs (50% capital), bottom N equal-weighted shorts (50%).
-        
-        Daily rebalance trades the difference between current and target positions.
-        """
+        """Target holdings: top N longs (50%), bottom N shorts (50%), daily rebalance."""
         if len(factors) < 2:
             return pd.Series(0.0, index=factors.index)
         
@@ -103,7 +96,7 @@ class LayerBacktester(Backtester):
         return target_holdings
     
     def __repr__(self):
-        """Professional representation."""
+        """String representation."""
         history = self.portfolio.get_history_df()
         long_str = f"{self.long_top_n}" if self.long_top_n else "20%"
         short_str = f"{self.short_bottom_n}" if self.short_bottom_n else "20%"
@@ -134,13 +127,13 @@ def backtest_layer(
     Parameters
     ----------
     price_factor : Factor
-        Price factor for entry/exit prices
+        For entry/exit prices
     strategy_factor : Factor
-        Strategy factor for ranking
+        For ranking
     long_top_n : int, optional
-        Top-ranked assets to long (default: 20%)
+        Top N to long (default: 20%)
     short_bottom_n : int, optional
-        Bottom-ranked assets to short (default: 20%)
+        Bottom N to short (default: 20%)
     transaction_cost : Union[float, Tuple[float, float]], default (0.0003, 0.0003)
         Transaction cost rate(s)
     initial_capital : float, default 100000

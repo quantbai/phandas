@@ -1,8 +1,4 @@
-"""
-Data acquisition and management for cryptocurrency markets via CCXT.
-
-Features data fetching, handling of renamed tokens, alignment, and quality validation.
-"""
+"""Data acquisition and management for cryptocurrency markets via CCXT."""
 
 import pandas as pd
 import ccxt
@@ -30,16 +26,15 @@ def fetch_data(
     Parameters
     ----------
     symbols : list of str
-        Cryptocurrency symbols (e.g., ['BTC', 'ETH'])
+        E.g., ['BTC', 'ETH']
     timeframe : str, default '1d'
         Timeframe for data
     start_date : str, optional
-        Start date in 'YYYY-MM-DD' format
+        YYYY-MM-DD format
     exchange : str, default 'binance'
         Exchange name
     output_path : str, optional
-        CSV file path to save data
-        
+        CSV path to save data
     """
     try:
         exchange_obj = getattr(ccxt, exchange)()
@@ -137,7 +132,7 @@ def _fetch_renamed_symbol(exchange, symbols: List[str], timeframe: str, since) -
 
 
 def _process_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
-    """Process and align data."""
+    """Process and align data to common time range."""
     pivoted = df.pivot_table(index='timestamp', columns='symbol', values='close')
     common_start = pivoted.apply(lambda s: s.first_valid_index()).max()
     

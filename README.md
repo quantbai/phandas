@@ -39,28 +39,25 @@ pip install phandas
 ### Quick Start
 
 ```python
-from phandas import fetch_data, load_factor, backtest
-from phandas.operators import vector_neut
+from phandas import *
 
 # Fetch market data
-data = fetch_data(
+panel = fetch_data(
     symbols=['BNB', 'ETH', 'SOL', 'MATIC', 'ARB', 'OP'],
     timeframe='1d',
     start_date='2023-01-01'
 )
 
-# Load factors
-close = load_factor(data, 'close')
-volume = load_factor(data, 'volume')
-open_price = load_factor(data, 'open')
+# Extract factors
+close = panel['close']
+volume = panel['volume']
+open_price = panel['open']
 
 # Construct momentum factor
-def momentum(close, delay):
-    return (close / close.ts_delay(delay)) - 1
-
-factor = (momentum(close, 14) + 
-          momentum(close, 21) + 
-          momentum(close, 30))
+momentum_14 = (close / close.ts_delay(14)) - 1
+momentum_21 = (close / close.ts_delay(21)) - 1
+momentum_30 = (close / close.ts_delay(30)) - 1
+factor = momentum_14 + momentum_21 + momentum_30
 
 # Neutralize against volume
 neutralized_factor = vector_neut(factor, -volume)
@@ -106,28 +103,25 @@ pip install phandas
 ### 快速開始
 
 ```python
-from phandas import fetch_data, load_factor, backtest
-from phandas.operators import vector_neut
+from phandas import *
 
 # 獲取市場資料
-data = fetch_data(
+panel = fetch_data(
     symbols=['BNB', 'ETH', 'SOL', 'MATIC', 'ARB', 'OP'],
     timeframe='1d',
     start_date='2023-01-01'
 )
 
-# 載入因子
-close = load_factor(data, 'close')
-volume = load_factor(data, 'volume')
-open_price = load_factor(data, 'open')
+# 提取因子
+close = panel['close']
+volume = panel['volume']
+open_price = panel['open']
 
 # 構建動量因子
-def momentum(close, delay):
-    return (close / close.ts_delay(delay)) - 1
-
-factor = (momentum(close, 14) + 
-          momentum(close, 21) + 
-          momentum(close, 30))
+momentum_14 = (close / close.ts_delay(14)) - 1
+momentum_21 = (close / close.ts_delay(21)) - 1
+momentum_30 = (close / close.ts_delay(30)) - 1
+factor = momentum_14 + momentum_21 + momentum_30
 
 # 對成交量進行中性化
 neutralized_factor = vector_neut(factor, -volume)

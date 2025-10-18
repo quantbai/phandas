@@ -7,7 +7,7 @@ research, particularly in cryptocurrency markets.
 """
 
 __author__ = "Phantom Management"
-__version__ = "0.7.1"
+__version__ = "0.8.0"
 
 from .core import Factor
 from .panel import Panel
