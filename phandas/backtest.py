@@ -9,7 +9,7 @@ transaction cost modeling, and comprehensive performance metrics.
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import TYPE_CHECKING, Union, Tuple
+from typing import TYPE_CHECKING, Union, Tuple, Dict, List, Optional
 import logging
 
 if TYPE_CHECKING:
@@ -67,12 +67,11 @@ class Portfolio:
             sell_cost_rate = transaction_cost_rates[1]
         else:
             buy_cost_rate = sell_cost_rate = transaction_cost_rates
-            
+        
         trade_value = quantity * price
         cost = abs(trade_value) * (buy_cost_rate if quantity > 0 else sell_cost_rate)
         
         self.cash -= (trade_value + cost)
-        
         new_quantity = self.positions.get(symbol, 0.0) + quantity
         
         if abs(new_quantity) < 1e-10:
@@ -87,23 +86,21 @@ class Portfolio:
             'cost': cost
         })
     
+    def _build_datetime_df(self, data_list: list) -> pd.DataFrame:
+        """Convert data list to DataFrame with datetime index."""
+        if not data_list:
+            return pd.DataFrame()
+        df = pd.DataFrame(data_list)
+        df['date'] = pd.to_datetime(df['date'])
+        return df.set_index('date')
+    
     def get_history_df(self) -> pd.DataFrame:
         """Return portfolio history as DataFrame."""
-        if not self.history:
-            return pd.DataFrame()
-        df = pd.DataFrame(self.history)
-        df['date'] = pd.to_datetime(df['date'])
-        df = df.set_index('date')
-        return df
+        return self._build_datetime_df(self.history)
 
     def get_trade_log_df(self) -> pd.DataFrame:
         """Return trade log as DataFrame."""
-        if not self.trade_log:
-            return pd.DataFrame()
-        df = pd.DataFrame(self.trade_log)
-        df['date'] = pd.to_datetime(df['date'])
-        df = df.set_index('date')
-        return df
+        return self._build_datetime_df(self.trade_log)
 
 
 class Backtester:
@@ -237,8 +234,6 @@ class Backtester:
         
         return self
     
-    # ==================== Internal Methods ====================
-    
     def _build_date_cache(self, factor: 'Factor') -> dict:
         """Preprocess factor data into date-indexed cache for O(1) lookup."""
         cache = {}
@@ -303,7 +298,72 @@ class Backtester:
         
         return pd.Series(trade_quantities)
     
-    # ==================== Visualization ====================
+    def get_daily_returns(self) -> pd.Series:
+        """Return daily returns series (aligned with portfolio history)."""
+        history = self.portfolio.get_history_df()
+        if history.empty or len(history) < 2:
+            return pd.Series(dtype=float)
+        equity = history['total_value']
+        return equity.pct_change(fill_method=None).dropna()
+
+    def get_equity_curve(self) -> pd.Series:
+        """Return normalized equity curve (starting at 1.0)."""
+        history = self.portfolio.get_history_df()
+        if history.empty:
+            return pd.Series(dtype=float)
+        equity = history['total_value']
+        return equity / equity.iloc[0]
+
+    def summary(self) -> str:
+        """Return concise performance summary string."""
+        if not self.metrics:
+            return "No metrics available."
+        
+        equity_curve = self.portfolio.get_history_df()['total_value']
+        summary_lines = [f"Strategy: {self.strategy_factor.name}"]
+        
+        if not equity_curve.empty:
+            start = equity_curve.index[0].strftime('%Y-%m-%d')
+            end = equity_curve.index[-1].strftime('%Y-%m-%d')
+            
+            turnover_df = self.get_daily_turnover_df()
+            avg_turnover = turnover_df['turnover'].mean() * 365 if not turnover_df.empty else 0
+            
+            summary_lines.extend([
+                f"Period: {start} to {end}",
+                f"Total Return: {self.metrics.get('total_return', 0):.2%}",
+                f"Annual Return: {self.metrics.get('annual_return', 0):.2%}",
+                f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}",
+                f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}",
+                f"Avg. Annual Turnover: {avg_turnover:.2%}"
+            ])
+        
+        return "\n".join(summary_lines)
+
+    def _summary_for_plot(self) -> str:
+        """Return compact summary for plot display (internal use only)."""
+        return self.summary()
+
+    def print_summary(self) -> 'Backtester':
+        """Print performance summary to console. Returns self for chaining."""
+        print(self.summary())
+        return self
+
+    def correlation_matrix(self) -> pd.DataFrame:
+        """Return 1x1 correlation matrix (single strategy). For API consistency."""
+        return pd.DataFrame(
+            [[1.0]],
+            index=[self.strategy_factor.name],
+            columns=[self.strategy_factor.name]
+        )
+
+    def print_correlation_matrix(self) -> 'Backtester':
+        """Print correlation matrix to console. Returns self for chaining."""
+        corr = self.correlation_matrix()
+        if not corr.empty:
+            print("\nCorrelation Matrix:")
+            print(corr.to_string(max_cols=None, max_rows=None, float_format=lambda x: f'{x:.6f}'))
+        return self
     
     def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> 'Backtester':
         """Plot equity curve with drawdown and turnover subplots."""
@@ -328,17 +388,7 @@ class Backtester:
         
         ax.set_facecolor('#fcfcfc')
         y_min = equity_curve.min()
-        layers = [
-            (0.22, '#2563eb'),
-            (0.12, '#3b82f6'),
-            (0.06, '#60a5fa'),
-            (0.03, '#93c5fd'),
-            (0.015, '#dbeafe'),
-        ]
-        for alpha, color in layers:
-            ax.fill_between(equity_curve.index, y_min, equity_curve,
-                           alpha=alpha, color=color, interpolate=True)
-        ax.plot(equity_curve.index, equity_curve, color='#1e40af', linewidth=1.05, alpha=0.95)
+        self._plot_equity_line(ax, equity_curve, y_min)
         
         ax.set_title(f'Equity Curve ({self.strategy_factor.name})', 
                     fontsize=12.5, fontweight='400', color='#1f2937', pad=14)
@@ -351,15 +401,14 @@ class Backtester:
                       width=0.5, length=3)
         
         if show_summary:
-            summary_text = self.summary()
+            summary_text = self._summary_for_plot()
             ax.text(0.015, 0.98, summary_text, transform=ax.transAxes, fontsize=9.5, 
                     verticalalignment='top', horizontalalignment='left', color='#374151',
                     bbox=dict(boxstyle='round,pad=0.75', facecolor='white', 
                              edgecolor='#e5e7eb', alpha=0.96, linewidth=1))
         
         ax_dd.set_facecolor('#ffffff')
-        ax_dd.fill_between(drawdown.index, 0, drawdown, color='#ef4444', alpha=0.35, step='pre')
-        ax_dd.plot(drawdown.index, drawdown, color='#991b1b', linewidth=0.8)
+        self._plot_drawdown(ax_dd, drawdown)
         ax_dd.set_ylabel('Drawdown', fontsize=10, color='#6b7280')
         ax_dd.grid(True, alpha=0.12, color='#e5e7eb', linestyle='-', linewidth=0.4)
         ax_dd.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
@@ -391,37 +440,6 @@ class Backtester:
         plt.show()
         return self
     
-    def summary(self) -> str:
-        """Return concise performance summary for plotting."""
-        if not self.metrics:
-            return "No metrics available."
-        
-        equity_curve = self.portfolio.get_history_df()['total_value']
-        summary_lines = [f"Strategy: {self.strategy_factor.name}"]
-        
-        if not equity_curve.empty:
-            start = equity_curve.index[0].strftime('%Y-%m-%d')
-            end = equity_curve.index[-1].strftime('%Y-%m-%d')
-            
-            turnover_df = self.get_daily_turnover_df()
-            avg_turnover = turnover_df['turnover'].mean() * 365 if not turnover_df.empty else 0
-            
-            summary_lines.extend([
-                f"Period: {start} to {end}",
-                f"Total Return: {self.metrics.get('total_return', 0):.2%}",
-                f"Annual Return: {self.metrics.get('annual_return', 0):.2%}",
-                f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}",
-                f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}",
-                f"Avg. Annual Turnover: {avg_turnover:.2%}"
-            ])
-        
-        return "\n".join(summary_lines)
-
-    def print_summary(self) -> 'Backtester':
-        """Print performance summary to console."""
-        print(self.summary())
-        return self
-
     def get_daily_turnover_df(self) -> pd.DataFrame:
         """
         Calculate daily portfolio turnover.
@@ -449,6 +467,40 @@ class Backtester:
         combined['turnover'] = combined['daily_trade_value'] / combined['daily_nav']
         return combined[['turnover']]
     
+    def _plot_equity_line(self, ax, equity_series: pd.Series, y_min: float):
+        """Plot equity curve with layered fill."""
+        layers = [
+            (0.22, '#2563eb'),
+            (0.12, '#3b82f6'),
+            (0.06, '#60a5fa'),
+            (0.03, '#93c5fd'),
+            (0.015, '#dbeafe'),
+        ]
+        for alpha, color in layers:
+            ax.fill_between(equity_series.index, y_min, equity_series,
+                           alpha=alpha, color=color, interpolate=True)
+        ax.plot(equity_series.index, equity_series, color='#1e40af', linewidth=1.05, alpha=0.95)
+    
+    def _plot_drawdown(self, ax, drawdown_series: pd.Series):
+        """Plot drawdown area."""
+        ax.fill_between(drawdown_series.index, 0, drawdown_series, 
+                       color='#ef4444', alpha=0.35, step='pre')
+        ax.plot(drawdown_series.index, drawdown_series, color='#991b1b', linewidth=0.8)
+    
+    def _style_axes(self, ax, show_ylabel: bool = True, show_xlabel: bool = False):
+        """Apply common styling to subplot axes."""
+        ax.set_facecolor('#ffffff' if show_ylabel or not show_xlabel else '#fcfcfc')
+        ax.grid(True, alpha=0.12, color='#e5e7eb', linestyle='-', linewidth=0.4)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}' if show_ylabel else f'{x:,.0f}'))
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.tick_params(axis='both', which='major', labelsize=9.0, colors='#6b7280', 
+                      width=0.5, length=3)
+        if show_ylabel:
+            ax.set_ylabel('Drawdown', fontsize=10, color='#6b7280')
+        if show_xlabel:
+            ax.set_xlabel('Date', fontsize=10.5, color='#6b7280')
+    
     
     def __repr__(self):
         """String representation of Backtester."""
@@ -462,6 +514,297 @@ class Backtester:
         else:
             return (f"Backtester(strategy={self.strategy_factor.name}, "
                    f"price={self.price_factor.name}, cost={self.transaction_cost_rates[0]:.3%})")
+
+    def __add__(self, other: 'Backtester') -> 'CombinedBacktester':
+        """Combine two strategies with equal weights (50-50 split)."""
+        return CombinedBacktester([self, other], weights=[0.5, 0.5])
+
+    def __mul__(self, weight: float) -> 'CombinedBacktester':
+        """Weight single strategy: bt * 0.7 for 70% allocation."""
+        if not 0 <= weight <= 1:
+            raise ValueError("Weight must be between 0 and 1")
+        return CombinedBacktester([self], weights=[weight])
+
+
+class CombinedBacktester:
+    """Multi-strategy portfolio combiner with correlation analysis."""
+
+    def __init__(self, backtests: List[Backtester], weights: List[float]):
+        """
+        Combine multiple backtesting results.
+
+        Parameters
+        ----------
+        backtests : List[Backtester]
+            List of Backtester objects
+        weights : List[float]
+            Portfolio weights (must sum to 1.0)
+        """
+        if len(backtests) != len(weights):
+            raise ValueError("Number of weights must match number of backtests")
+        if not np.isclose(sum(weights), 1.0, atol=1e-10):
+            raise ValueError(f"Weights must sum to 1.0, got {sum(weights):.6f}")
+        
+        self.backtests = backtests
+        self.weights = np.array(weights)
+        self.metrics = {}
+        self.calculate_metrics()
+
+    def calculate_metrics(self, risk_free_rate: float = 0.0) -> 'CombinedBacktester':
+        """Calculate portfolio-level performance metrics."""
+        port_returns = self.get_portfolio_returns()
+        if port_returns.empty or len(port_returns) < 2:
+            self.metrics = {}
+            return self
+        
+        total_return = (1 + port_returns).prod() - 1
+        
+        days = len(port_returns)
+        if days > 1:
+            annual_return = (1 + total_return) ** (365 / days) - 1
+        else:
+            annual_return = 0
+        
+        annual_vol = port_returns.std() * np.sqrt(252)
+        sharpe = (annual_return - risk_free_rate) / annual_vol if annual_vol > 0 else 0
+        
+        equity = (1 + port_returns).cumprod()
+        rolling_max = equity.expanding().max()
+        drawdown = equity / rolling_max - 1
+        max_drawdown = drawdown.min()
+        
+        calmar = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0
+        
+        self.metrics = {
+            'total_return': total_return,
+            'annual_return': annual_return,
+            'annual_volatility': annual_vol,
+            'sharpe_ratio': sharpe,
+            'max_drawdown': max_drawdown,
+            'calmar_ratio': calmar
+        }
+        
+        return self
+
+    def _get_aligned_returns(self) -> pd.DataFrame:
+        """Get aligned daily returns for all strategies."""
+        returns_dict = {}
+        for i, bt in enumerate(self.backtests):
+            returns_dict[f'strategy_{i}'] = bt.get_daily_returns()
+        
+        df = pd.DataFrame(returns_dict)
+        return df.dropna(how='all')
+
+    def get_portfolio_returns(self) -> pd.Series:
+        """Compute weighted portfolio daily returns."""
+        returns_df = self._get_aligned_returns()
+        if returns_df.empty:
+            return pd.Series(dtype=float)
+        
+        portfolio_returns = (returns_df * self.weights).sum(axis=1)
+        return portfolio_returns
+
+    def get_portfolio_equity(self) -> pd.Series:
+        """Compute portfolio equity curve."""
+        port_returns = self.get_portfolio_returns()
+        if port_returns.empty:
+            return pd.Series(dtype=float)
+        
+        equity = (1 + port_returns).cumprod()
+        initial_capital = sum([bt.portfolio.initial_capital * w 
+                              for bt, w in zip(self.backtests, self.weights)])
+        return equity * initial_capital
+
+    def correlation_matrix(self) -> pd.DataFrame:
+        """Calculate correlation matrix of strategy returns."""
+        returns_df = self._get_aligned_returns()
+        if returns_df.empty or len(returns_df) < 2:
+            logger.warning("Insufficient data for correlation calculation")
+            return pd.DataFrame()
+        
+        corr = returns_df.corr()
+        
+        rename_map = {f'strategy_{i}': self.backtests[i].strategy_factor.name 
+                     for i in range(len(self.backtests))}
+        corr = corr.rename(index=rename_map, columns=rename_map)
+        
+        return corr
+
+    def print_correlation_matrix(self) -> 'CombinedBacktester':
+        """Print correlation matrix to console. Returns self for chaining."""
+        corr = self.correlation_matrix()
+        if not corr.empty:
+            print("\nCorrelation Matrix:")
+            print(corr.to_string(max_cols=None, max_rows=None, float_format=lambda x: f'{x:.6f}'))
+        return self
+
+    def summary(self) -> str:
+        """Return portfolio performance summary (aligned with Backtester format)."""
+        lines = []
+        
+        strategy_names = ", ".join([bt.strategy_factor.name for bt in self.backtests])
+        lines.append(f"Strategy: {strategy_names}")
+        
+        equity = self.get_portfolio_equity()
+        if not equity.empty and len(equity) > 0:
+            start_date = equity.index[0].strftime('%Y-%m-%d')
+            end_date = equity.index[-1].strftime('%Y-%m-%d')
+            lines.append(f"Period: {start_date} to {end_date}")
+        
+        if self.metrics:
+            lines.append(f"Total Return: {self.metrics.get('total_return', 0):.2%}")
+            lines.append(f"Annual Return: {self.metrics.get('annual_return', 0):.2%}")
+            lines.append(f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}")
+            lines.append(f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}")
+        
+        lines.append("")
+        lines.append("Strategy Weights:")
+        for bt, w in zip(self.backtests, self.weights):
+            lines.append(f"  {bt.strategy_factor.name}: {w*100:.1f}%")
+        
+        corr = self.correlation_matrix()
+        if not corr.empty and len(corr) > 1:
+            lines.append("")
+            lines.append("Correlation Matrix:")
+            corr_str = corr.to_string(max_cols=None, max_rows=None, float_format=lambda x: f'{x:.4f}')
+            lines.extend(corr_str.split('\n'))
+        
+        return "\n".join(lines)
+
+    def _summary_for_plot(self) -> str:
+        """Return compact summary for plot display (without correlation matrix)."""
+        lines = []
+        
+        strategy_names = ", ".join([bt.strategy_factor.name for bt in self.backtests])
+        lines.append(f"Strategy: {strategy_names}")
+        
+        equity = self.get_portfolio_equity()
+        if not equity.empty and len(equity) > 0:
+            start_date = equity.index[0].strftime('%Y-%m-%d')
+            end_date = equity.index[-1].strftime('%Y-%m-%d')
+            lines.append(f"Period: {start_date} to {end_date}")
+        
+        if self.metrics:
+            lines.append(f"Total Return: {self.metrics.get('total_return', 0):.2%}")
+            lines.append(f"Annual Return: {self.metrics.get('annual_return', 0):.2%}")
+            lines.append(f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}")
+            lines.append(f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}")
+        
+        lines.append("")
+        lines.append("Strategy Weights:")
+        for bt, w in zip(self.backtests, self.weights):
+            lines.append(f"  {bt.strategy_factor.name}: {w*100:.1f}%")
+        
+        return "\n".join(lines)
+    
+    def print_summary(self) -> 'CombinedBacktester':
+        """Print portfolio summary."""
+        print(self.summary())
+        return self
+    
+    def _plot_equity_line(self, ax, equity_series: pd.Series, y_min: float):
+        """Plot equity curve with layered fill."""
+        layers = [
+            (0.22, '#2563eb'),
+            (0.12, '#3b82f6'),
+            (0.06, '#60a5fa'),
+            (0.03, '#93c5fd'),
+            (0.015, '#dbeafe'),
+        ]
+        for alpha, color in layers:
+            ax.fill_between(equity_series.index, y_min, equity_series,
+                           alpha=alpha, color=color, interpolate=True)
+        ax.plot(equity_series.index, equity_series, color='#1e40af', linewidth=1.05, alpha=0.95)
+    
+    def _plot_drawdown(self, ax, drawdown_series: pd.Series):
+        """Plot drawdown area."""
+        ax.fill_between(drawdown_series.index, 0, drawdown_series, 
+                       color='#ef4444', alpha=0.35, step='pre')
+        ax.plot(drawdown_series.index, drawdown_series, color='#991b1b', linewidth=0.8)
+    
+    def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> 'CombinedBacktester':
+        """Plot combined portfolio equity curve with drawdown."""
+        equity = self.get_portfolio_equity()
+        if equity.empty or len(equity) < 2:
+            logger.warning("No equity data to plot")
+            return self
+        
+        equity_norm = equity / equity.iloc[0]
+        rolling_max = equity_norm.cummax()
+        drawdown = equity_norm / rolling_max - 1.0
+        
+        plt.style.use('default')
+        fig = plt.figure(figsize=figsize, constrained_layout=True)
+        gs = fig.add_gridspec(2, 1, height_ratios=[3, 1])
+        ax = fig.add_subplot(gs[0, 0])
+        ax_dd = fig.add_subplot(gs[1, 0], sharex=ax)
+        
+        ax.set_facecolor('#fcfcfc')
+        y_min = equity.min()
+        self._plot_equity_line(ax, equity, y_min)
+        
+        strategy_names = ", ".join([bt.strategy_factor.name for bt in self.backtests])
+        ax.set_title(f'Combined Portfolio Equity ({strategy_names})', 
+                    fontsize=12.5, fontweight='400', color='#1f2937', pad=14)
+        ax.set_ylabel('Equity Value', fontsize=10.5, color='#6b7280')
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
+        ax.grid(True, alpha=0.15, color='#e5e7eb', linestyle='-', linewidth=0.4)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.tick_params(axis='both', which='major', labelsize=9.5, colors='#6b7280', 
+                      width=0.5, length=3)
+        
+        if show_summary:
+            summary_text = self._summary_for_plot()
+            ax.text(0.015, 0.98, summary_text, transform=ax.transAxes, fontsize=9.5, 
+                    verticalalignment='top', horizontalalignment='left', color='#374151',
+                    bbox=dict(boxstyle='round,pad=0.75', facecolor='white', 
+                             edgecolor='#e5e7eb', alpha=0.96, linewidth=1))
+        
+        ax_dd.set_facecolor('#ffffff')
+        self._plot_drawdown(ax_dd, drawdown)
+        ax_dd.set_ylabel('Drawdown', fontsize=10, color='#6b7280')
+        ax_dd.set_xlabel('Date', fontsize=10.5, color='#6b7280')
+        ax_dd.grid(True, alpha=0.12, color='#e5e7eb', linestyle='-', linewidth=0.4)
+        ax_dd.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
+        ax_dd.spines['top'].set_visible(False)
+        ax_dd.spines['right'].set_visible(False)
+        ax_dd.tick_params(axis='both', which='major', labelsize=9.0, colors='#6b7280', 
+                          width=0.5, length=3)
+        
+        plt.setp(ax.get_xticklabels(), visible=False)
+        
+        plt.show()
+        return self
+
+    def __add__(self, other: Union[Backtester, 'CombinedBacktester']) -> 'CombinedBacktester':
+        """Add another strategy to portfolio."""
+        if isinstance(other, Backtester):
+            combined_backtests = self.backtests + [other]
+            n_total = len(combined_backtests)
+            new_weights = np.concatenate([self.weights * (len(self.backtests) - 1) / len(self.backtests), 
+                                          [1.0 / n_total]])
+            new_weights = new_weights / new_weights.sum()
+        elif isinstance(other, CombinedBacktester):
+            combined_backtests = self.backtests + other.backtests
+            new_weights = np.concatenate([self.weights, other.weights])
+            new_weights = new_weights / new_weights.sum()
+        else:
+            raise TypeError("Can only add Backtester or CombinedBacktester")
+        
+        result = CombinedBacktester(combined_backtests, new_weights)
+        return result
+
+    def __mul__(self, scalar: float) -> 'CombinedBacktester':
+        """Scale portfolio weight."""
+        if not 0 <= scalar <= 1:
+            raise ValueError("Scalar must be between 0 and 1")
+        return CombinedBacktester(self.backtests, self.weights * scalar / self.weights.sum())
+
+    def __repr__(self) -> str:
+        """String representation."""
+        names = [bt.strategy_factor.name for bt in self.backtests]
+        return f"CombinedBacktester({', '.join(names)}, weights={list(np.round(self.weights, 3))})"
 
 
 def backtest(
