@@ -7,7 +7,7 @@ research, particularly in cryptocurrency markets.
 """
 
 __author__ = "Phantom Management"
-__version__ = "0.8.0"
+__version__ = "0.9.1"
 
 from .core import Factor
 from .panel import Panel
@@ -24,10 +24,11 @@ from .operators import (
     group_neutralize, vector_neut, regression_neut
 )
 from .data import fetch_data
-from .backtest import Backtester, backtest
+from .backtest import Backtester, backtest, CombinedBacktester
 from .layer_backtest import backtest_layer
 from .layer import analyze_layers
 from .ic import analyze_ic 
+from .trader import rebalance, Rebalancer, OKXTrader
 
 
 __all__ = [
@@ -35,8 +36,10 @@ __all__ = [
     
     'fetch_data',
     
-    'Backtester', 'backtest', 'backtest_layer',
+    'Backtester', 'backtest', 'CombinedBacktester', 'backtest_layer',
     
+    'rebalance', 'Rebalancer', 'OKXTrader',
+
     'ts_rank', 'ts_mean', 'ts_median', 'ts_product', 'ts_sum', 'ts_std_dev', 'ts_corr', 'ts_delay', 'ts_delta', 
     'ts_arg_max', 'ts_arg_min', 'ts_av_diff', 'ts_backfill', 'ts_decay_exp_window', 'ts_decay_linear',
     'ts_count_nans', 'ts_covariance', 'ts_quantile', 'ts_scale', 'ts_zscore', 'ts_min', 'ts_max', 'ts_regression',
