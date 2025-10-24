@@ -49,6 +49,35 @@ class Panel:
         result[name] = data
         return Panel(result)
     
+    def __add__(self, other: 'Panel') -> 'Panel':
+        """Merge two panels on common index (timestamp, symbol)."""
+        if not isinstance(other, Panel):
+            raise TypeError(f"unsupported operand type(s) for +: 'Panel' and '{type(other).__name__}'")
+        
+        # Find common index
+        common_idx = self.data.index.intersection(other.data.index)
+        
+        if len(common_idx) == 0:
+            raise ValueError("No common (timestamp, symbol) pairs to merge")
+        
+        # Merge on common index
+        left = self.data.loc[common_idx]
+        right = other.data.loc[common_idx]
+        
+        # Check for duplicate columns
+        overlap_cols = left.columns.intersection(right.columns)
+        if len(overlap_cols) > 0:
+            raise ValueError(f"Duplicate columns: {list(overlap_cols)}")
+        
+        result = pd.concat([left, right], axis=1)
+        return Panel(result)
+    
+    def __radd__(self, other):
+        """Support reverse addition (for sum() function compatibility)."""
+        if other == 0:
+            return self
+        return self.__add__(other)
+    
     def __getitem__(self, key):
         """Access columns: returns Factor for str, Panel for list."""
         if isinstance(key, str):

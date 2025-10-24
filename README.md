@@ -27,8 +27,8 @@ Phandas is a quantitative analysis framework designed for systematic portfolio c
 - **Data management**: Automated OHLCV data fetching with validation and quality checks
 - **Factor operations**: Extensive library of time-series and cross-sectional operators
 - **Neutralization**: Vector projection and regression-based factor neutralization
-- **Backtesting**: Performance evaluation with transaction cost modeling
-- **Visualization**: Price charts and equity curves with automatic gap detection
+- **Backtesting**: Dollar-neutral portfolio construction with dynamic rebalancing
+- **Performance Analytics**: Total Return, Annual Return, Sharpe Ratio, Max Drawdown, Turnover
 
 ### Installation
 
@@ -91,8 +91,8 @@ Phandas 是一個為系統化投資組合構建與風險管理而設計的量化
 - **資料管理**：自動化 OHLCV 資料獲取，包含驗證與品質檢查
 - **因子運算**：豐富的時間序列與橫截面運算子庫
 - **中性化**：基於向量投影與迴歸的因子中性化
-- **回測**：包含交易成本建模的績效評估
-- **視覺化**：價格圖表與權益曲線，自動檢測資料缺口
+- **回測**：美元中性投組構建、動態調倉
+- **績效分析**：年化收益、夏普比率、最大回撤、換手率
 
 ### 安裝
 
@@ -139,3 +139,5 @@ result.plot_equity()
 ---
 
 由 Phantom Management 開發。
+
+

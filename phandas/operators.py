@@ -52,6 +52,10 @@ def zscore(factor: 'Factor') -> 'Factor':
     """Cross-sectional Z-score normalization."""
     return factor.zscore()
 
+def spread(factor: 'Factor', pct: float = 0.5) -> 'Factor':
+    """Spread transformation (top/bottom pct% long-short)."""
+    return factor.spread(pct)
+
 # ==================== Time-Series Operations ====================
 
 def ts_rank(factor: 'Factor', window: int) -> 'Factor':

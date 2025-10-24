@@ -241,6 +241,46 @@ class Factor:
         """Cross-sectional Z-score."""
         return self.normalize(useStd=True)
 
+    def spread(self, pct: float = 0.5) -> 'Factor':
+        """
+        Long-short: top pct% → +0.5, bottom pct% → -0.5.
+        Example: [6,5,4,3,2,1] with pct=0.333 → [0.5,0.5,0,0,-0.5,-0.5]
+        """
+        if not 0 < pct < 1:
+            raise ValueError("pct must be between 0 and 1")
+        
+        result = self.data.copy()
+        
+        def create_spread(group: pd.Series) -> pd.Series:
+            """Create spread allocation per timestamp."""
+            values = group.values
+            n_assets = len(values)
+            n_long = int(n_assets * pct)
+            
+            if n_long == 0:
+                n_long = 1
+            
+            spread_values = np.zeros(n_assets)
+            valid_mask = ~np.isnan(values)
+            
+            if valid_mask.sum() < 2:
+                return pd.Series(spread_values, index=group.index)
+            
+            sorted_indices = np.argsort(values)
+            
+            # Top pct% → long (+0.5)
+            long_indices = sorted_indices[-n_long:]
+            spread_values[long_indices] = 0.5
+            
+            # Bottom pct% → short (-0.5)
+            short_indices = sorted_indices[:n_long]
+            spread_values[short_indices] = -0.5
+            
+            return pd.Series(spread_values, index=group.index)
+        
+        result['factor'] = result.groupby('timestamp', group_keys=False)['factor'].apply(create_spread)
+        return Factor(result, f"spread({self.name},{pct})")
+
     def group_neutralize(self, group_data: 'Factor') -> 'Factor':
         """Neutralize against group membership (industry, sector, etc)."""
         self._validate_factor(group_data, "group_neutralize")

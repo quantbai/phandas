@@ -12,6 +12,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_FREQ_MAP = {
+    '1m': 'min', '5m': '5min', '15m': '15min', '30m': '30min',
+    '1h': 'h', '4h': '4h', '1d': 'D', '1w': 'W', '1M': 'MS',
+}
+_OHLCV_COLS = ['open', 'high', 'low', 'close', 'volume']
+_SYMBOL_MAP = {'MATIC': ['MATIC', 'POL'], 'POL': ['MATIC', 'POL']}
+
 
 def fetch_data(
     symbols: List[str], 
@@ -46,16 +53,13 @@ def fetch_data(
     
     since = exchange_obj.parse8601(f'{start_date}T00:00:00Z') if start_date else None
     
-    # Handle special cases
-    symbol_map = {'MATIC': ['MATIC', 'POL'], 'POL': ['MATIC', 'POL']}
-    
     all_data = []
     
     for symbol in symbols:
-        if symbol in symbol_map:
-            data = _fetch_renamed_symbol(exchange_obj, symbol_map[symbol], timeframe, since)
+        if symbol in _SYMBOL_MAP:
+            data = _fetch_renamed_symbol(exchange_obj, _SYMBOL_MAP[symbol], timeframe, since)
             if data is not None:
-                data['symbol'] = 'MATIC'  # Unified name
+                data['symbol'] = 'MATIC'
                 all_data.append(data)
         else:
             data = _fetch_single_symbol(exchange_obj, symbol, timeframe, since)
@@ -135,31 +139,15 @@ def _process_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     """Process and align data to common time range."""
     pivoted = df.pivot_table(index='timestamp', columns='symbol', values='close')
     common_start = pivoted.apply(lambda s: s.first_valid_index()).max()
-    
     end_date = df['timestamp'].max()
     
-    freq_map = {
-        '1m': 'min',
-        '5m': '5min',
-        '15m': '15min',
-        '30m': '30min',
-        '1h': 'h',
-        '4h': '4h',
-        '1d': 'D',
-        '1w': 'W',
-        '1M': 'MS',
-    }
-    
-    freq = freq_map.get(timeframe, 'D')
+    freq = _FREQ_MAP.get(timeframe, 'D')
     full_range = pd.date_range(start=common_start, end=end_date, freq=freq)
     
-    ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
     aligned_data = {}
-    
-    for col in ohlcv_cols:
+    for col in _OHLCV_COLS:
         pivot = df.pivot_table(index='timestamp', columns='symbol', values=col)
-        pivot = pivot[pivot.index >= common_start]
-        pivot = pivot.reindex(full_range).ffill().bfill()
+        pivot = pivot[pivot.index >= common_start].reindex(full_range).ffill().bfill()
         aligned_data[col] = pivot
     
     result_dfs = []
@@ -168,6 +156,5 @@ def _process_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         stacked.columns = ['timestamp', 'symbol', col]
         result_dfs.append(stacked.set_index(['timestamp', 'symbol']))
     
-    result = pd.concat(result_dfs, axis=1)
-    return result.sort_index()
+    return pd.concat(result_dfs, axis=1).sort_index()
 

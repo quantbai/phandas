@@ -53,9 +53,6 @@ class Portfolio:
         self.history.append({
             'date': date,
             'total_value': self.total_value,
-            'cash': self.cash,
-            'holdings_value': holdings_value,
-            'daily_pnl': self.total_value - previous_total_value,
         })
 
     def execute_trade(self, symbol: str, quantity: float, price: float, 
@@ -115,7 +112,8 @@ class Backtester:
         price_factor: 'Factor',
         strategy_factor: 'Factor',
         transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
-        initial_capital: float = 100000
+        initial_capital: float = 100000,
+        full_rebalance: bool = False
     ):
         """
         Parameters
@@ -128,9 +126,13 @@ class Backtester:
             Transaction cost rate(s) for buy/sell
         initial_capital : float
             Initial capital for backtesting
+        full_rebalance : bool
+            If True, liquidate all positions daily then rebuild (turnover ~200%)
+            If False, incremental rebalancing (turnover ~20-50%)
         """
         self.price_factor = price_factor
         self.strategy_factor = strategy_factor
+        self.full_rebalance = full_rebalance
         
         if isinstance(transaction_cost, (list, tuple)):
             self.transaction_cost_rates = tuple(transaction_cost)
@@ -180,8 +182,21 @@ class Backtester:
                 
                 strategy_factors = self._get_factor_data(self.strategy_factor, prev_date)
                 target_holdings = self._calculate_target_holdings(strategy_factors)
-                orders = self._generate_orders(target_holdings, current_prices)
                 
+                if self.full_rebalance:
+                    # FULL LIQUIDATION: Sell all positions first
+                    for symbol in list(self.portfolio.positions.keys()):
+                        if symbol in current_prices.index:
+                            quantity = -self.portfolio.positions[symbol]
+                            price = current_prices.loc[symbol]
+                            self.portfolio.execute_trade(symbol, quantity, price,
+                                                        self.transaction_cost_rates, current_date)
+                    
+                    # Update portfolio after liquidation
+                    self.portfolio.update_market_value(current_date, current_prices)
+                
+                # Generate and execute orders
+                orders = self._generate_orders(target_holdings, current_prices)
                 for symbol, quantity in orders.items():
                     if symbol in current_prices.index:
                         price = current_prices.loc[symbol]
@@ -221,15 +236,12 @@ class Backtester:
         drawdown = (equity_curve / rolling_max - 1)
         max_drawdown = drawdown.min()
         
-        calmar = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0
-        
         self.metrics = {
             'total_return': total_return,
             'annual_return': annual_return,
             'annual_volatility': annual_vol,
             'sharpe_ratio': sharpe,
             'max_drawdown': max_drawdown,
-            'calmar_ratio': calmar
         }
         
         return self
@@ -340,29 +352,9 @@ class Backtester:
         
         return "\n".join(summary_lines)
 
-    def _summary_for_plot(self) -> str:
-        """Return compact summary for plot display (internal use only)."""
-        return self.summary()
-
     def print_summary(self) -> 'Backtester':
         """Print performance summary to console. Returns self for chaining."""
         print(self.summary())
-        return self
-
-    def correlation_matrix(self) -> pd.DataFrame:
-        """Return 1x1 correlation matrix (single strategy). For API consistency."""
-        return pd.DataFrame(
-            [[1.0]],
-            index=[self.strategy_factor.name],
-            columns=[self.strategy_factor.name]
-        )
-
-    def print_correlation_matrix(self) -> 'Backtester':
-        """Print correlation matrix to console. Returns self for chaining."""
-        corr = self.correlation_matrix()
-        if not corr.empty:
-            print("\nCorrelation Matrix:")
-            print(corr.to_string(max_cols=None, max_rows=None, float_format=lambda x: f'{x:.6f}'))
         return self
     
     def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> 'Backtester':
@@ -401,7 +393,7 @@ class Backtester:
                       width=0.5, length=3)
         
         if show_summary:
-            summary_text = self._summary_for_plot()
+            summary_text = self.summary()
             ax.text(0.015, 0.98, summary_text, transform=ax.transAxes, fontsize=9.5, 
                     verticalalignment='top', horizontalalignment='left', color='#374151',
                     bbox=dict(boxstyle='round,pad=0.75', facecolor='white', 
@@ -487,20 +479,6 @@ class Backtester:
                        color='#ef4444', alpha=0.35, step='pre')
         ax.plot(drawdown_series.index, drawdown_series, color='#991b1b', linewidth=0.8)
     
-    def _style_axes(self, ax, show_ylabel: bool = True, show_xlabel: bool = False):
-        """Apply common styling to subplot axes."""
-        ax.set_facecolor('#ffffff' if show_ylabel or not show_xlabel else '#fcfcfc')
-        ax.grid(True, alpha=0.12, color='#e5e7eb', linestyle='-', linewidth=0.4)
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}' if show_ylabel else f'{x:,.0f}'))
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.tick_params(axis='both', which='major', labelsize=9.0, colors='#6b7280', 
-                      width=0.5, length=3)
-        if show_ylabel:
-            ax.set_ylabel('Drawdown', fontsize=10, color='#6b7280')
-        if show_xlabel:
-            ax.set_xlabel('Date', fontsize=10.5, color='#6b7280')
-    
     
     def __repr__(self):
         """String representation of Backtester."""
@@ -573,15 +551,12 @@ class CombinedBacktester:
         drawdown = equity / rolling_max - 1
         max_drawdown = drawdown.min()
         
-        calmar = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0
-        
         self.metrics = {
             'total_return': total_return,
             'annual_return': annual_return,
             'annual_volatility': annual_vol,
             'sharpe_ratio': sharpe,
             'max_drawdown': max_drawdown,
-            'calmar_ratio': calmar
         }
         
         return self
@@ -638,7 +613,7 @@ class CombinedBacktester:
             print(corr.to_string(max_cols=None, max_rows=None, float_format=lambda x: f'{x:.6f}'))
         return self
 
-    def summary(self) -> str:
+    def summary(self, compact: bool = False) -> str:
         """Return portfolio performance summary (aligned with Backtester format)."""
         lines = []
         
@@ -671,32 +646,6 @@ class CombinedBacktester:
         
         return "\n".join(lines)
 
-    def _summary_for_plot(self) -> str:
-        """Return compact summary for plot display (without correlation matrix)."""
-        lines = []
-        
-        strategy_names = ", ".join([bt.strategy_factor.name for bt in self.backtests])
-        lines.append(f"Strategy: {strategy_names}")
-        
-        equity = self.get_portfolio_equity()
-        if not equity.empty and len(equity) > 0:
-            start_date = equity.index[0].strftime('%Y-%m-%d')
-            end_date = equity.index[-1].strftime('%Y-%m-%d')
-            lines.append(f"Period: {start_date} to {end_date}")
-        
-        if self.metrics:
-            lines.append(f"Total Return: {self.metrics.get('total_return', 0):.2%}")
-            lines.append(f"Annual Return: {self.metrics.get('annual_return', 0):.2%}")
-            lines.append(f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}")
-            lines.append(f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}")
-        
-        lines.append("")
-        lines.append("Strategy Weights:")
-        for bt, w in zip(self.backtests, self.weights):
-            lines.append(f"  {bt.strategy_factor.name}: {w*100:.1f}%")
-        
-        return "\n".join(lines)
-    
     def print_summary(self) -> 'CombinedBacktester':
         """Print portfolio summary."""
         print(self.summary())
@@ -755,7 +704,7 @@ class CombinedBacktester:
                       width=0.5, length=3)
         
         if show_summary:
-            summary_text = self._summary_for_plot()
+            summary_text = self.summary()
             ax.text(0.015, 0.98, summary_text, transform=ax.transAxes, fontsize=9.5, 
                     verticalalignment='top', horizontalalignment='left', color='#374151',
                     bbox=dict(boxstyle='round,pad=0.75', facecolor='white', 
@@ -812,6 +761,7 @@ def backtest(
     strategy_factor: 'Factor',
     transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
     initial_capital: float = 100000,
+    full_rebalance: bool = False,
     auto_run: bool = True
 ) -> Backtester:
     """
@@ -824,10 +774,13 @@ def backtest(
     transaction_cost : Union[float, Tuple[float, float]]
         Single value or (buy_cost_rate, sell_cost_rate)
     initial_capital : float
+    full_rebalance : bool
+        If True, liquidate all positions daily then rebuild (turnover ~200%)
+        If False, incremental rebalancing (turnover ~20-50%)
     auto_run : bool
         Automatically run backtest and calculate metrics
     """
-    bt = Backtester(price_factor, strategy_factor, transaction_cost, initial_capital)
+    bt = Backtester(price_factor, strategy_factor, transaction_cost, initial_capital, full_rebalance)
     
     if auto_run:
         bt.run().calculate_metrics()
