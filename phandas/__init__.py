@@ -1,13 +1,9 @@
 """
-phandas: A quantitative analysis framework for financial markets.
-
-phandas provides high-performance, easy-to-use data structures and
-financial analysis tools designed for factor-based trading strategy
-research, particularly in cryptocurrency markets.
+A multi-factor quantitative trading framework for cryptocurrency markets.
 """
 
 __author__ = "Phantom Management"
-__version__ = "0.10.0"
+__version__ = "0.10.1"
 
 from .core import Factor
 from .panel import Panel
