@@ -26,7 +26,7 @@ plt.rcParams['axes.unicode_minus'] = False
 
 class Portfolio:
     """Manages trading portfolio state, positions, and trade execution."""
-    def __init__(self, initial_capital: float = 100000):
+    def __init__(self, initial_capital: float = 1000):
         self.initial_capital = initial_capital
         self.cash = initial_capital
         self.positions = {}
@@ -113,7 +113,7 @@ class Backtester:
         price_factor: 'Factor',
         strategy_factor: 'Factor',
         transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
-        initial_capital: float = 100000,
+        initial_capital: float = 1000,
         full_rebalance: bool = False
     ):
         """
@@ -775,7 +775,7 @@ def backtest(
     price_factor: 'Factor',
     strategy_factor: 'Factor',
     transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
-    initial_capital: float = 100000,
+    initial_capital: float = 1000,
     full_rebalance: bool = False,
     auto_run: bool = True
 ) -> Backtester:

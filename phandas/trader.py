@@ -94,14 +94,21 @@ class OKXTrader:
         positions = {}
         for pos in res['data']:
             pos_qty = float(pos.get('pos', 0))
+            notional_usd = float(pos.get('notionalUsd', 0))
+            mark_px = float(pos.get('markPx', 0))
             
-            # 過濾掉零持倉（已平倉的記錄）
-            if pos_qty == 0:
+            # 多層過濾：移除無效倉位
+            if pos_qty == 0:  # 零持倉
+                continue
+            if notional_usd == 0:  # 零持倉額（API 返回異常）
+                continue
+            if mark_px == 0:  # 無有效價格（交易對無效）
+                continue
+            if abs(notional_usd) < 0.01:  # 極小持倉（浮點誤差）
                 continue
             
             inst = pos.get('instId')
             pos_side = pos.get('posSide')
-            notional_usd = float(pos.get('notionalUsd', 0))
             
             if pos_qty < 0:
                 notional_usd = -abs(notional_usd)
@@ -112,7 +119,7 @@ class OKXTrader:
                 'symbol': inst,
                 'pos_side': pos_side,
                 'pos_qty': pos_qty,
-                'mark_px': float(pos.get('markPx', 0)),
+                'mark_px': mark_px,
                 'entry_px': float(pos.get('avgPx', 0)),
                 'unrealized_pnl': float(pos.get('upl', 0)),
                 'realized_pnl': float(pos.get('realizedPnl', 0)),
@@ -293,6 +300,43 @@ class OKXTrader:
                 'code': res.get('code')
             }
     
+    def get_account_balance_info(self) -> Dict:
+        """獲取帳戶余額信息（含總權益、可用權益等）"""
+        def safe_float(val):
+            """安全將 API 值轉換為 float（處理空字符串）"""
+            if not val or val == '':
+                return 0.0
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return 0.0
+        
+        res = self.account_api.get_account_balance()
+        if res['code'] != '0' or not res['data']:
+            return {'error': res.get('msg', 'Unknown error')}
+        
+        data = res['data'][0]
+        details = data.get('details', [])
+        
+        # 提取 USDT 的權益信息（如果有多個幣種資產）
+        usdt_info = {}
+        for detail in details:
+            if detail.get('ccy') == 'USDT':
+                usdt_info = detail
+                break
+        
+        return {
+            'total_equity': safe_float(data.get('totalEq', 0)),
+            'available_equity': safe_float(data.get('availEq', 0)),
+            'used_margin': safe_float(data.get('imr', 0)),
+            'maint_margin': safe_float(data.get('mmr', 0)),
+            'unrealized_pnl': safe_float(data.get('upl', 0)),
+            'usdt_balance': safe_float(usdt_info.get('cashBal', 0)),
+            'usdt_available': safe_float(usdt_info.get('availBal', 0)),
+            'usdt_frozen': safe_float(usdt_info.get('frozenBal', 0)),
+            'details': details
+        }
+    
     def get_account_config(self) -> Dict:
         res = self.account_api.get_account_config()
         if res['code'] != '0' or not res['data']:
@@ -331,6 +375,15 @@ class OKXTrader:
         if not target_weights:
             return {'status': 'error', 'msg': 'Target weights is empty'}
         
+        # 驗證預算參數
+        if budget is None or budget <= 0:
+            return {
+                'status': 'error',
+                'msg': 'Budget must be specified and greater than 0. Suggest calling get_account_balance_info() to get total_equity.'
+            }
+        
+        base_budget = budget
+        
         current_positions = self.get_positions()
         current_holdings = {}
         for pos_key, pos_data in current_positions.items():
@@ -347,19 +400,6 @@ class OKXTrader:
                 'entry_px': pos_data['entry_px'],
                 'usd_value': notional_usd
             }
-        
-        total_position_value = sum(abs(h['usd_value']) for h in current_holdings.values())
-        is_empty_position = total_position_value == 0
-        
-        if is_empty_position:
-            if budget is None or budget <= 0:
-                return {
-                    'status': 'error',
-                    'msg': 'Empty position detected. Must provide budget parameter when starting from scratch.'
-                }
-            base_budget = budget
-        else:
-            base_budget = total_position_value
         
         target_holdings = {}
         for symbol, weight in target_weights.items():
@@ -538,7 +578,7 @@ class OKXTrader:
         return {
             'status': 'success' if failed_orders == 0 else ('partial' if successful_orders > 0 else 'error'),
             'budget': base_budget,
-            'total_position_usd': total_position_value,
+            'total_position_usd': sum(abs(h['usd_value']) for h in current_holdings.values()),
             'rebalance_trades': rebalance_trades,
             'summary': {
                 'symbols_rebalanced': symbols_rebalanced,
@@ -563,6 +603,136 @@ class Rebalancer:
         self.symbol_suffix = symbol_suffix
         self.leverage = leverage
         self.result = None
+        
+        # 計劃相關信息
+        self.plan_data = None
+        self.current_holdings = None
+        self.target_holdings = None
+        self.all_symbols = None
+    
+    def plan(self) -> 'Rebalancer':
+        """生成調倉計劃（不執行訂單），返回 self 支持鏈式調用"""
+        if not self.target_weights:
+            raise ValueError('Target weights is empty')
+        
+        if self.budget is None or self.budget <= 0:
+            raise ValueError('Budget must be specified and greater than 0')
+        
+        # 取得當前持倉
+        current_positions = self.trader.get_positions()
+        self.current_holdings = {}
+        for pos_key, pos_data in current_positions.items():
+            symbol = pos_data['symbol']
+            base_symbol = symbol.split('-')[0]
+            qty = pos_data['pos_qty']
+            notional_usd = pos_data['notional_usd']
+            direction = 'long' if notional_usd > 0 else 'short'
+            self.current_holdings[base_symbol] = {
+                'inst_id': symbol,
+                'side': direction,
+                'qty': qty,
+                'mark_px': pos_data['mark_px'],
+                'entry_px': pos_data['entry_px'],
+                'usd_value': notional_usd
+            }
+        
+        # 計算目標持倉
+        self.target_holdings = {}
+        for symbol, weight in self.target_weights.items():
+            target_usd = weight * self.budget
+            self.target_holdings[symbol] = {
+                'weight': weight,
+                'target_usd': target_usd,
+                'direction': 'long' if weight > 0 else ('short' if weight < 0 else 'none'),
+            }
+        
+        # 所有相關符號
+        self.all_symbols = set(self.target_holdings.keys()) | set(self.current_holdings.keys())
+        
+        # 生成計劃（只計算，不執行）
+        plan_trades = []
+        for symbol in sorted(self.all_symbols):
+            current = self.current_holdings.get(symbol, {
+                'inst_id': f"{symbol}{self.symbol_suffix}",
+                'side': None,
+                'qty': 0,
+                'mark_px': 0,
+                'usd_value': 0
+            })
+            
+            target = self.target_holdings.get(symbol, {
+                'weight': 0,
+                'target_usd': 0,
+                'direction': 'none'
+            })
+            
+            current_usd = current['usd_value']
+            target_usd = target['target_usd']
+            diff_usd = target_usd - current_usd
+            
+            # 判斷操作
+            if abs(diff_usd) < 1.0:
+                action = "skip"
+            elif current_usd == 0 and target_usd == 0:
+                action = "none"
+            elif current_usd == 0 and target_usd != 0:
+                action = "新建"
+            elif current_usd > 0 and target_usd > 0:
+                if diff_usd > 0:
+                    action = "加倉"
+                else:
+                    action = "減倉"
+            elif current_usd < 0 and target_usd < 0:
+                if diff_usd < 0:
+                    action = "加倉"
+                else:
+                    action = "減倉"
+            elif (current_usd > 0 and target_usd < 0) or (current_usd < 0 and target_usd > 0):
+                action = "翻倉"
+            else:
+                action = "平倉"
+            
+            plan_trades.append({
+                'symbol': symbol,
+                'current_usd': current_usd,
+                'target_usd': target_usd,
+                'diff_usd': diff_usd,
+                'action': action,
+                'weight': target['weight']
+            })
+        
+        self.plan_data = plan_trades
+        return self
+    
+    def preview(self) -> 'Rebalancer':
+        """打印調倉預覽表格"""
+        if not self.plan_data:
+            raise ValueError('Plan not generated. Call plan() first.')
+        
+        current_position_total = sum(abs(h['usd_value']) for h in self.current_holdings.values())
+        
+        print("\n========== 調倉計算詳情 ==========")
+        print(f"帳戶總權益: ${self.budget:,.2f}")
+        print(f"當前持倉總額: ${current_position_total:,.2f}")
+        
+        print("\n目標權重:")
+        for symbol, weight in sorted(self.target_weights.items()):
+            print(f"  {symbol:6} {weight:+.4f}")
+        
+        print("\n每幣種持倉 → 目標 → 差值:")
+        print(f"{'幣種':6} {'當前':>12} {'目標':>12} {'差值':>12} {'操作':>10}")
+        print("-" * 58)
+        
+        for trade in self.plan_data:
+            symbol = trade['symbol']
+            current_usd = trade['current_usd']
+            target_usd = trade['target_usd']
+            diff_usd = trade['diff_usd']
+            action = trade['action']
+            
+            print(f"{symbol:6} ${current_usd:>11.2f} ${target_usd:>11.2f} ${diff_usd:>+11.2f} {action:>10}")
+        
+        return self
     
     def run(self) -> 'Rebalancer':
         """執行調倉，返回 self 支持鏈式調用"""
@@ -581,17 +751,8 @@ class Rebalancer:
         
         lines = ["========== Rebalance Summary =========="]
         lines.append(f"Status: {self.result['status'].upper()}")
-        
-        # 區分 budget 來源
-        budget = self.result['budget']
-        total_position = self.result['total_position_usd']
-        
-        if total_position == 0:
-            lines.append(f"Budget: ${budget:,.2f} (來自指定資金)")
-        else:
-            lines.append(f"Budget: ${budget:,.2f} (來自原有持倉)")
-        
-        lines.append(f"Total Position: ${total_position:,.2f}")
+        lines.append(f"Budget: ${self.result['budget']:,.2f}")
+        lines.append(f"Current Total Position: ${self.result['total_position_usd']:,.2f}")
         lines.append("")
         
         summary = self.result['summary']
@@ -653,7 +814,28 @@ class Rebalancer:
 def rebalance(target_weights: Dict[str, float], trader: OKXTrader,
              budget: Optional[float] = None, symbol_suffix: str = '-USDT-SWAP',
              leverage: int = 5, auto_run: bool = True) -> Rebalancer:
-    """方便調用的調倉函數"""
+    """方便調用的調倉函數
+    
+    Parameters
+    ----------
+    target_weights : Dict[str, float]
+        目標權重字典
+    trader : OKXTrader
+        交易接口實例
+    budget : float, optional
+        預算（若為 None，使用帳戶總權益）
+    symbol_suffix : str
+        交易對後綴，默認 '-USDT-SWAP'
+    leverage : int
+        槓桿倍數，默認 5
+    auto_run : bool
+        是否自動執行調倉。若 False，則先 plan() 再等待手動 run()
+    
+    Returns
+    -------
+    Rebalancer
+        可進行 preview() → run() 鏈式調用
+    """
     rb = Rebalancer(target_weights, trader, budget, symbol_suffix, leverage)
     if auto_run:
         rb.run()
