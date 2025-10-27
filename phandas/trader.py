@@ -395,33 +395,21 @@ class OKXTrader:
             target_usd = target['target_usd']
             diff_usd = target_usd - current_usd
             
-            action = 'none'
-            order_side = None
-            order_size = 0
-            reason = None
-            
-            if current['side'] is None or current['qty'] == 0:
-                if target['direction'] == 'long' and diff_usd > 0:
-                    action, order_side, order_size = 'long', 'buy', diff_usd
-                elif target['direction'] == 'short' and diff_usd < 0:
-                    action, order_side, order_size = 'short', 'sell', abs(diff_usd)
-            else:
-                current_side = current['side']
-                target_side = target['direction']
-                
-                if current_side == target_side:
-                    if diff_usd > 0:
-                        order_side = 'buy' if current_side == 'long' else 'sell'
-                        action = 'long' if current_side == 'long' else 'short'
-                        order_size = diff_usd
-                    elif diff_usd < 0:
-                        action = 'reduce'
-                        order_side = 'sell' if current_side == 'long' else 'buy'
-                        order_size = abs(diff_usd)
-                else:
-                    action = 'close'
-                    order_side = 'sell' if current_side == 'long' else 'buy'
-                    order_size = abs(current['usd_value'])
+            # 簡單邏輯：根據 delta 決定買賣
+            if abs(diff_usd) < 0.01:  # 忽略極小誤差
+                action = 'skip'
+                order_side = None
+                order_size = 0
+            elif diff_usd > 0:
+                # 目標大於現有，買入（增加多倉或減少空倉）
+                action = 'long'
+                order_side = 'buy'
+                order_size = diff_usd
+            else:  # diff_usd < 0
+                # 目標小於現有，賣出（減少多倉或增加空倉）
+                action = 'short'
+                order_side = 'sell'
+                order_size = abs(diff_usd)
             
             trade_record = {
                 'symbol': symbol,
@@ -433,68 +421,19 @@ class OKXTrader:
                 'order_size': order_size,
                 'order_id': None,
                 'status': 'pending',
-                'msg': reason
+                'msg': None
             }
             
-            if action != 'none' and order_side and order_size > 0:
-                if action == 'close' and target['direction'] != 'none':
-                    close_record = trade_record.copy()
-                    close_record['action'] = 'close'
-                    close_record['order_size'] = order_size
-                    close_record['msg'] = None
-                    orders_to_execute.append({
-                        'symbol': symbol,
-                        'inst_id': inst_id,
-                        'side': order_side,
-                        'usd_amount': order_size,
-                        'trade_record': close_record,
-                        'is_close': True,
-                        'is_reverse': True
-                    })
-                    
-                    new_side = 'buy' if target['direction'] == 'short' else 'sell'
-                    new_size = abs(target_usd)
-                    open_record = {
-                        'symbol': symbol,
-                        'target_weight': target['weight'],
-                        'target_usd': target_usd,
-                        'current_usd': 0,
-                        'diff_usd': target_usd,
-                        'action': 'long' if target['direction'] == 'long' else 'short',
-                        'order_size': new_size,
-                        'order_id': None,
-                        'status': 'pending',
-                        'msg': None
-                    }
-                    orders_to_execute.append({
-                        'symbol': symbol,
-                        'inst_id': inst_id,
-                        'side': new_side,
-                        'usd_amount': new_size,
-                        'trade_record': open_record,
-                        'is_close': False,
-                        'is_reverse': True
-                    })
-                    
-                    close_record['is_part_of_reverse'] = True
-                    open_record['is_part_of_reverse'] = True
-                    rebalance_trades.append(close_record)
-                    rebalance_trades.append(open_record)
-                else:
-                    trade_record['msg'] = None
-                    orders_to_execute.append({
-                        'symbol': symbol,
-                        'inst_id': inst_id,
-                        'side': order_side,
-                        'usd_amount': order_size,
-                        'trade_record': trade_record,
-                        'is_close': False,
-                        'is_reverse': False
-                    })
-                    
-                    rebalance_trades.append(trade_record)
-            else:
-                rebalance_trades.append(trade_record)
+            if action != 'skip' and order_side and order_size > 0:
+                orders_to_execute.append({
+                    'symbol': symbol,
+                    'inst_id': inst_id,
+                    'side': order_side,
+                    'usd_amount': order_size,
+                    'trade_record': trade_record
+                })
+            
+            rebalance_trades.append(trade_record)
         
         successful_orders = 0
         failed_orders = 0
@@ -586,25 +525,12 @@ class OKXTrader:
                 trades_by_symbol[trade['symbol']] = []
             trades_by_symbol[trade['symbol']].append(trade)
         
+        # 根據訂單執行結果更新交易記錄狀態
         for symbol, trades in trades_by_symbol.items():
             related_orders = [o for o in orders_to_execute if o['symbol'] == symbol]
-            successful_related = sum(1 for o in related_orders if o['trade_record']['status'] == 'success')
-            failed_related = sum(1 for o in related_orders if o['trade_record']['status'] == 'error')
-            
-            if related_orders and related_orders[0].get('is_reverse'):
-                if successful_related == 2:
-                    for trade in trades:
-                        trade['status'] = 'success'
-                elif successful_related == 1:
-                    for trade in trades:
-                        if trade['status'] != 'success':
-                            trade['status'] = 'partial'
-                elif failed_related > 0:
-                    for trade in trades:
-                        trade['status'] = 'error'
-            else:
-                if successful_related > 0 and trades:
-                    trades[0]['status'] = 'success'
+            if related_orders and related_orders[0]['trade_record']['status'] == 'success':
+                for trade in trades:
+                    trade['status'] = 'success'
         
         symbols_rebalanced = sum(1 for t in rebalance_trades if t['status'] == 'success')
         symbols_error = sum(1 for t in rebalance_trades if t['status'] == 'error')
