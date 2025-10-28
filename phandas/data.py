@@ -24,6 +24,7 @@ def fetch_data(
     symbols: List[str], 
     timeframe: str = '1d',
     start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     exchange: str = 'binance',
     output_path: Optional[str] = None
 ) -> 'Panel':
@@ -37,6 +38,8 @@ def fetch_data(
     timeframe : str, default '1d'
         Timeframe for data
     start_date : str, optional
+        YYYY-MM-DD format
+    end_date : str, optional
         YYYY-MM-DD format
     exchange : str, default 'binance'
         Exchange name
@@ -52,17 +55,18 @@ def fetch_data(
         raise ValueError(f"Exchange '{exchange}' does not support OHLCV")
     
     since = exchange_obj.parse8601(f'{start_date}T00:00:00Z') if start_date else None
+    until = exchange_obj.parse8601(f'{end_date}T23:59:59Z') if end_date else None
     
     all_data = []
     
     for symbol in symbols:
         if symbol in _SYMBOL_MAP:
-            data = _fetch_renamed_symbol(exchange_obj, _SYMBOL_MAP[symbol], timeframe, since)
+            data = _fetch_renamed_symbol(exchange_obj, _SYMBOL_MAP[symbol], timeframe, since, until)
             if data is not None:
-                data['symbol'] = 'MATIC'
+                data['symbol'] = 'POL'
                 all_data.append(data)
         else:
-            data = _fetch_single_symbol(exchange_obj, symbol, timeframe, since)
+            data = _fetch_single_symbol(exchange_obj, symbol, timeframe, since, until)
             if data is not None:
                 all_data.append(data)
     
@@ -83,7 +87,7 @@ def fetch_data(
     return panel
 
 
-def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since) -> Optional[pd.DataFrame]:
+def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
     """Fetch data for single symbol with pagination."""
     try:
         market_symbol = f'{symbol}/USDT'
@@ -100,7 +104,16 @@ def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since) -> Option
             ohlcv = exchange.fetch_ohlcv(market_symbol, timeframe, since=since, limit=limit)
             if not ohlcv:
                 break
-            all_ohlcv.extend(ohlcv)
+            
+            # Filter out data beyond until date if specified
+            if until:
+                ohlcv = [candle for candle in ohlcv if candle[0] <= until]
+                all_ohlcv.extend(ohlcv)
+                if len(ohlcv) < len(exchange.fetch_ohlcv(market_symbol, timeframe, since=since, limit=limit)):
+                    break
+            else:
+                all_ohlcv.extend(ohlcv)
+            
             since = ohlcv[-1][0] + 1
             time.sleep(exchange.rateLimit / 1000)
         
@@ -119,11 +132,11 @@ def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since) -> Option
         return None
 
 
-def _fetch_renamed_symbol(exchange, symbols: List[str], timeframe: str, since) -> Optional[pd.DataFrame]:
+def _fetch_renamed_symbol(exchange, symbols: List[str], timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
     """Fetch and merge data for renamed symbols."""
     dfs = []
     for symbol in symbols:
-        df = _fetch_single_symbol(exchange, symbol, timeframe, since)
+        df = _fetch_single_symbol(exchange, symbol, timeframe, since, until)
         if df is not None:
             dfs.append(df)
     

@@ -2,41 +2,19 @@
 import time
 import string
 import random
-from typing import Dict, List, Optional, Tuple
-
-OKX_BROKER_CODE = '82eebde453a2BCDE'
+from typing import Dict, List, Optional
 
 def _generate_client_order_id() -> str:
-    """Generate OKX-compliant clOrdId (alphanumeric, 1-32 chars)"""
     timestamp = str(int(time.time() * 1000))
     random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
     return f"t{timestamp}{random_suffix}"[:32]
 
 
 class OKXTrader:
-    """OKX perpetual/futures trading interface"""
+    """OKX 永續合約交易接口"""
     
     def __init__(self, api_key: str, secret_key: str, passphrase: str, 
-                 use_testnet: bool = True, inst_type: str = 'SWAP',
-                 broker_code: Optional[str] = None):
-        """
-        Initialize trader
-        
-        Parameters
-        ----------
-        api_key : str
-            OKX API Key
-        secret_key : str
-            OKX Secret Key
-        passphrase : str
-            OKX Passphrase
-        use_testnet : bool
-            Use testnet (default True)
-        inst_type : str
-            Instrument type: 'SWAP' (perpetual), 'FUTURES' (futures), 'SPOT' (spot)
-        broker_code : str, optional
-            OKX Broker Code (default: module constant)
-        """
+                 use_testnet: bool = True, inst_type: str = 'SWAP'):
         import okx.Account as Account
         import okx.Trade as Trade
         import okx.MarketData as MarketData
@@ -46,78 +24,91 @@ class OKXTrader:
         self.passphrase = passphrase
         self.use_testnet = use_testnet
         self.inst_type = inst_type
-        self.broker_code = broker_code or OKX_BROKER_CODE
         self.flag = '1' if use_testnet else '0'
         
-        self.account_api = Account.AccountAPI(
-            api_key, secret_key, passphrase, False, self.flag
-        )
-        self.trade_api = Trade.TradeAPI(
-            api_key, secret_key, passphrase, False, self.flag
-        )
-        self.market_api = MarketData.MarketAPI(
-            api_key, secret_key, passphrase, False, self.flag
-        )
+        self.account_api = Account.AccountAPI(api_key, secret_key, passphrase, False, self.flag)
+        self.trade_api = Trade.TradeAPI(api_key, secret_key, passphrase, False, self.flag)
+        self.market_api = MarketData.MarketAPI(api_key, secret_key, passphrase, False, self.flag)
+        
+        self.acct_lv = None
+        self.pos_mode = None
     
-    def get_balance(self, ccy: Optional[str] = None) -> Dict:
-        """
-        Query account balance
+    def validate_account_config(self) -> Dict:
+        """交易前驗證帳戶設置"""
+        config = self.get_account_config()
         
-        Parameters
-        ----------
-        ccy : str, optional
-            Currency code; if None, query all
-            
-        Returns
-        -------
-        dict
-            {'total_eq': float, 'available': float, 'balances': {ccy: {...}}}
-        """
-        res = self.account_api.get_account_balance(ccy)
-        if res['code'] != '0' or not res['data']:
-            return {'error': res.get('msg', 'Unknown error')}
+        if 'error' in config:
+            return {'status': 'error', 'msg': f"Cannot get account config: {config['error']}"}
         
-        data = res['data'][0]
-        result = {
-            'total_eq': float(data.get('totalEq', 0)),
-            'available': float(data.get('availBal', 0)),
-            'balances': {}
+        acct_lv_str = config.get('acct_lv')
+        pos_mode = config.get('pos_mode')
+        
+        acct_lv_map_reverse = {'SPOT': '1', 'FUTURES': '2', 'CROSS_MARGIN': '3', 'COMPOSITE': '4'}
+        acct_lv_code = acct_lv_map_reverse.get(acct_lv_str, '')
+        
+        checks = {
+            'account_mode': {
+                'value': f"{acct_lv_str} ({acct_lv_code})",
+                'required': ['2', '3'],
+                'status': 'ok' if acct_lv_code in ['2', '3'] else 'error'
+            },
+            'position_mode': {
+                'value': '买卖模式 (单向持仓)' if pos_mode == 'net_mode' else '开平仓模式 (双向持仓)',
+                'required': 'net_mode',
+                'status': 'ok' if pos_mode == 'net_mode' else 'error'
+            }
         }
         
-        for detail in data.get('details', []):
-            ccy_code = detail.get('ccy')
-            result['balances'][ccy_code] = {
-                'available': float(detail.get('availBal', 0)),
-                'frozen': float(detail.get('frozenBal', 0)),
-                'balance': float(detail.get('bal', 0))
+        error_msg = []
+        warning_msg = []
+        
+        if checks['account_mode']['status'] == 'error':
+            error_msg.append(f"帳戶模式必須為 合約模式(2) 或 跨幣種保證金模式(3)，目前為 {checks['account_mode']['value']}")
+        
+        if checks['position_mode']['status'] == 'error':
+            error_msg.append(f"必須使用 買賣模式(單向持倉)，目前為 {checks['position_mode']['value']}")
+        
+        self.acct_lv = acct_lv_code
+        self.pos_mode = pos_mode
+        
+        if error_msg:
+            return {
+                'status': 'error',
+                'msg': '; '.join(error_msg),
+                'checks': checks
             }
         
-        return result
+        return {
+            'status': 'ok' if not warning_msg else 'warning',
+            'msg': '; '.join(warning_msg) if warning_msg else 'Account config validated',
+            'checks': checks,
+            'acct_lv': acct_lv_code,
+            'pos_mode': pos_mode
+        }
     
     def get_positions(self, inst_id: Optional[str] = None) -> Dict[str, Dict]:
-        """
-        Query contract positions
-        
-        Parameters
-        ----------
-        inst_id : str, optional
-            Instrument ID (e.g., 'BTC-USDT-SWAP'); if None, query all
-            
-        Returns
-        -------
-        dict
-            Position data keyed by '{symbol}_{side}'
-        """
         res = self.account_api.get_positions(self.inst_type, inst_id)
         if res['code'] != '0' or not res['data']:
             return {}
         
         positions = {}
         for pos in res['data']:
-            inst = pos.get('instId')
-            pos_side = pos.get('posSide')
             pos_qty = float(pos.get('pos', 0))
             notional_usd = float(pos.get('notionalUsd', 0))
+            mark_px = float(pos.get('markPx', 0))
+            
+            # 多層過濾：移除無效倉位
+            if pos_qty == 0:  # 零持倉
+                continue
+            if notional_usd == 0:  # 零持倉額（API 返回異常）
+                continue
+            if mark_px == 0:  # 無有效價格（交易對無效）
+                continue
+            if abs(notional_usd) < 0.01:  # 極小持倉（浮點誤差）
+                continue
+            
+            inst = pos.get('instId')
+            pos_side = pos.get('posSide')
             
             if pos_qty < 0:
                 notional_usd = -abs(notional_usd)
@@ -128,7 +119,7 @@ class OKXTrader:
                 'symbol': inst,
                 'pos_side': pos_side,
                 'pos_qty': pos_qty,
-                'mark_px': float(pos.get('markPx', 0)),
+                'mark_px': mark_px,
                 'entry_px': float(pos.get('avgPx', 0)),
                 'unrealized_pnl': float(pos.get('upl', 0)),
                 'realized_pnl': float(pos.get('realizedPnl', 0)),
@@ -139,64 +130,7 @@ class OKXTrader:
         
         return positions
     
-    def get_positions_summary(self) -> Dict:
-        """
-        Query position summary (all positions aggregated)
-        
-        Returns
-        -------
-        dict
-            Summary with total PnL and position list
-        """
-        positions = self.get_positions()
-        
-        if not positions:
-            return {
-                'status': 'success',
-                'total_positions': 0,
-                'total_unrealized_pnl': 0,
-                'positions': [],
-                'msg': 'No positions'
-            }
-        
-        total_pnl = 0
-        positions_list = []
-        
-        for key, pos in positions.items():
-            pnl = pos['unrealized_pnl']
-            total_pnl += pnl
-            
-            positions_list.append({
-                'symbol': pos['symbol'],
-                'side': pos['pos_side'],
-                'qty': pos['pos_qty'],
-                'mark_px': pos['mark_px'],
-                'unrealized_pnl': pnl,
-                'leverage': pos['leverage']
-            })
-        
-        return {
-            'status': 'success',
-            'total_positions': len(positions),
-            'total_unrealized_pnl': total_pnl,
-            'positions': positions_list,
-            'msg': f'Total PnL: {total_pnl:+.2f} USD'
-        }
-    
     def get_ticker(self, inst_id: str) -> Dict:
-        """
-        Get real-time market data
-        
-        Parameters
-        ----------
-        inst_id : str
-            Instrument ID (e.g., 'BTC-USDT-SWAP')
-            
-        Returns
-        -------
-        dict
-            Market ticker data
-        """
         res = self.market_api.get_ticker(inst_id)
         if res['code'] != '0' or not res['data']:
             return {'error': res.get('msg', 'Unknown error')}
@@ -213,36 +147,108 @@ class OKXTrader:
             'timestamp': ticker.get('ts')
         }
     
+    def get_instrument_info(self, inst_id: str) -> Dict:
+        res = self.account_api.get_instruments(instType=self.inst_type, instId=inst_id)
+        if res['code'] != '0' or not res['data']:
+            return {'error': res.get('msg', 'Unknown error')}
+        
+        inst = res['data'][0]
+        
+        def safe_float(val):
+            if not val or val == '':
+                return None
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return None
+        
+        return {
+            'symbol': inst.get('instId'),
+            'state': inst.get('state'),
+            'min_sz': safe_float(inst.get('minSz')),
+            'tick_sz': safe_float(inst.get('tickSz')),
+            'lot_sz': safe_float(inst.get('lotSz')),
+            'max_lmt_sz': safe_float(inst.get('maxLmtSz')),
+            'max_mkt_sz': safe_float(inst.get('maxMktSz')),
+            'max_mkt_amt': safe_float(inst.get('maxMktAmt')),
+            'ct_mult': safe_float(inst.get('ctMult')),
+            'ct_val': safe_float(inst.get('ctVal')),
+        }
+    
+    def set_leverage(self, inst_id: str, lever: int, mgn_mode: str = 'cross', pos_side: str = 'long') -> Dict:
+        if lever < 1 or lever > 125:
+            return {'status': 'error', 'msg': f"Invalid leverage: {lever}"}
+        
+        # 跨幣種保證金模式 (模式 3) 下，需要調整參數
+        leverage_params = {
+            'instId': inst_id,
+            'lever': str(lever),
+            'mgnMode': mgn_mode
+        }
+        
+        # 只在 open_close 模式 (雙向持倉) 且逐倉時添加 posSide
+        if self.pos_mode and self.pos_mode != 'net_mode' and mgn_mode == 'isolated':
+            leverage_params['posSide'] = pos_side
+        
+        res = self.account_api.set_leverage(**leverage_params)
+        
+        if res['code'] == '0' and res['data']:
+            data = res['data'][0]
+            return {
+                'inst_id': data.get('instId'),
+                'lever': data.get('lever'),
+                'mgn_mode': data.get('mgnMode'),
+                'pos_side': data.get('posSide', 'N/A'),
+                'status': 'success',
+                'msg': 'Leverage set successfully'
+            }
+        else:
+            return {'status': 'error', 'msg': res.get('msg', 'Unknown error'), 'code': res.get('code')}
+    
+    def convert_coin_contract(self, inst_id: str, sz: float, 
+                            convert_type: int = 1, px: Optional[float] = None,
+                            unit: str = 'coin') -> Dict:
+        import okx.PublicData as PublicData
+        
+        if unit == 'usds' and px is None:
+            ticker = self.get_ticker(inst_id)
+            if 'error' in ticker:
+                return {'status': 'error', 'msg': f"Cannot get price for {inst_id}: {ticker.get('error')}"}
+            px = ticker.get('last_px')
+        
+        public_api = PublicData.PublicAPI(flag=self.flag)
+        
+        params = {
+            'instId': inst_id,
+            'sz': str(sz),
+            'type': str(convert_type),
+            'unit': unit
+        }
+        
+        if px is not None:
+            params['px'] = str(px)
+        
+        res = public_api.get_convert_contract_coin(**params)
+        
+        if res['code'] != '0' or not res['data']:
+            return {'status': 'error', 'msg': res.get('msg', 'Unknown error')}
+        
+        data = res['data'][0]
+        return {
+            'inst_id': data.get('instId'),
+            'sz': float(data.get('sz', 0)),
+            'px': float(data.get('px', 0)) if data.get('px') else None,
+            'convert_type': int(data.get('type', convert_type)),
+            'unit': data.get('unit', unit),
+            'status': 'success',
+            'msg': f"Convert {sz} to {data.get('sz')} (type={convert_type})"
+        }
+    
     def place_order(self, inst_id: str, side: str, size: float, 
                     price: Optional[float] = None, 
                     pos_side: str = 'long',
                     reduce_only: bool = False,
                     _pos_mode: Optional[str] = None) -> Dict:
-        """
-        Place order (market or limit)
-        
-        Parameters
-        ----------
-        inst_id : str
-            Instrument ID
-        side : str
-            'buy' or 'sell'
-        size : float
-            Order size (quantity or USDT amount for spot)
-        price : float, optional
-            Limit price; if None, market order
-        pos_side : str
-            'long' or 'short' (contracts only)
-        reduce_only : bool
-            Close-only order
-        _pos_mode : str, optional
-            Internal: position mode (avoids redundant queries)
-            
-        Returns
-        -------
-        dict
-            {'order_id': str, 'client_order_id': str, 'status': str, 'msg': str}
-        """
         ord_type = 'limit' if price else 'market'
         client_order_id = _generate_client_order_id()
         
@@ -258,6 +264,7 @@ class OKXTrader:
             'ordType': ord_type,
             'sz': str(size),
             'clOrdId': client_order_id,
+            'tag': '82eebde453a2BCDE',
         }
         
         if self.inst_type in ['SWAP', 'FUTURES']:
@@ -293,122 +300,44 @@ class OKXTrader:
                 'code': res.get('code')
             }
     
-    def cancel_order(self, inst_id: str, order_id: Optional[str] = None,
-                     client_order_id: Optional[str] = None) -> Dict:
-        """
-        Cancel order
+    def get_account_balance_info(self) -> Dict:
+        """獲取帳戶余額信息（含總權益、可用權益等）"""
+        def safe_float(val):
+            """安全將 API 值轉換為 float（處理空字符串）"""
+            if not val or val == '':
+                return 0.0
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return 0.0
         
-        Parameters
-        ----------
-        inst_id : str
-            Instrument ID
-        order_id : str, optional
-            Order ID
-        client_order_id : str, optional
-            Client order ID
-            
-        Returns
-        -------
-        dict
-            Cancel result
-        """
-        res = self.trade_api.cancel_order(inst_id, order_id, client_order_id)
-        
-        if res['code'] == '0' and res['data']:
-            return {
-                'order_id': res['data'][0].get('ordId'),
-                'status': 'success',
-                'msg': 'Order cancelled successfully'
-            }
-        else:
-            return {
-                'status': 'error',
-                'msg': res.get('msg', 'Unknown error'),
-                'code': res.get('code')
-            }
-    
-    def get_order(self, inst_id: str, order_id: Optional[str] = None,
-                  client_order_id: Optional[str] = None) -> Dict:
-        """
-        Query order status
-        
-        Parameters
-        ----------
-        inst_id : str
-            Instrument ID
-        order_id : str, optional
-            Order ID
-        client_order_id : str, optional
-            Client order ID
-            
-        Returns
-        -------
-        dict
-            Order status and details
-        """
-        res = self.trade_api.get_order(inst_id, order_id, client_order_id)
-        
+        res = self.account_api.get_account_balance()
         if res['code'] != '0' or not res['data']:
-            return {'status': 'error', 'msg': res.get('msg', 'Unknown error')}
+            return {'error': res.get('msg', 'Unknown error')}
         
-        order = res['data'][0]
+        data = res['data'][0]
+        details = data.get('details', [])
+        
+        # 提取 USDT 的權益信息（如果有多個幣種資產）
+        usdt_info = {}
+        for detail in details:
+            if detail.get('ccy') == 'USDT':
+                usdt_info = detail
+                break
+        
         return {
-            'order_id': order.get('ordId'),
-            'symbol': order.get('instId'),
-            'side': order.get('side'),
-            'pos_side': order.get('posSide'),
-            'state': order.get('state'),
-            'size': float(order.get('sz', 0)),
-            'filled_size': float(order.get('fillSz', 0)),
-            'price': float(order.get('px', 0)) if order.get('px') else None,
-            'avg_fill_px': float(order.get('avgPx', 0)) if order.get('avgPx') else None,
-            'timestamp': order.get('uTime')
+            'total_equity': safe_float(data.get('totalEq', 0)),
+            'available_equity': safe_float(data.get('availEq', 0)),
+            'used_margin': safe_float(data.get('imr', 0)),
+            'maint_margin': safe_float(data.get('mmr', 0)),
+            'unrealized_pnl': safe_float(data.get('upl', 0)),
+            'usdt_balance': safe_float(usdt_info.get('cashBal', 0)),
+            'usdt_available': safe_float(usdt_info.get('availBal', 0)),
+            'usdt_frozen': safe_float(usdt_info.get('frozenBal', 0)),
+            'details': details
         }
     
-    def get_pending_orders(self, inst_id: Optional[str] = None) -> List[Dict]:
-        """
-        Query unfilled orders
-        
-        Parameters
-        ----------
-        inst_id : str, optional
-            Instrument ID; if None, query all
-            
-        Returns
-        -------
-        list
-            Unfilled orders
-        """
-        res = self.trade_api.get_order_list(self.inst_type, instId=inst_id)
-        
-        if res['code'] != '0' or not res['data']:
-            return []
-        
-        orders = []
-        for order in res['data']:
-            orders.append({
-                'order_id': order.get('ordId'),
-                'symbol': order.get('instId'),
-                'side': order.get('side'),
-                'pos_side': order.get('posSide'),
-                'state': order.get('state'),
-                'size': float(order.get('sz', 0)),
-                'filled_size': float(order.get('fillSz', 0)),
-                'price': float(order.get('px', 0)) if order.get('px') else None,
-                'avg_fill_px': float(order.get('avgPx', 0)) if order.get('avgPx') else None
-            })
-        
-        return orders
-    
     def get_account_config(self) -> Dict:
-        """
-        Query account configuration
-        
-        Returns
-        -------
-        dict
-            Account settings (mode, level, KYC, etc.)
-        """
         res = self.account_api.get_account_config()
         if res['code'] != '0' or not res['data']:
             return {'error': res.get('msg', 'Unknown error')}
@@ -429,348 +358,40 @@ class OKXTrader:
             'spot_offset_type': config.get('spotOffsetType'),
             'greek_type': config.get('greeksType')
         }
-    
-    def set_position_mode(self, pos_mode: str = 'net_mode') -> Dict:
-        """
-        Set position mode
-        
-        Parameters
-        ----------
-        pos_mode : str
-            'long_short_mode' (bidirectional) or 'net_mode' (unidirectional)
-            
-        Returns
-        -------
-        dict
-            Updated position mode or error
-        """
-        if pos_mode not in ['long_short_mode', 'net_mode']:
-            return {
-                'status': 'error',
-                'msg': f"Invalid pos_mode: {pos_mode}. Must be 'long_short_mode' or 'net_mode'"
-            }
-        
-        res = self.account_api.set_position_mode(pos_mode)
-        
-        if res['code'] == '0' and res['data']:
-            return {
-                'pos_mode': res['data'][0].get('posMode'),
-                'status': 'success',
-                'msg': 'Position mode set successfully'
-            }
-        else:
-            return {
-                'status': 'error',
-                'msg': res.get('msg', 'Unknown error'),
-                'code': res.get('code')
-            }
-    
-    def get_instrument_info(self, inst_id: str) -> Dict:
-        """
-        Query instrument specifications
-        
-        Parameters
-        ----------
-        inst_id : str
-            Instrument ID
-            
-        Returns
-        -------
-        dict
-            Min/max order size, tick precision, contract multiplier, etc.
-        """
-        res = self.account_api.get_instruments(instType=self.inst_type, instId=inst_id)
-        if res['code'] != '0' or not res['data']:
-            return {'error': res.get('msg', 'Unknown error')}
-        
-        inst = res['data'][0]
-        
-        def safe_float(val):
-            """Safely convert to float, handling empty strings"""
-            if not val or val == '':
-                return None
-            try:
-                return float(val)
-            except (ValueError, TypeError):
-                return None
-        
-        return {
-            'symbol': inst.get('instId'),
-            'state': inst.get('state'),
-            'min_sz': safe_float(inst.get('minSz')),
-            'tick_sz': safe_float(inst.get('tickSz')),
-            'lot_sz': safe_float(inst.get('lotSz')),
-            'max_lmt_sz': safe_float(inst.get('maxLmtSz')),
-            'max_mkt_sz': safe_float(inst.get('maxMktSz')),
-            'max_mkt_amt': safe_float(inst.get('maxMktAmt')),
-            'ct_mult': safe_float(inst.get('ctMult')),
-            'ct_val': safe_float(inst.get('ctVal')),
-        }
-    
-    def set_leverage(self, inst_id: str, lever: int, 
-                     mgn_mode: str = 'cross', pos_side: str = 'long') -> Dict:
-        """
-        Set leverage
-        
-        Parameters
-        ----------
-        inst_id : str
-            Instrument ID
-        lever : int
-            Leverage multiplier (1-125)
-        mgn_mode : str
-            'isolated' (isolated) or 'cross' (cross margin)
-        pos_side : str
-            'long' or 'short'
-            
-        Returns
-        -------
-        dict
-            Updated leverage settings or error
-        """
-        if lever < 1 or lever > 125:
-            return {
-                'status': 'error',
-                'msg': f"Invalid leverage: {lever}. Must be between 1-125"
-            }
-        
-        res = self.account_api.set_leverage(
-            lever=str(lever),
-            mgnMode=mgn_mode,
-            instId=inst_id,
-            posSide=pos_side
-        )
-        
-        if res['code'] == '0' and res['data']:
-            data = res['data'][0]
-            return {
-                'inst_id': data.get('instId'),
-                'lever': data.get('lever'),
-                'mgn_mode': data.get('mgnMode'),
-                'pos_side': data.get('posSide'),
-                'status': 'success',
-                'msg': 'Leverage set successfully'
-            }
-        else:
-            return {
-                'status': 'error',
-                'msg': res.get('msg', 'Unknown error'),
-                'code': res.get('code')
-            }
-    
-    def get_leverage(self, inst_id: str, mgn_mode: str = 'cross') -> List[Dict]:
-        """
-        Query leverage settings
-        
-        Parameters
-        ----------
-        inst_id : str
-            Instrument ID
-        mgn_mode : str
-            'isolated' or 'cross'
-            
-        Returns
-        -------
-        list
-            Leverage information per position
-        """
-        res = self.account_api.get_leverage(instId=inst_id, mgnMode=mgn_mode)
-        
-        if res['code'] != '0' or not res['data']:
-            return []
-        
-        leverages = []
-        for item in res['data']:
-            leverages.append({
-                'inst_id': item.get('instId'),
-                'lever': int(item.get('lever', 1)),
-                'mgn_mode': item.get('mgnMode'),
-                'pos_side': item.get('posSide')
-            })
-        
-        return leverages
-    
-    def get_max_avail_size(self, inst_id: str, td_mode: str = 'cross') -> Dict:
-        """
-        Query max available order size/margin
-        
-        Parameters
-        ----------
-        inst_id : str
-            Instrument ID
-        td_mode : str
-            'cross' (cross margin), 'isolated' (isolated), 'cash' (spot)
-            
-        Returns
-        -------
-        dict
-            Max buy/sell sizes
-        """
-        res = self.account_api.get_max_avail_size(instId=inst_id, tdMode=td_mode)
-        
-        if res['code'] != '0' or not res['data']:
-            return {'error': res.get('msg', 'Unknown error')}
-        
-        data = res['data'][0]
-        return {
-            'inst_id': data.get('instId'),
-            'avail_buy': float(data.get('availBuy', 0)),
-            'avail_sell': float(data.get('availSell', 0))
-        }
-    
-    def adjustment_margin(self, inst_id: str, pos_side: str, 
-                         margin_type: str, amt: float) -> Dict:
-        """
-        Adjust margin for a position
-        
-        Parameters
-        ----------
-        inst_id : str
-            Instrument ID
-        pos_side : str
-            'long', 'short', or 'net'
-        margin_type : str
-            'add' (increase) or 'reduce' (decrease)
-        amt : float
-            Adjustment amount
-            
-        Returns
-        -------
-        dict
-            Adjustment result or error
-        """
-        if margin_type not in ['add', 'reduce']:
-            return {
-                'status': 'error',
-                'msg': f"Invalid margin_type: {margin_type}. Must be 'add' or 'reduce'"
-            }
-        
-        res = self.account_api.adjustment_margin(
-            instId=inst_id,
-            posSide=pos_side,
-            type=margin_type,
-            amt=str(amt)
-        )
-        
-        if res['code'] == '0' and res['data']:
-            data = res['data'][0]
-            return {
-                'inst_id': data.get('instId'),
-                'pos_side': data.get('posSide'),
-                'amt': float(data.get('amt', 0)),
-                'type': data.get('type'),
-                'status': 'success',
-                'msg': 'Margin adjusted successfully'
-            }
-        else:
-            return {
-                'status': 'error',
-                'msg': res.get('msg', 'Unknown error'),
-                'code': res.get('code')
-            }
-
-    def convert_coin_contract(self, inst_id: str, sz: float, 
-                            convert_type: int = 1, px: Optional[float] = None,
-                            unit: str = 'coin') -> Dict:
-        """
-        Convert between coin and contract quantity
-        
-        Parameters
-        ----------
-        inst_id : str
-            Instrument ID
-        sz : float
-            Quantity to convert
-        convert_type : int
-            1=coin to contract (default), 2=contract to coin
-        px : float, optional
-            Order price (required for some conversions)
-        unit : str
-            'coin' (default) or 'usds'
-            
-        Returns
-        -------
-        dict
-            Converted quantity and price
-        """
-        import okx.PublicData as PublicData
-        
-        public_api = PublicData.PublicAPI(flag=self.flag)
-        
-        params = {
-            'instId': inst_id,
-            'sz': str(sz),
-            'type': str(convert_type),
-            'unit': unit
-        }
-        
-        if px is not None:
-            params['px'] = str(px)
-        
-        res = public_api.get_convert_contract_coin(**params)
-        
-        if res['code'] != '0' or not res['data']:
-            return {
-                'status': 'error',
-                'msg': res.get('msg', 'Unknown error')
-            }
-        
-        data = res['data'][0]
-        return {
-            'inst_id': data.get('instId'),
-            'sz': float(data.get('sz', 0)),
-            'px': float(data.get('px', 0)) if data.get('px') else None,
-            'convert_type': int(data.get('type', convert_type)),
-            'unit': data.get('unit', unit),
-            'status': 'success',
-            'msg': f"Convert {sz} to {data.get('sz')} (type={convert_type})"
-        }
 
     def rebalance_portfolio(self, target_weights: Dict[str, float], 
-                           budget: float = 1000.0,
+                           budget: Optional[float] = None,
                            symbol_suffix: str = '-USDT-SWAP',
                            leverage: int = 5) -> Dict:
-        """
-        Rebalance portfolio to target weights
+        # 先驗證帳戶設置
+        validation = self.validate_account_config()
+        if validation['status'] == 'error':
+            return {
+                'status': 'error',
+                'msg': validation['msg'],
+                'validation': validation['checks']
+            }
         
-        Core logic:
-        1. Get current positions (USD values and directions)
-        2. Calculate target USD per symbol from target weights
-        3. Compute deltas and generate rebalance orders
-        4. Execute orders with set leverage
-        
-        Parameters
-        ----------
-        target_weights : dict
-            Target weight distribution (e.g., {'BTC': 0.5, 'ETH': -0.3})
-            Positive = long, negative = short
-        budget : float
-            Total budget (USDT), default 1000.0
-        symbol_suffix : str
-            Instrument suffix (default '-USDT-SWAP')
-        leverage : int
-            Leverage multiplier (1-125), default 5
-        
-        Returns
-        -------
-        dict
-            Rebalance summary with trade details and statistics
-        """
         if not target_weights:
             return {'status': 'error', 'msg': 'Target weights is empty'}
         
-        # Step 1: Get current positions
-        current_positions = self.get_positions()
+        # 驗證預算參數
+        if budget is None or budget <= 0:
+            return {
+                'status': 'error',
+                'msg': 'Budget must be specified and greater than 0. Suggest calling get_account_balance_info() to get total_equity.'
+            }
         
+        base_budget = budget
+        
+        current_positions = self.get_positions()
         current_holdings = {}
         for pos_key, pos_data in current_positions.items():
             symbol = pos_data['symbol']
             base_symbol = symbol.split('-')[0]
             qty = pos_data['pos_qty']
             notional_usd = pos_data['notional_usd']
-            
             direction = 'long' if notional_usd > 0 else 'short'
-            
             current_holdings[base_symbol] = {
                 'inst_id': symbol,
                 'side': direction,
@@ -780,20 +401,17 @@ class OKXTrader:
                 'usd_value': notional_usd
             }
         
-        # Step 2: Calculate target holdings
         target_holdings = {}
         for symbol, weight in target_weights.items():
-            target_usd = weight * budget
+            target_usd = weight * base_budget
             target_holdings[symbol] = {
                 'weight': weight,
                 'target_usd': target_usd,
-                'direction': 'long' if weight > 0 else ('short' if weight < 0 else 'none')
+                'direction': 'long' if weight > 0 else ('short' if weight < 0 else 'none'),
             }
         
-        # Step 3: Calculate rebalance orders
         rebalance_trades = []
         orders_to_execute = []
-        
         all_symbols = set(target_holdings.keys()) | set(current_holdings.keys())
         
         for symbol in all_symbols:
@@ -817,37 +435,22 @@ class OKXTrader:
             target_usd = target['target_usd']
             diff_usd = target_usd - current_usd
             
-            # Determine rebalance action
-            action = 'none'
-            order_side = None
-            order_size = 0
+            # 簡單邏輯：根據 delta 決定買賣
+            if abs(diff_usd) < 0.01:  # 忽略極小誤差
+                action = 'skip'
+                order_side = None
+                order_size = 0
+            elif diff_usd > 0:
+                # 目標大於現有，買入（增加多倉或減少空倉）
+                action = 'long'
+                order_side = 'buy'
+                order_size = diff_usd
+            else:  # diff_usd < 0
+                # 目標小於現有，賣出（減少多倉或增加空倉）
+                action = 'short'
+                order_side = 'sell'
+                order_size = abs(diff_usd)
             
-            if abs(diff_usd) < 1:
-                action = 'none'
-            elif current['side'] is None or current['qty'] == 0:
-                if target['direction'] == 'long' and diff_usd > 0:
-                    action, order_side, order_size = 'long', 'buy', diff_usd
-                elif target['direction'] == 'short' and diff_usd < 0:
-                    action, order_side, order_size = 'short', 'sell', abs(diff_usd)
-            else:
-                current_side = current['side']
-                target_side = target['direction']
-                
-                if current_side == target_side:
-                    if diff_usd > 0:
-                        order_side = 'buy' if current_side == 'long' else 'sell'
-                        action = 'long' if current_side == 'long' else 'short'
-                        order_size = diff_usd
-                    elif diff_usd < 0:
-                        action = 'reduce'
-                        order_side = 'sell' if current_side == 'long' else 'buy'
-                        order_size = abs(diff_usd)
-                else:
-                    action = 'close'
-                    order_side = 'sell' if current_side == 'long' else 'buy'
-                    order_size = abs(current['usd_value'])
-            
-            # Build trade record
             trade_record = {
                 'symbol': symbol,
                 'target_weight': target['weight'],
@@ -857,10 +460,11 @@ class OKXTrader:
                 'action': action,
                 'order_size': order_size,
                 'order_id': None,
-                'status': 'pending'
+                'status': 'pending',
+                'msg': None
             }
             
-            if action != 'none' and order_side and order_size > 0:
+            if action != 'skip' and order_side and order_size > 0:
                 orders_to_execute.append({
                     'symbol': symbol,
                     'inst_id': inst_id,
@@ -871,15 +475,22 @@ class OKXTrader:
             
             rebalance_trades.append(trade_record)
         
-        # Step 4: Execute rebalance orders
         successful_orders = 0
         failed_orders = 0
+        
+        trade_records_map = {}
+        for trade in rebalance_trades:
+            symbol = trade['symbol']
+            if symbol not in trade_records_map:
+                trade_records_map[symbol] = []
+            trade_records_map[symbol].append(trade)
         
         for order_info in orders_to_execute:
             inst_id = order_info['inst_id']
             side = order_info['side']
             usd_amount = order_info['usd_amount']
             trade_record = order_info['trade_record']
+            symbol = order_info['symbol']
             
             try:
                 lever_result = self.set_leverage(
@@ -906,6 +517,8 @@ class OKXTrader:
                     unit='usds'
                 )
                 
+                time.sleep(0.25)
+                
                 if convert_result['status'] != 'success':
                     trade_record['status'] = 'error'
                     trade_record['msg'] = convert_result['msg']
@@ -920,13 +533,16 @@ class OKXTrader:
                     failed_orders += 1
                     continue
                 
+                action_type = trade_record.get('action')
+                reduce_only = action_type in ['reduce', 'close']
+                
                 order_result = self.place_order(
                     inst_id=inst_id,
                     side=side,
                     size=contract_size,
                     price=None,
                     pos_side='long' if side == 'buy' else 'short',
-                    reduce_only=False
+                    reduce_only=reduce_only
                 )
                 
                 if order_result['status'] == 'success':
@@ -943,13 +559,25 @@ class OKXTrader:
                 trade_record['msg'] = str(e)
                 failed_orders += 1
         
-        # Step 5: Generate summary
+        trades_by_symbol = {}
+        for trade in rebalance_trades:
+            if trade['symbol'] not in trades_by_symbol:
+                trades_by_symbol[trade['symbol']] = []
+            trades_by_symbol[trade['symbol']].append(trade)
+        
+        # 根據訂單執行結果更新交易記錄狀態
+        for symbol, trades in trades_by_symbol.items():
+            related_orders = [o for o in orders_to_execute if o['symbol'] == symbol]
+            if related_orders and related_orders[0]['trade_record']['status'] == 'success':
+                for trade in trades:
+                    trade['status'] = 'success'
+        
         symbols_rebalanced = sum(1 for t in rebalance_trades if t['status'] == 'success')
         symbols_error = sum(1 for t in rebalance_trades if t['status'] == 'error')
         
         return {
             'status': 'success' if failed_orders == 0 else ('partial' if successful_orders > 0 else 'error'),
-            'budget': budget,
+            'budget': base_budget,
             'total_position_usd': sum(abs(h['usd_value']) for h in current_holdings.values()),
             'rebalance_trades': rebalance_trades,
             'summary': {
@@ -964,36 +592,150 @@ class OKXTrader:
 
 
 class Rebalancer:
-    """Rebalance executor (high-level API similar to Backtester)"""
+    """調倉器（高層 API）"""
     
     def __init__(self, target_weights: Dict[str, float], trader: OKXTrader,
-                 budget: float = 1000.0, symbol_suffix: str = '-USDT-SWAP',
+                 budget: Optional[float] = None, symbol_suffix: str = '-USDT-SWAP',
                  leverage: int = 5):
-        """
-        Initialize rebalancer
-        
-        Parameters
-        ----------
-        target_weights : dict
-            Target weight distribution (e.g., {'BTC': 0.5, 'ETH': -0.3})
-        trader : OKXTrader
-            Trader instance
-        budget : float
-            Total budget (USDT)
-        symbol_suffix : str
-            Instrument suffix
-        leverage : int
-            Leverage multiplier
-        """
         self.target_weights = target_weights
         self.trader = trader
         self.budget = budget
         self.symbol_suffix = symbol_suffix
         self.leverage = leverage
         self.result = None
+        
+        # 計劃相關信息
+        self.plan_data = None
+        self.current_holdings = None
+        self.target_holdings = None
+        self.all_symbols = None
+    
+    def plan(self) -> 'Rebalancer':
+        """生成調倉計劃（不執行訂單），返回 self 支持鏈式調用"""
+        if not self.target_weights:
+            raise ValueError('Target weights is empty')
+        
+        if self.budget is None or self.budget <= 0:
+            raise ValueError('Budget must be specified and greater than 0')
+        
+        # 取得當前持倉
+        current_positions = self.trader.get_positions()
+        self.current_holdings = {}
+        for pos_key, pos_data in current_positions.items():
+            symbol = pos_data['symbol']
+            base_symbol = symbol.split('-')[0]
+            qty = pos_data['pos_qty']
+            notional_usd = pos_data['notional_usd']
+            direction = 'long' if notional_usd > 0 else 'short'
+            self.current_holdings[base_symbol] = {
+                'inst_id': symbol,
+                'side': direction,
+                'qty': qty,
+                'mark_px': pos_data['mark_px'],
+                'entry_px': pos_data['entry_px'],
+                'usd_value': notional_usd
+            }
+        
+        # 計算目標持倉
+        self.target_holdings = {}
+        for symbol, weight in self.target_weights.items():
+            target_usd = weight * self.budget
+            self.target_holdings[symbol] = {
+                'weight': weight,
+                'target_usd': target_usd,
+                'direction': 'long' if weight > 0 else ('short' if weight < 0 else 'none'),
+            }
+        
+        # 所有相關符號
+        self.all_symbols = set(self.target_holdings.keys()) | set(self.current_holdings.keys())
+        
+        # 生成計劃（只計算，不執行）
+        plan_trades = []
+        for symbol in sorted(self.all_symbols):
+            current = self.current_holdings.get(symbol, {
+                'inst_id': f"{symbol}{self.symbol_suffix}",
+                'side': None,
+                'qty': 0,
+                'mark_px': 0,
+                'usd_value': 0
+            })
+            
+            target = self.target_holdings.get(symbol, {
+                'weight': 0,
+                'target_usd': 0,
+                'direction': 'none'
+            })
+            
+            current_usd = current['usd_value']
+            target_usd = target['target_usd']
+            diff_usd = target_usd - current_usd
+            
+            # 判斷操作
+            if abs(diff_usd) < 1.0:
+                action = "skip"
+            elif current_usd == 0 and target_usd == 0:
+                action = "none"
+            elif current_usd == 0 and target_usd != 0:
+                action = "新建"
+            elif current_usd > 0 and target_usd > 0:
+                if diff_usd > 0:
+                    action = "加倉"
+                else:
+                    action = "減倉"
+            elif current_usd < 0 and target_usd < 0:
+                if diff_usd < 0:
+                    action = "加倉"
+                else:
+                    action = "減倉"
+            elif (current_usd > 0 and target_usd < 0) or (current_usd < 0 and target_usd > 0):
+                action = "翻倉"
+            else:
+                action = "平倉"
+            
+            plan_trades.append({
+                'symbol': symbol,
+                'current_usd': current_usd,
+                'target_usd': target_usd,
+                'diff_usd': diff_usd,
+                'action': action,
+                'weight': target['weight']
+            })
+        
+        self.plan_data = plan_trades
+        return self
+    
+    def preview(self) -> 'Rebalancer':
+        """打印調倉預覽表格"""
+        if not self.plan_data:
+            raise ValueError('Plan not generated. Call plan() first.')
+        
+        current_position_total = sum(abs(h['usd_value']) for h in self.current_holdings.values())
+        
+        print("\n========== 調倉計算詳情 ==========")
+        print(f"帳戶總權益: ${self.budget:,.2f}")
+        print(f"當前持倉總額: ${current_position_total:,.2f}")
+        
+        print("\n目標權重:")
+        for symbol, weight in sorted(self.target_weights.items()):
+            print(f"  {symbol:6} {weight:+.4f}")
+        
+        print("\n每幣種持倉 → 目標 → 差值:")
+        print(f"{'幣種':6} {'當前':>12} {'目標':>12} {'差值':>12} {'操作':>10}")
+        print("-" * 58)
+        
+        for trade in self.plan_data:
+            symbol = trade['symbol']
+            current_usd = trade['current_usd']
+            target_usd = trade['target_usd']
+            diff_usd = trade['diff_usd']
+            action = trade['action']
+            
+            print(f"{symbol:6} ${current_usd:>11.2f} ${target_usd:>11.2f} ${diff_usd:>+11.2f} {action:>10}")
+        
+        return self
     
     def run(self) -> 'Rebalancer':
-        """Execute rebalance; returns self for chaining"""
+        """執行調倉，返回 self 支持鏈式調用"""
         self.result = self.trader.rebalance_portfolio(
             target_weights=self.target_weights,
             budget=self.budget,
@@ -1003,14 +745,14 @@ class Rebalancer:
         return self
     
     def summary(self) -> str:
-        """Generate rebalance summary"""
+        """生成調倉摘要"""
         if not self.result:
             return "Rebalancer not executed. Call run() first."
         
         lines = ["========== Rebalance Summary =========="]
         lines.append(f"Status: {self.result['status'].upper()}")
         lines.append(f"Budget: ${self.result['budget']:,.2f}")
-        lines.append(f"Total Position: ${self.result['total_position_usd']:,.2f}")
+        lines.append(f"Current Total Position: ${self.result['total_position_usd']:,.2f}")
         lines.append("")
         
         summary = self.result['summary']
@@ -1022,28 +764,44 @@ class Rebalancer:
         
         lines.append("Rebalance Trades:")
         for trade in self.result['rebalance_trades']:
-            if trade['action'] != 'none':
-                status_marker = "✓" if trade['status'] == 'success' else "✗"
-                lines.append(
-                    f"{status_marker} {trade['symbol']:8} {trade['action']:8} | "
-                    f"Target: ${trade['target_usd']:10.2f} | "
-                    f"Current: ${trade['current_usd']:10.2f} | "
-                    f"Delta: ${trade['diff_usd']:+10.2f}"
-                )
+            status = trade['status']
+            if status == 'success':
+                status_str = "[OK]"
+            elif status == 'partial':
+                status_str = "[PARTIAL]"
+            elif status == 'skip':
+                status_str = "[SKIP]"
+            elif status == 'error':
+                status_str = "[ERROR]"
+            elif trade['action'] == 'none':
+                status_str = "[NONE]"
+            else:
+                status_str = "[?]"
+            
+            action_display = trade['action'] if trade['action'] != 'none' else 'skip'
+            
+            lines.append(
+                f"{status_str} {trade['symbol']:8} {action_display:8} | "
+                f"Target: ${trade['target_usd']:10.2f} | "
+                f"Current: ${trade['current_usd']:10.2f} | "
+                f"Delta: ${trade['diff_usd']:+10.2f}"
+            )
+            
+            if trade['msg']:
+                lines.append(f"         └─ {trade['msg']}")
         
         return "\n".join(lines)
     
     def print_summary(self) -> 'Rebalancer':
-        """Print rebalance summary; returns self"""
+        """打印調倉摘要"""
         print(self.summary())
         return self
     
     def get_result(self) -> Dict:
-        """Get raw rebalance result dictionary"""
+        """獲取原始結果字典"""
         return self.result or {}
     
     def __repr__(self) -> str:
-        """String representation"""
         if not self.result:
             return (f"Rebalancer(budget={self.budget}, "
                    f"symbols={len(self.target_weights)}, status=not_executed)")
@@ -1054,39 +812,31 @@ class Rebalancer:
 
 
 def rebalance(target_weights: Dict[str, float], trader: OKXTrader,
-             budget: float = 1000.0, symbol_suffix: str = '-USDT-SWAP',
+             budget: Optional[float] = None, symbol_suffix: str = '-USDT-SWAP',
              leverage: int = 5, auto_run: bool = True) -> Rebalancer:
-    """
-    Convenient rebalance function (similar to backtest())
+    """方便調用的調倉函數
     
     Parameters
     ----------
-    target_weights : dict
-        Target weight distribution
+    target_weights : Dict[str, float]
+        目標權重字典
     trader : OKXTrader
-        Trader instance
-    budget : float
-        Total budget (USDT)
+        交易接口實例
+    budget : float, optional
+        預算（若為 None，使用帳戶總權益）
     symbol_suffix : str
-        Instrument suffix
+        交易對後綴，默認 '-USDT-SWAP'
     leverage : int
-        Leverage multiplier (1-125)
+        槓桿倍數，默認 5
     auto_run : bool
-        Auto-execute if True
-        
+        是否自動執行調倉。若 False，則先 plan() 再等待手動 run()
+    
     Returns
     -------
     Rebalancer
-        Rebalancer instance
-        
-    Example
-    -------
-    >>> rebalancer = rebalance(skewness.to_weights(), trader, budget=100000, leverage=5)
-    >>> rebalancer.print_summary()
+        可進行 preview() → run() 鏈式調用
     """
     rb = Rebalancer(target_weights, trader, budget, symbol_suffix, leverage)
-    
     if auto_run:
         rb.run()
-    
     return rb

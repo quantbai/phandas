@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from typing import Union, Optional, Callable, List
 from scipy.stats import norm, uniform, cauchy
+import matplotlib.pyplot as plt
 
 
 class Factor:
@@ -1193,3 +1194,92 @@ class Factor:
         """User-friendly string representation."""
         n_symbols = self.data['symbol'].nunique()
         return f"Factor({self.name}): {len(self.data)} obs, {n_symbols} symbols"
+
+    # ==================== Plotting ====================
+    
+    def plot(self, symbol: Optional[str] = None, figsize: tuple = (12, 6), 
+             title: Optional[str] = None) -> None:
+        """Plot factor values over time for specified symbol(s)."""
+        if symbol is None:
+            self._plot_all_symbols(figsize, title)
+        else:
+            self._plot_single_symbol(symbol, figsize, title)
+    
+    def _plot_single_symbol(self, symbol: str, figsize: tuple, title: Optional[str]):
+        """Plot factor values for single symbol."""
+        data = self.data[self.data['symbol'] == symbol].copy()
+        if data.empty:
+            print(f"No data found for symbol: {symbol}")
+            return
+        
+        data = data.sort_values('timestamp')
+        
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.set_facecolor('#fcfcfc')
+        
+        ax.plot(data['timestamp'], data['factor'], color='#2563eb', linewidth=1.2, alpha=0.8)
+        ax.fill_between(data['timestamp'], data['factor'], alpha=0.15, color='#2563eb')
+        
+        plot_title = title or f'{self.name} ({symbol})'
+        ax.set_title(plot_title, fontsize=12.5, fontweight='400', color='#1f2937', pad=14)
+        ax.set_xlabel('Date', fontsize=10.5, color='#6b7280')
+        ax.set_ylabel('Factor Value', fontsize=10.5, color='#6b7280')
+        ax.grid(True, alpha=0.15, color='#e5e7eb', linestyle='-', linewidth=0.4)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.tick_params(axis='both', which='major', labelsize=9.5, colors='#6b7280', 
+                      width=0.5, length=3)
+        
+        plt.tight_layout()
+        plt.show()
+    
+    def _plot_all_symbols(self, figsize: tuple, title: Optional[str]):
+        """Plot factor values for all symbols."""
+        symbols = sorted(self.data['symbol'].unique())
+        n_symbols = len(symbols)
+        
+        if n_symbols == 0:
+            print("No data to plot")
+            return
+        
+        n_cols = min(3, n_symbols)
+        n_rows = (n_symbols + n_cols - 1) // n_cols
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, constrained_layout=True)
+        if n_symbols == 1:
+            axes = np.array([axes])
+        else:
+            axes = axes.flatten() if n_symbols > 1 else np.array([axes])
+        
+        colors = ['#2563eb', '#059669', '#dc2626', '#7c3aed', '#f59e0b', '#06b6d4']
+        
+        for idx, symbol in enumerate(symbols):
+            ax = axes[idx]
+            data = self.data[self.data['symbol'] == symbol].copy()
+            data = data.sort_values('timestamp')
+            
+            color = colors[idx % len(colors)]
+            ax.plot(data['timestamp'], data['factor'], color=color, linewidth=1.2, alpha=0.8)
+            ax.fill_between(data['timestamp'], data['factor'], alpha=0.15, color=color)
+            
+            ax.set_title(symbol, fontsize=11, fontweight='500', color='#1f2937')
+            ax.set_xlabel('Date', fontsize=9.5, color='#6b7280')
+            ax.set_ylabel('Factor Value', fontsize=9.5, color='#6b7280')
+            ax.grid(True, alpha=0.12, color='#e5e7eb', linestyle='-', linewidth=0.4)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.tick_params(axis='both', which='major', labelsize=8.5, colors='#6b7280',
+                          width=0.5, length=3)
+            ax.set_facecolor('#fcfcfc')
+            
+            # 極簡化日期顯示：只顯示起始、中點、終結
+            dates = data['timestamp'].values
+            n_dates = len(dates)
+            if n_dates > 2:
+                tick_indices = [0, n_dates // 2, n_dates - 1]
+                ax.set_xticks([dates[i] for i in tick_indices])
+        
+        for idx in range(n_symbols, len(axes)):
+            axes[idx].set_visible(False)
+        
+        plt.show()

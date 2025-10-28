@@ -11,6 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import TYPE_CHECKING, Union, Tuple, Dict, List, Optional
 import logging
+from scipy.stats import linregress
 
 if TYPE_CHECKING:
     from .core import Factor
@@ -25,7 +26,7 @@ plt.rcParams['axes.unicode_minus'] = False
 
 class Portfolio:
     """Manages trading portfolio state, positions, and trade execution."""
-    def __init__(self, initial_capital: float = 100000):
+    def __init__(self, initial_capital: float = 1000):
         self.initial_capital = initial_capital
         self.cash = initial_capital
         self.positions = {}
@@ -112,7 +113,7 @@ class Backtester:
         price_factor: 'Factor',
         strategy_factor: 'Factor',
         transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
-        initial_capital: float = 100000,
+        initial_capital: float = 1000,
         full_rebalance: bool = False
     ):
         """
@@ -236,12 +237,18 @@ class Backtester:
         drawdown = (equity_curve / rolling_max - 1)
         max_drawdown = drawdown.min()
         
+        # Calculate Equity Curve Linearity
+        t = np.arange(len(equity_curve))
+        slope, intercept, r_value, _, _ = linregress(t, equity_curve.values)
+        linearity = r_value ** 2
+        
         self.metrics = {
             'total_return': total_return,
             'annual_return': annual_return,
             'annual_volatility': annual_vol,
             'sharpe_ratio': sharpe,
             'max_drawdown': max_drawdown,
+            'linearity': linearity,
         }
         
         return self
@@ -346,6 +353,7 @@ class Backtester:
                 f"Total Return: {self.metrics.get('total_return', 0):.2%}",
                 f"Annual Return: {self.metrics.get('annual_return', 0):.2%}",
                 f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}",
+                f"Linearity: {self.metrics.get('linearity', 0):.4f}",
                 f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}",
                 f"Avg. Annual Turnover: {avg_turnover:.2%}"
             ])
@@ -551,12 +559,18 @@ class CombinedBacktester:
         drawdown = equity / rolling_max - 1
         max_drawdown = drawdown.min()
         
+        # Calculate Equity Curve Linearity
+        t = np.arange(len(equity))
+        slope, intercept, r_value, _, _ = linregress(t, equity.values)
+        linearity = r_value ** 2
+        
         self.metrics = {
             'total_return': total_return,
             'annual_return': annual_return,
             'annual_volatility': annual_vol,
             'sharpe_ratio': sharpe,
             'max_drawdown': max_drawdown,
+            'linearity': linearity,
         }
         
         return self
@@ -630,6 +644,7 @@ class CombinedBacktester:
             lines.append(f"Total Return: {self.metrics.get('total_return', 0):.2%}")
             lines.append(f"Annual Return: {self.metrics.get('annual_return', 0):.2%}")
             lines.append(f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}")
+            lines.append(f"Linearity: {self.metrics.get('linearity', 0):.4f}")
             lines.append(f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}")
         
         lines.append("")
@@ -760,7 +775,7 @@ def backtest(
     price_factor: 'Factor',
     strategy_factor: 'Factor',
     transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
-    initial_capital: float = 100000,
+    initial_capital: float = 1000,
     full_rebalance: bool = False,
     auto_run: bool = True
 ) -> Backtester:
