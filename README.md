@@ -43,7 +43,7 @@ from phandas import *
 
 # Fetch market data
 panel = fetch_data(
-    symbols=['BNB', 'ETH', 'SOL', 'MATIC', 'ARB', 'OP'],
+    symbols=['BTC', 'ETH', 'SOL', 'DOGE', 'XRP', 'ADA'],
     timeframe='1d',
     start_date='2023-01-01'
 )
@@ -51,20 +51,17 @@ panel = fetch_data(
 # Extract factors
 close = panel['close']
 volume = panel['volume']
-open_price = panel['open']
+open = panel['open']
 
 # Construct momentum factor
-momentum_14 = (close / close.ts_delay(14)) - 1
-momentum_21 = (close / close.ts_delay(21)) - 1
-momentum_30 = (close / close.ts_delay(30)) - 1
-factor = momentum_14 + momentum_21 + momentum_30
+momentum_20 = (close / close.ts_delay(20)) - 1
 
 # Neutralize against volume
-neutralized_factor = vector_neut(factor, -volume)
+neutralized_factor = vector_neut(rank(momentum_20), rank(-volume))
 
 # Backtest strategy
 result = backtest(
-    price_factor=open_price, 
+    price_factor=open, 
     strategy_factor=neutralized_factor,
     transaction_cost=(0.0003, 0.0003)
 )
@@ -107,7 +104,7 @@ from phandas import *
 
 # 獲取市場資料
 panel = fetch_data(
-    symbols=['BNB', 'ETH', 'SOL', 'MATIC', 'ARB', 'OP'],
+    symbols=['BTC', 'ETH', 'SOL', 'DOGE', 'XRP', 'ADA'],
     timeframe='1d',
     start_date='2023-01-01'
 )
@@ -115,20 +112,17 @@ panel = fetch_data(
 # 提取因子
 close = panel['close']
 volume = panel['volume']
-open_price = panel['open']
+open = panel['open']
 
 # 構建動量因子
-momentum_14 = (close / close.ts_delay(14)) - 1
-momentum_21 = (close / close.ts_delay(21)) - 1
-momentum_30 = (close / close.ts_delay(30)) - 1
-factor = momentum_14 + momentum_21 + momentum_30
+momentum_20 = (close / close.ts_delay(20)) - 1
 
 # 對成交量進行中性化
-neutralized_factor = vector_neut(factor, -volume)
+neutralized_factor = vector_neut(rank(momentum_20), rank(-volume))
 
 # 回測策略
 result = backtest(
-    price_factor=open_price, 
+    price_factor=open, 
     strategy_factor=neutralized_factor,
     transaction_cost=(0.0003, 0.0003)
 )
@@ -139,5 +133,14 @@ result.plot_equity()
 ---
 
 由 Phantom Management 開發。
+
+## Community & Support | 社群與支持
+
+- **Discord**: [Join our community](https://discord.gg/TcPHTSGMdH)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/quantbai/phandas/issues)
+
+## License
+
+This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
 
 
