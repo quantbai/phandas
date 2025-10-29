@@ -35,15 +35,13 @@ class Factor:
         self.data = self.data.sort_values(['symbol', 'timestamp']).reset_index(drop=True)
         self.name = name or 'factor'
 
-    # ==================== Validation & Helper Methods ====================
-
     def _validate_window(self, window: int) -> None:
         """Validate window parameter."""
         if window <= 0:
             raise ValueError("Window must be positive")
     
     def _validate_factor(self, other: 'Factor', op_name: str) -> None:
-        """Validate that other is a Factor object."""
+        """Validate other is Factor."""
         if not isinstance(other, Factor):
             raise TypeError(f"{op_name}: other must be a Factor object.")
     
@@ -119,8 +117,6 @@ class Factor:
         
         return result
 
-    # ==================== Cross-Sectional Operations (cs_op) ====================
-
     def rank(self) -> 'Factor':
         """Cross-sectional rank (0-1, NaN if all identical)."""
         def rank_op(group):
@@ -139,7 +135,7 @@ class Factor:
         return self._apply_cs_operation(lambda g: g.median(), 'median', require_no_nan=True)
 
     def quantile(self, driver: str = "gaussian", sigma: float = 1.0) -> 'Factor':
-        """Quantile transformation via Gaussian/Uniform/Cauchy PPF."""
+        """Quantile transformation (Gaussian/Uniform/Cauchy PPF)."""
         valid_drivers = {
             "gaussian": norm.ppf,
             "uniform": uniform.ppf,
@@ -243,17 +239,13 @@ class Factor:
         return self.normalize(useStd=True)
 
     def spread(self, pct: float = 0.5) -> 'Factor':
-        """
-        Long-short: top pct% → +0.5, bottom pct% → -0.5.
-        Example: [6,5,4,3,2,1] with pct=0.333 → [0.5,0.5,0,0,-0.5,-0.5]
-        """
+        """Long-short spread (top pct% → +0.5, bottom pct% → -0.5)."""
         if not 0 < pct < 1:
             raise ValueError("pct must be between 0 and 1")
         
         result = self.data.copy()
         
         def create_spread(group: pd.Series) -> pd.Series:
-            """Create spread allocation per timestamp."""
             values = group.values
             n_assets = len(values)
             n_long = int(n_assets * pct)
@@ -268,12 +260,9 @@ class Factor:
                 return pd.Series(spread_values, index=group.index)
             
             sorted_indices = np.argsort(values)
-            
-            # Top pct% → long (+0.5)
             long_indices = sorted_indices[-n_long:]
             spread_values[long_indices] = 0.5
             
-            # Bottom pct% → short (-0.5)
             short_indices = sorted_indices[:n_long]
             spread_values[short_indices] = -0.5
             
@@ -321,7 +310,6 @@ class Factor:
             raise ValueError("No common data for vector neutralization.")
 
         def neutralize_single_date(group):
-            """Perform vector neutralization for a single timestamp."""
             x = group['factor_target'].values
             y = group['factor_neut'].values
             
@@ -361,11 +349,11 @@ class Factor:
         return Factor(result_data, name=f"vector_neut({self.name},{other.name})")
 
     def regression_neut(self, neut_factors: Union['Factor', List['Factor']]) -> 'Factor':
-        """Orthogonalize against factors via OLS residuals."""
+        """Orthogonalize via OLS residuals."""
         if isinstance(neut_factors, Factor):
             neut_factors = [neut_factors]
         if not all(isinstance(f, Factor) for f in neut_factors):
-            raise TypeError("neut_factors must be a Factor or a list of Factor objects.")
+            raise TypeError("neut_factors must be a Factor or list of Factors.")
 
         merged = self.data.rename(columns={'factor': self.name or 'target'})
         neut_names = []
@@ -416,8 +404,6 @@ class Factor:
 
         neut_factors_str = ",".join([f.name for f in neut_factors])
         return Factor(result_data, name=f"regression_neut({self.name},[{neut_factors_str}])")
-
-    # ==================== Time-Series Operations (ts_op) ====================
 
     def ts_rank(self, window: int) -> 'Factor':
         """Rolling time-series rank (0-1)."""
@@ -517,7 +503,7 @@ class Factor:
         return Factor(result, f"ts_max({self.name},{window})")
     
     def ts_arg_max(self, window: int) -> 'Factor':
-        """Relative index of max in window."""
+        """Relative index of max."""
         self._validate_window(window)
         
         def safe_arg_max(s):
@@ -575,7 +561,7 @@ class Factor:
         return Factor(result.data, f"ts_zscore({self.name},{window})")
 
     def ts_quantile(self, window: int, driver: str = "gaussian") -> 'Factor':
-        """Inverse CDF of rolling rank via Gaussian/Uniform/Cauchy PPF."""
+        """Rolling quantile transformation (Gaussian/Uniform/Cauchy PPF)."""
         self._validate_window(window)
 
         valid_drivers = {
@@ -840,8 +826,6 @@ class Factor:
         result = merged[['timestamp', 'symbol', 'factor']]
         return Factor(result, name=f"ts_regression({self.name},{x_factor.name},{window},lag={lag},rettype={rettype})")
 
-    # ==================== Unary Operations ====================
-
     def abs(self) -> 'Factor':
         """Absolute value."""
         result = self.data.copy()
@@ -960,8 +944,6 @@ class Factor:
             
             return Factor(result, f"({self.name}**{exponent})")
 
-    # ==================== Binary Operations ====================
-
     def add(self, other: Union['Factor', float]) -> 'Factor':
         """Addition: factor + other."""
         return self.__add__(other)
@@ -1030,8 +1012,6 @@ class Factor:
     def reverse(self) -> 'Factor':
         """Negate: -factor"""
         return self.__neg__()
-
-    # ==================== Operator Overloads ====================
 
     def __neg__(self) -> 'Factor':
         """Unary negation: -factor"""
@@ -1195,8 +1175,6 @@ class Factor:
         n_symbols = self.data['symbol'].nunique()
         return f"Factor({self.name}): {len(self.data)} obs, {n_symbols} symbols"
 
-    # ==================== Plotting ====================
-    
     def plot(self, symbol: Optional[str] = None, figsize: tuple = (12, 6), 
              title: Optional[str] = None) -> None:
         """Plot factor values over time for specified symbol(s)."""
@@ -1272,7 +1250,6 @@ class Factor:
                           width=0.5, length=3)
             ax.set_facecolor('#fcfcfc')
             
-            # 極簡化日期顯示：只顯示起始、中點、終結
             dates = data['timestamp'].values
             n_dates = len(dates)
             if n_dates > 2:

@@ -28,24 +28,7 @@ def fetch_data(
     exchange: str = 'binance',
     output_path: Optional[str] = None
 ) -> 'Panel':
-    """
-    Fetch and prepare cryptocurrency OHLCV data.
-    
-    Parameters
-    ----------
-    symbols : list of str
-        E.g., ['BTC', 'ETH']
-    timeframe : str, default '1d'
-        Timeframe for data
-    start_date : str, optional
-        YYYY-MM-DD format
-    end_date : str, optional
-        YYYY-MM-DD format
-    exchange : str, default 'binance'
-        Exchange name
-    output_path : str, optional
-        CSV path to save data
-    """
+    """Fetch cryptocurrency OHLCV data (YYYY-MM-DD dates, saves to CSV if output_path provided)."""
     try:
         exchange_obj = getattr(ccxt, exchange)()
     except AttributeError:
@@ -88,7 +71,7 @@ def fetch_data(
 
 
 def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
-    """Fetch data for single symbol with pagination."""
+    """Fetch OHLCV data for symbol with pagination."""
     try:
         market_symbol = f'{symbol}/USDT'
         
@@ -105,11 +88,10 @@ def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since, until=Non
             if not ohlcv:
                 break
             
-            # Filter out data beyond until date if specified
             if until:
                 ohlcv = [candle for candle in ohlcv if candle[0] <= until]
                 all_ohlcv.extend(ohlcv)
-                if len(ohlcv) < len(exchange.fetch_ohlcv(market_symbol, timeframe, since=since, limit=limit)):
+                if len(ohlcv) < limit:
                     break
             else:
                 all_ohlcv.extend(ohlcv)

@@ -4,6 +4,7 @@ import string
 import random
 from typing import Dict, List, Optional
 
+
 def _generate_client_order_id() -> str:
     timestamp = str(int(time.time() * 1000))
     random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
@@ -11,7 +12,7 @@ def _generate_client_order_id() -> str:
 
 
 class OKXTrader:
-    """OKX 永續合約交易接口"""
+    """OKX perpetual swap trading interface."""
     
     def __init__(self, api_key: str, secret_key: str, passphrase: str, 
                  use_testnet: bool = True, inst_type: str = 'SWAP'):
@@ -34,7 +35,7 @@ class OKXTrader:
         self.pos_mode = None
     
     def validate_account_config(self) -> Dict:
-        """交易前驗證帳戶設置"""
+        """Validate account configuration before trading."""
         config = self.get_account_config()
         
         if 'error' in config:
@@ -42,7 +43,6 @@ class OKXTrader:
         
         acct_lv_str = config.get('acct_lv')
         pos_mode = config.get('pos_mode')
-        
         acct_lv_map_reverse = {'SPOT': '1', 'FUTURES': '2', 'CROSS_MARGIN': '3', 'COMPOSITE': '4'}
         acct_lv_code = acct_lv_map_reverse.get(acct_lv_str, '')
         
@@ -53,40 +53,29 @@ class OKXTrader:
                 'status': 'ok' if acct_lv_code in ['2', '3'] else 'error'
             },
             'position_mode': {
-                'value': '买卖模式 (单向持仓)' if pos_mode == 'net_mode' else '开平仓模式 (双向持仓)',
+                'value': '買賣模式 (單向持倉)' if pos_mode == 'net_mode' else '開平倉模式 (雙向持倉)',
                 'required': 'net_mode',
                 'status': 'ok' if pos_mode == 'net_mode' else 'error'
             }
         }
         
-        error_msg = []
-        warning_msg = []
-        
+        errors = []
         if checks['account_mode']['status'] == 'error':
-            error_msg.append(f"帳戶模式必須為 合約模式(2) 或 跨幣種保證金模式(3)，目前為 {checks['account_mode']['value']}")
-        
+            errors.append(f"帳戶模式必須為 合約模式(2) 或 跨幣種保證金模式(3)，目前為 {checks['account_mode']['value']}")
         if checks['position_mode']['status'] == 'error':
-            error_msg.append(f"必須使用 買賣模式(單向持倉)，目前為 {checks['position_mode']['value']}")
+            errors.append(f"必須使用 買賣模式(單向持倉)，目前為 {checks['position_mode']['value']}")
         
         self.acct_lv = acct_lv_code
         self.pos_mode = pos_mode
         
-        if error_msg:
-            return {
-                'status': 'error',
-                'msg': '; '.join(error_msg),
-                'checks': checks
-            }
+        if errors:
+            return {'status': 'error', 'msg': '; '.join(errors), 'checks': checks}
         
-        return {
-            'status': 'ok' if not warning_msg else 'warning',
-            'msg': '; '.join(warning_msg) if warning_msg else 'Account config validated',
-            'checks': checks,
-            'acct_lv': acct_lv_code,
-            'pos_mode': pos_mode
-        }
+        return {'status': 'ok', 'msg': 'Account config validated', 'checks': checks, 
+                'acct_lv': acct_lv_code, 'pos_mode': pos_mode}
     
     def get_positions(self, inst_id: Optional[str] = None) -> Dict[str, Dict]:
+        """Get current positions filtered by instrument."""
         res = self.account_api.get_positions(self.inst_type, inst_id)
         if res['code'] != '0' or not res['data']:
             return {}
@@ -97,23 +86,12 @@ class OKXTrader:
             notional_usd = float(pos.get('notionalUsd', 0))
             mark_px = float(pos.get('markPx', 0))
             
-            # 多層過濾：移除無效倉位
-            if pos_qty == 0:  # 零持倉
-                continue
-            if notional_usd == 0:  # 零持倉額（API 返回異常）
-                continue
-            if mark_px == 0:  # 無有效價格（交易對無效）
-                continue
-            if abs(notional_usd) < 0.01:  # 極小持倉（浮點誤差）
+            if pos_qty == 0 or notional_usd == 0 or mark_px == 0 or abs(notional_usd) < 0.01:
                 continue
             
             inst = pos.get('instId')
             pos_side = pos.get('posSide')
-            
-            if pos_qty < 0:
-                notional_usd = -abs(notional_usd)
-            else:
-                notional_usd = abs(notional_usd)
+            notional_usd = abs(notional_usd) if pos_qty > 0 else -abs(notional_usd)
             
             positions[f"{inst}_{pos_side}"] = {
                 'symbol': inst,
@@ -131,6 +109,7 @@ class OKXTrader:
         return positions
     
     def get_ticker(self, inst_id: str) -> Dict:
+        """Get market ticker data."""
         res = self.market_api.get_ticker(inst_id)
         if res['code'] != '0' or not res['data']:
             return {'error': res.get('msg', 'Unknown error')}
@@ -148,45 +127,44 @@ class OKXTrader:
         }
     
     def get_instrument_info(self, inst_id: str) -> Dict:
+        """Get instrument specifications."""
         res = self.account_api.get_instruments(instType=self.inst_type, instId=inst_id)
         if res['code'] != '0' or not res['data']:
             return {'error': res.get('msg', 'Unknown error')}
         
         inst = res['data'][0]
         
-        def safe_float(val):
-            if not val or val == '':
-                return None
+        def _safe_float(val):
             try:
-                return float(val)
+                return float(val) if val and val != '' else None
             except (ValueError, TypeError):
                 return None
         
         return {
             'symbol': inst.get('instId'),
             'state': inst.get('state'),
-            'min_sz': safe_float(inst.get('minSz')),
-            'tick_sz': safe_float(inst.get('tickSz')),
-            'lot_sz': safe_float(inst.get('lotSz')),
-            'max_lmt_sz': safe_float(inst.get('maxLmtSz')),
-            'max_mkt_sz': safe_float(inst.get('maxMktSz')),
-            'max_mkt_amt': safe_float(inst.get('maxMktAmt')),
-            'ct_mult': safe_float(inst.get('ctMult')),
-            'ct_val': safe_float(inst.get('ctVal')),
+            'min_sz': _safe_float(inst.get('minSz')),
+            'tick_sz': _safe_float(inst.get('tickSz')),
+            'lot_sz': _safe_float(inst.get('lotSz')),
+            'max_lmt_sz': _safe_float(inst.get('maxLmtSz')),
+            'max_mkt_sz': _safe_float(inst.get('maxMktSz')),
+            'max_mkt_amt': _safe_float(inst.get('maxMktAmt')),
+            'ct_mult': _safe_float(inst.get('ctMult')),
+            'ct_val': _safe_float(inst.get('ctVal')),
         }
     
-    def set_leverage(self, inst_id: str, lever: int, mgn_mode: str = 'cross', pos_side: str = 'long') -> Dict:
+    def set_leverage(self, inst_id: str, lever: int, mgn_mode: str = 'cross', 
+                     pos_side: str = 'long') -> Dict:
+        """Set leverage for instrument."""
         if lever < 1 or lever > 125:
             return {'status': 'error', 'msg': f"Invalid leverage: {lever}"}
         
-        # 跨幣種保證金模式 (模式 3) 下，需要調整參數
         leverage_params = {
             'instId': inst_id,
             'lever': str(lever),
             'mgnMode': mgn_mode
         }
         
-        # 只在 open_close 模式 (雙向持倉) 且逐倉時添加 posSide
         if self.pos_mode and self.pos_mode != 'net_mode' and mgn_mode == 'isolated':
             leverage_params['posSide'] = pos_side
         
@@ -202,12 +180,11 @@ class OKXTrader:
                 'status': 'success',
                 'msg': 'Leverage set successfully'
             }
-        else:
-            return {'status': 'error', 'msg': res.get('msg', 'Unknown error'), 'code': res.get('code')}
+        return {'status': 'error', 'msg': res.get('msg', 'Unknown error'), 'code': res.get('code')}
     
-    def convert_coin_contract(self, inst_id: str, sz: float, 
-                            convert_type: int = 1, px: Optional[float] = None,
-                            unit: str = 'coin') -> Dict:
+    def convert_coin_contract(self, inst_id: str, sz: float, convert_type: int = 1, 
+                            px: Optional[float] = None, unit: str = 'coin') -> Dict:
+        """Convert between coin and contract sizes."""
         import okx.PublicData as PublicData
         
         if unit == 'usds' and px is None:
@@ -224,12 +201,10 @@ class OKXTrader:
             'type': str(convert_type),
             'unit': unit
         }
-        
         if px is not None:
             params['px'] = str(px)
         
         res = public_api.get_convert_contract_coin(**params)
-        
         if res['code'] != '0' or not res['data']:
             return {'status': 'error', 'msg': res.get('msg', 'Unknown error')}
         
@@ -249,13 +224,10 @@ class OKXTrader:
                     pos_side: str = 'long',
                     reduce_only: bool = False,
                     _pos_mode: Optional[str] = None) -> Dict:
+        """Place a single order."""
         ord_type = 'limit' if price else 'market'
         client_order_id = _generate_client_order_id()
-        
-        if self.inst_type == 'SPOT':
-            td_mode = 'cash'
-        else:
-            td_mode = 'cross'
+        td_mode = 'cash' if self.inst_type == 'SPOT' else 'cross'
         
         order_params = {
             'instId': inst_id,
@@ -272,16 +244,12 @@ class OKXTrader:
                 account_config = self.get_account_config()
                 _pos_mode = account_config.get('pos_mode')
             
-            if _pos_mode == 'net_mode':
-                order_params['posSide'] = 'net'
-            else:
-                order_params['posSide'] = pos_side
+            order_params['posSide'] = 'net' if _pos_mode == 'net_mode' else pos_side
             order_params['reduceOnly'] = 'true' if reduce_only else 'false'
+        elif not price:
+            order_params['tgtCcy'] = 'quote_ccy'
         
-        if not price:
-            if self.inst_type == 'SPOT':
-                order_params['tgtCcy'] = 'quote_ccy'
-        else:
+        if price:
             order_params['px'] = str(price)
         
         res = self.trade_api.place_order(**order_params)
@@ -293,21 +261,83 @@ class OKXTrader:
                 'status': 'success',
                 'msg': 'Order placed successfully'
             }
-        else:
-            return {
-                'status': 'error',
-                'msg': res.get('msg', 'Unknown error'),
-                'code': res.get('code')
+        return {'status': 'error', 'msg': res.get('msg', 'Unknown error'), 'code': res.get('code')}
+    
+    def place_batch_orders(self, orders: List[Dict]) -> Dict:
+        """Place multiple orders (max 20 per request)."""
+        if not orders:
+            return {'status': 'error', 'msg': 'Orders list is empty'}
+        if len(orders) > 20:
+            return {'status': 'error', 'msg': f'Too many orders: {len(orders)}, max is 20'}
+        
+        batch_orders = []
+        account_config = self.get_account_config()
+        _pos_mode = account_config.get('pos_mode')
+        
+        for order in orders:
+            inst_id = order.get('inst_id')
+            side = order.get('side')
+            size = order.get('size')
+            price = order.get('price')
+            pos_side = order.get('pos_side', 'long')
+            reduce_only = order.get('reduce_only', False)
+            
+            ord_type = 'limit' if price else 'market'
+            client_order_id = _generate_client_order_id()
+            td_mode = 'cash' if self.inst_type == 'SPOT' else 'cross'
+            
+            order_params = {
+                'instId': inst_id,
+                'tdMode': td_mode,
+                'side': side,
+                'ordType': ord_type,
+                'sz': str(size),
+                'clOrdId': client_order_id,
+                'tag': '82eebde453a2BCDE',
             }
+            
+            if self.inst_type in ['SWAP', 'FUTURES']:
+                order_params['posSide'] = 'net' if _pos_mode == 'net_mode' else pos_side
+                order_params['reduceOnly'] = 'true' if reduce_only else 'false'
+            elif not price:
+                order_params['tgtCcy'] = 'quote_ccy'
+            
+            if price:
+                order_params['px'] = str(price)
+            
+            batch_orders.append(order_params)
+        
+        res = self.trade_api.place_multiple_orders(batch_orders)
+        
+        if res['code'] == '0' and res['data']:
+            results = [
+                {
+                    'order_id': item.get('ordId'),
+                    'client_order_id': item.get('clOrdId'),
+                    'status': 'success' if item.get('sCode') == '0' else 'error',
+                    'msg': item.get('sMsg', '')
+                }
+                for item in res['data']
+            ]
+            
+            successful = sum(1 for r in results if r['status'] == 'success')
+            failed = len(results) - successful
+            
+            return {
+                'status': 'success' if failed == 0 else ('partial' if successful > 0 else 'error'),
+                'total': len(results),
+                'successful': successful,
+                'failed': failed,
+                'orders': results
+            }
+        
+        return {'status': 'error', 'msg': res.get('msg', 'Unknown error'), 'code': res.get('code')}
     
     def get_account_balance_info(self) -> Dict:
-        """獲取帳戶余額信息（含總權益、可用權益等）"""
-        def safe_float(val):
-            """安全將 API 值轉換為 float（處理空字符串）"""
-            if not val or val == '':
-                return 0.0
+        """Get account balance information."""
+        def _safe_float(val):
             try:
-                return float(val)
+                return float(val) if val and val != '' else 0.0
             except (ValueError, TypeError):
                 return 0.0
         
@@ -317,27 +347,22 @@ class OKXTrader:
         
         data = res['data'][0]
         details = data.get('details', [])
-        
-        # 提取 USDT 的權益信息（如果有多個幣種資產）
-        usdt_info = {}
-        for detail in details:
-            if detail.get('ccy') == 'USDT':
-                usdt_info = detail
-                break
+        usdt_info = next((d for d in details if d.get('ccy') == 'USDT'), {})
         
         return {
-            'total_equity': safe_float(data.get('totalEq', 0)),
-            'available_equity': safe_float(data.get('availEq', 0)),
-            'used_margin': safe_float(data.get('imr', 0)),
-            'maint_margin': safe_float(data.get('mmr', 0)),
-            'unrealized_pnl': safe_float(data.get('upl', 0)),
-            'usdt_balance': safe_float(usdt_info.get('cashBal', 0)),
-            'usdt_available': safe_float(usdt_info.get('availBal', 0)),
-            'usdt_frozen': safe_float(usdt_info.get('frozenBal', 0)),
+            'total_equity': _safe_float(data.get('totalEq', 0)),
+            'available_equity': _safe_float(data.get('availEq', 0)),
+            'used_margin': _safe_float(data.get('imr', 0)),
+            'maint_margin': _safe_float(data.get('mmr', 0)),
+            'unrealized_pnl': _safe_float(data.get('upl', 0)),
+            'usdt_balance': _safe_float(usdt_info.get('cashBal', 0)),
+            'usdt_available': _safe_float(usdt_info.get('availBal', 0)),
+            'usdt_frozen': _safe_float(usdt_info.get('frozenBal', 0)),
             'details': details
         }
     
     def get_account_config(self) -> Dict:
+        """Get account configuration."""
         res = self.account_api.get_account_config()
         if res['code'] != '0' or not res['data']:
             return {'error': res.get('msg', 'Unknown error')}
@@ -359,56 +384,125 @@ class OKXTrader:
             'greek_type': config.get('greeksType')
         }
 
+    def close_position(self, inst_id: str, mgn_mode: str = 'cross', 
+                      pos_side: Optional[str] = None, 
+                      auto_cxl: bool = False) -> Dict:
+        """Close position at market price."""
+        close_params = {'instId': inst_id, 'mgnMode': mgn_mode}
+        if pos_side:
+            close_params['posSide'] = pos_side
+        if auto_cxl:
+            close_params['autoCxl'] = 'true'
+        
+        res = self.trade_api.close_positions(**close_params)
+        
+        if res['code'] == '0' and res['data']:
+            data = res['data'][0]
+            return {
+                'inst_id': data.get('instId'),
+                'pos_side': data.get('posSide'),
+                'status': 'success',
+                'msg': 'Position closed successfully'
+            }
+        return {'status': 'error', 'msg': res.get('msg', 'Unknown error'), 'code': res.get('code')}
+    
+    def close_all_positions(self, mgn_mode: str = 'cross', 
+                           symbol_suffix: str = '-USDT-SWAP') -> Dict:
+        """Close all positions matching symbol suffix."""
+        positions = self.get_positions()
+        
+        if not positions:
+            return {'status': 'success', 'msg': 'No positions to close', 
+                   'total': 0, 'closed': 0, 'failed': 0, 'results': []}
+        
+        account_config = self.get_account_config()
+        pos_mode = account_config.get('pos_mode', 'net_mode')
+        
+        close_results = []
+        successful = 0
+        failed = 0
+        
+        for pos_key, pos_data in positions.items():
+            inst_id = pos_data['symbol']
+            pos_side = pos_data['pos_side']
+            
+            if symbol_suffix and not inst_id.endswith(symbol_suffix):
+                continue
+            
+            try:
+                close_side = None if pos_mode == 'net_mode' else pos_side
+                result = self.close_position(inst_id=inst_id, mgn_mode=mgn_mode, 
+                                            pos_side=close_side, auto_cxl=False)
+                
+                if result['status'] == 'success':
+                    successful += 1
+                else:
+                    failed += 1
+                
+                close_results.append({
+                    'inst_id': inst_id,
+                    'pos_side': pos_side,
+                    'status': result['status'],
+                    'msg': result.get('msg', '')
+                })
+                
+                time.sleep(0.1)
+            
+            except Exception as e:
+                failed += 1
+                close_results.append({
+                    'inst_id': inst_id,
+                    'pos_side': pos_side,
+                    'status': 'error',
+                    'msg': str(e)
+                })
+        
+        return {
+            'status': 'success' if failed == 0 else ('partial' if successful > 0 else 'error'),
+            'total': len(close_results),
+            'closed': successful,
+            'failed': failed,
+            'results': close_results,
+            'msg': f'Closed {successful} positions, {failed} failed'
+        }
+
     def rebalance_portfolio(self, target_weights: Dict[str, float], 
                            budget: Optional[float] = None,
                            symbol_suffix: str = '-USDT-SWAP',
                            leverage: int = 5) -> Dict:
-        # 先驗證帳戶設置
+        """Rebalance portfolio to target weights."""
         validation = self.validate_account_config()
         if validation['status'] == 'error':
-            return {
-                'status': 'error',
-                'msg': validation['msg'],
-                'validation': validation['checks']
-            }
+            return {'status': 'error', 'msg': validation['msg'], 'validation': validation['checks']}
         
-        if not target_weights:
-            return {'status': 'error', 'msg': 'Target weights is empty'}
-        
-        # 驗證預算參數
-        if budget is None or budget <= 0:
-            return {
-                'status': 'error',
-                'msg': 'Budget must be specified and greater than 0. Suggest calling get_account_balance_info() to get total_equity.'
-            }
+        if not target_weights or budget is None or budget <= 0:
+            return {'status': 'error', 
+                   'msg': 'Target weights and budget required. Call get_account_balance_info() for total_equity.'}
         
         base_budget = budget
-        
         current_positions = self.get_positions()
         current_holdings = {}
+        
         for pos_key, pos_data in current_positions.items():
-            symbol = pos_data['symbol']
-            base_symbol = symbol.split('-')[0]
-            qty = pos_data['pos_qty']
+            symbol = pos_data['symbol'].split('-')[0]
             notional_usd = pos_data['notional_usd']
-            direction = 'long' if notional_usd > 0 else 'short'
-            current_holdings[base_symbol] = {
-                'inst_id': symbol,
-                'side': direction,
-                'qty': qty,
+            current_holdings[symbol] = {
+                'inst_id': pos_data['symbol'],
+                'side': 'long' if notional_usd > 0 else 'short',
+                'qty': pos_data['pos_qty'],
                 'mark_px': pos_data['mark_px'],
                 'entry_px': pos_data['entry_px'],
                 'usd_value': notional_usd
             }
         
-        target_holdings = {}
-        for symbol, weight in target_weights.items():
-            target_usd = weight * base_budget
-            target_holdings[symbol] = {
+        target_holdings = {
+            symbol: {
                 'weight': weight,
-                'target_usd': target_usd,
+                'target_usd': weight * base_budget,
                 'direction': 'long' if weight > 0 else ('short' if weight < 0 else 'none'),
             }
+            for symbol, weight in target_weights.items()
+        }
         
         rebalance_trades = []
         orders_to_execute = []
@@ -435,18 +529,15 @@ class OKXTrader:
             target_usd = target['target_usd']
             diff_usd = target_usd - current_usd
             
-            # 簡單邏輯：根據 delta 決定買賣
-            if abs(diff_usd) < 0.01:  # 忽略極小誤差
+            if abs(diff_usd) < 0.01:
                 action = 'skip'
                 order_side = None
                 order_size = 0
             elif diff_usd > 0:
-                # 目標大於現有，買入（增加多倉或減少空倉）
                 action = 'long'
                 order_side = 'buy'
                 order_size = diff_usd
-            else:  # diff_usd < 0
-                # 目標小於現有，賣出（減少多倉或增加空倉）
+            else:
                 action = 'short'
                 order_side = 'sell'
                 order_size = abs(diff_usd)
@@ -477,13 +568,10 @@ class OKXTrader:
         
         successful_orders = 0
         failed_orders = 0
-        
-        trade_records_map = {}
-        for trade in rebalance_trades:
-            symbol = trade['symbol']
-            if symbol not in trade_records_map:
-                trade_records_map[symbol] = []
-            trade_records_map[symbol].append(trade)
+        prepared_orders = []
+        order_to_trade_mapping = {}
+        account_config = self.get_account_config()
+        _pos_mode = account_config.get('pos_mode')
         
         for order_info in orders_to_execute:
             inst_id = order_info['inst_id']
@@ -493,12 +581,9 @@ class OKXTrader:
             symbol = order_info['symbol']
             
             try:
-                lever_result = self.set_leverage(
-                    inst_id=inst_id,
-                    lever=leverage,
-                    mgn_mode='cross',
-                    pos_side='long' if side == 'buy' else 'short'
-                )
+                lever_result = self.set_leverage(inst_id=inst_id, lever=leverage, 
+                                                mgn_mode='cross', 
+                                                pos_side='long' if side == 'buy' else 'short')
                 
                 if lever_result['status'] != 'success':
                     trade_record['status'] = 'error'
@@ -509,13 +594,8 @@ class OKXTrader:
                 ticker = self.get_ticker(inst_id)
                 current_px = ticker.get('last_px') if 'error' not in ticker else None
                 
-                convert_result = self.convert_coin_contract(
-                    inst_id=inst_id,
-                    sz=usd_amount,
-                    convert_type=1,
-                    px=current_px,
-                    unit='usds'
-                )
+                convert_result = self.convert_coin_contract(inst_id=inst_id, sz=usd_amount,
+                                                           convert_type=1, px=current_px, unit='usds')
                 
                 time.sleep(0.25)
                 
@@ -533,44 +613,51 @@ class OKXTrader:
                     failed_orders += 1
                     continue
                 
-                action_type = trade_record.get('action')
-                reduce_only = action_type in ['reduce', 'close']
+                order_params = {
+                    'inst_id': inst_id,
+                    'side': side,
+                    'size': contract_size,
+                    'price': None,
+                    'pos_side': 'long' if side == 'buy' else 'short',
+                    'reduce_only': trade_record.get('action') in ['reduce', 'close']
+                }
                 
-                order_result = self.place_order(
-                    inst_id=inst_id,
-                    side=side,
-                    size=contract_size,
-                    price=None,
-                    pos_side='long' if side == 'buy' else 'short',
-                    reduce_only=reduce_only
-                )
-                
-                if order_result['status'] == 'success':
-                    trade_record['order_id'] = order_result.get('order_id')
-                    trade_record['status'] = 'success'
-                    successful_orders += 1
-                else:
-                    trade_record['status'] = 'error'
-                    trade_record['msg'] = order_result.get('msg', 'Unknown error')
-                    failed_orders += 1
+                prepared_orders.append(order_params)
+                order_to_trade_mapping[len(prepared_orders) - 1] = {
+                    'trade_record': trade_record,
+                    'symbol': symbol
+                }
             
             except Exception as e:
                 trade_record['status'] = 'error'
                 trade_record['msg'] = str(e)
                 failed_orders += 1
         
-        trades_by_symbol = {}
-        for trade in rebalance_trades:
-            if trade['symbol'] not in trades_by_symbol:
-                trades_by_symbol[trade['symbol']] = []
-            trades_by_symbol[trade['symbol']].append(trade)
-        
-        # 根據訂單執行結果更新交易記錄狀態
-        for symbol, trades in trades_by_symbol.items():
-            related_orders = [o for o in orders_to_execute if o['symbol'] == symbol]
-            if related_orders and related_orders[0]['trade_record']['status'] == 'success':
-                for trade in trades:
-                    trade['status'] = 'success'
+        if prepared_orders:
+            batch_result = self.place_batch_orders(prepared_orders)
+            
+            if batch_result['status'] != 'error' and 'orders' in batch_result:
+                for i, order_result in enumerate(batch_result['orders']):
+                    mapping = order_to_trade_mapping.get(i)
+                    if not mapping:
+                        continue
+                    
+                    trade_record = mapping['trade_record']
+                    
+                    if order_result['status'] == 'success':
+                        trade_record['order_id'] = order_result.get('order_id')
+                        trade_record['status'] = 'success'
+                        successful_orders += 1
+                    else:
+                        trade_record['status'] = 'error'
+                        trade_record['msg'] = order_result.get('msg', 'Unknown error')
+                        failed_orders += 1
+            else:
+                for i in order_to_trade_mapping:
+                    trade_record = order_to_trade_mapping[i]['trade_record']
+                    trade_record['status'] = 'error'
+                    trade_record['msg'] = batch_result.get('msg', 'Batch order failed')
+                    failed_orders += 1
         
         symbols_rebalanced = sum(1 for t in rebalance_trades if t['status'] == 'success')
         symbols_error = sum(1 for t in rebalance_trades if t['status'] == 'error')
@@ -583,7 +670,7 @@ class OKXTrader:
             'summary': {
                 'symbols_rebalanced': symbols_rebalanced,
                 'symbols_error': symbols_error,
-                'total_orders': len(orders_to_execute),
+                'total_orders': len(prepared_orders),
                 'successful_orders': successful_orders,
                 'failed_orders': failed_orders
             },
@@ -592,7 +679,7 @@ class OKXTrader:
 
 
 class Rebalancer:
-    """調倉器（高層 API）"""
+    """High-level portfolio rebalancing interface."""
     
     def __init__(self, target_weights: Dict[str, float], trader: OKXTrader,
                  budget: Optional[float] = None, symbol_suffix: str = '-USDT-SWAP',
@@ -604,52 +691,44 @@ class Rebalancer:
         self.leverage = leverage
         self.result = None
         
-        # 計劃相關信息
         self.plan_data = None
         self.current_holdings = None
         self.target_holdings = None
         self.all_symbols = None
     
     def plan(self) -> 'Rebalancer':
-        """生成調倉計劃（不執行訂單），返回 self 支持鏈式調用"""
+        """Generate rebalancing plan without executing orders."""
         if not self.target_weights:
             raise ValueError('Target weights is empty')
-        
         if self.budget is None or self.budget <= 0:
             raise ValueError('Budget must be specified and greater than 0')
         
-        # 取得當前持倉
         current_positions = self.trader.get_positions()
         self.current_holdings = {}
+        
         for pos_key, pos_data in current_positions.items():
-            symbol = pos_data['symbol']
-            base_symbol = symbol.split('-')[0]
-            qty = pos_data['pos_qty']
+            symbol = pos_data['symbol'].split('-')[0]
             notional_usd = pos_data['notional_usd']
-            direction = 'long' if notional_usd > 0 else 'short'
-            self.current_holdings[base_symbol] = {
-                'inst_id': symbol,
-                'side': direction,
-                'qty': qty,
+            self.current_holdings[symbol] = {
+                'inst_id': pos_data['symbol'],
+                'side': 'long' if notional_usd > 0 else 'short',
+                'qty': pos_data['pos_qty'],
                 'mark_px': pos_data['mark_px'],
                 'entry_px': pos_data['entry_px'],
                 'usd_value': notional_usd
             }
         
-        # 計算目標持倉
-        self.target_holdings = {}
-        for symbol, weight in self.target_weights.items():
-            target_usd = weight * self.budget
-            self.target_holdings[symbol] = {
+        self.target_holdings = {
+            symbol: {
                 'weight': weight,
-                'target_usd': target_usd,
+                'target_usd': weight * self.budget,
                 'direction': 'long' if weight > 0 else ('short' if weight < 0 else 'none'),
             }
+            for symbol, weight in self.target_weights.items()
+        }
         
-        # 所有相關符號
         self.all_symbols = set(self.target_holdings.keys()) | set(self.current_holdings.keys())
         
-        # 生成計劃（只計算，不執行）
         plan_trades = []
         for symbol in sorted(self.all_symbols):
             current = self.current_holdings.get(symbol, {
@@ -670,7 +749,6 @@ class Rebalancer:
             target_usd = target['target_usd']
             diff_usd = target_usd - current_usd
             
-            # 判斷操作
             if abs(diff_usd) < 1.0:
                 action = "skip"
             elif current_usd == 0 and target_usd == 0:
@@ -678,15 +756,9 @@ class Rebalancer:
             elif current_usd == 0 and target_usd != 0:
                 action = "新建"
             elif current_usd > 0 and target_usd > 0:
-                if diff_usd > 0:
-                    action = "加倉"
-                else:
-                    action = "減倉"
+                action = "加倉" if diff_usd > 0 else "減倉"
             elif current_usd < 0 and target_usd < 0:
-                if diff_usd < 0:
-                    action = "加倉"
-                else:
-                    action = "減倉"
+                action = "加倉" if diff_usd < 0 else "減倉"
             elif (current_usd > 0 and target_usd < 0) or (current_usd < 0 and target_usd > 0):
                 action = "翻倉"
             else:
@@ -705,7 +777,7 @@ class Rebalancer:
         return self
     
     def preview(self) -> 'Rebalancer':
-        """打印調倉預覽表格"""
+        """Print rebalancing preview table."""
         if not self.plan_data:
             raise ValueError('Plan not generated. Call plan() first.')
         
@@ -735,7 +807,7 @@ class Rebalancer:
         return self
     
     def run(self) -> 'Rebalancer':
-        """執行調倉，返回 self 支持鏈式調用"""
+        """Execute rebalancing."""
         self.result = self.trader.rebalance_portfolio(
             target_weights=self.target_weights,
             budget=self.budget,
@@ -745,7 +817,7 @@ class Rebalancer:
         return self
     
     def summary(self) -> str:
-        """生成調倉摘要"""
+        """Generate rebalancing summary."""
         if not self.result:
             return "Rebalancer not executed. Call run() first."
         
@@ -793,12 +865,12 @@ class Rebalancer:
         return "\n".join(lines)
     
     def print_summary(self) -> 'Rebalancer':
-        """打印調倉摘要"""
+        """Print rebalancing summary."""
         print(self.summary())
         return self
     
     def get_result(self) -> Dict:
-        """獲取原始結果字典"""
+        """Get raw result dictionary."""
         return self.result or {}
     
     def __repr__(self) -> str:
@@ -814,28 +886,7 @@ class Rebalancer:
 def rebalance(target_weights: Dict[str, float], trader: OKXTrader,
              budget: Optional[float] = None, symbol_suffix: str = '-USDT-SWAP',
              leverage: int = 5, auto_run: bool = True) -> Rebalancer:
-    """方便調用的調倉函數
-    
-    Parameters
-    ----------
-    target_weights : Dict[str, float]
-        目標權重字典
-    trader : OKXTrader
-        交易接口實例
-    budget : float, optional
-        預算（若為 None，使用帳戶總權益）
-    symbol_suffix : str
-        交易對後綴，默認 '-USDT-SWAP'
-    leverage : int
-        槓桿倍數，默認 5
-    auto_run : bool
-        是否自動執行調倉。若 False，則先 plan() 再等待手動 run()
-    
-    Returns
-    -------
-    Rebalancer
-        可進行 preview() → run() 鏈式調用
-    """
+    """Convenient rebalancing function. Supports chaining: plan() → preview() → run()."""
     rb = Rebalancer(target_weights, trader, budget, symbol_suffix, leverage)
     if auto_run:
         rb.run()

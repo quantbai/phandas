@@ -242,17 +242,84 @@ class Backtester:
         slope, intercept, r_value, _, _ = linregress(t, equity_curve.values)
         linearity = r_value ** 2
         
+        # Calculate Sortino Ratio (only downside volatility)
+        downside_returns = daily_returns[daily_returns < 0]
+        if len(downside_returns) > 0:
+            downside_vol = downside_returns.std() * np.sqrt(365)
+            sortino = (annual_return - risk_free_rate) / downside_vol if downside_vol > 0 else 0
+        else:
+            sortino = 0
+        
+        # Calculate Calmar Ratio (annual return / max drawdown)
+        calmar = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0
+        
+        # Identify Drawdown Periods
+        drawdown_periods = self._identify_drawdown_periods(equity_curve)
+        
+        # Calculate VaR 95% and CVaR
+        var_95 = daily_returns.quantile(0.05) if not daily_returns.empty else 0
+        cvar = daily_returns[daily_returns <= var_95].mean() if not daily_returns.empty and (daily_returns <= var_95).any() else 0
+        
         self.metrics = {
             'total_return': total_return,
             'annual_return': annual_return,
             'annual_volatility': annual_vol,
             'sharpe_ratio': sharpe,
+            'sortino_ratio': sortino,
+            'calmar_ratio': calmar,
             'max_drawdown': max_drawdown,
             'linearity': linearity,
+            'drawdown_periods': drawdown_periods,
+            'var_95': var_95,
+            'cvar': cvar,
         }
         
         return self
     
+    def _identify_drawdown_periods(self, equity_curve: pd.Series) -> List[Dict]:
+        """Identify all drawdown periods with start/end dates and depth."""
+        rolling_max = equity_curve.expanding().max()
+        drawdown = (equity_curve / rolling_max - 1)
+        
+        in_drawdown = False
+        periods = []
+        start_date = None
+        peak_value = None
+        
+        for date, dd_value in drawdown.items():
+            if dd_value < -1e-6:  # In drawdown
+                if not in_drawdown:
+                    in_drawdown = True
+                    start_date = date
+                    peak_value = rolling_max.loc[date]
+            else:  # Not in drawdown
+                if in_drawdown:
+                    end_date = date
+                    duration = (end_date - start_date).days
+                    depth = drawdown.loc[start_date:end_date].min()
+                    
+                    periods.append({
+                        'start': start_date.strftime('%Y-%m-%d'),
+                        'end': end_date.strftime('%Y-%m-%d'),
+                        'depth': depth,
+                        'duration_days': duration,
+                    })
+                    in_drawdown = False
+        
+        # Handle ongoing drawdown at end
+        if in_drawdown:
+            end_date = equity_curve.index[-1]
+            duration = (end_date - start_date).days
+            depth = drawdown.loc[start_date:end_date].min()
+            periods.append({
+                'start': start_date.strftime('%Y-%m-%d'),
+                'end': end_date.strftime('%Y-%m-%d'),
+                'depth': depth,
+                'duration_days': duration,
+            })
+        
+        return sorted(periods, key=lambda x: x['depth'])  # Sort by depth (worst first)
+
     def _build_date_cache(self, factor: 'Factor') -> dict:
         """Preprocess factor data into date-indexed cache for O(1) lookup."""
         cache = {}
@@ -353,8 +420,12 @@ class Backtester:
                 f"Total Return: {self.metrics.get('total_return', 0):.2%}",
                 f"Annual Return: {self.metrics.get('annual_return', 0):.2%}",
                 f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}",
+                f"Sortino Ratio: {self.metrics.get('sortino_ratio', 0):.2f}",
+                f"Calmar Ratio: {self.metrics.get('calmar_ratio', 0):.2f}",
                 f"Linearity: {self.metrics.get('linearity', 0):.4f}",
                 f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}",
+                f"VaR 95%: {self.metrics.get('var_95', 0):.2%}",
+                f"CVaR: {self.metrics.get('cvar', 0):.2%}",
                 f"Avg. Annual Turnover: {avg_turnover:.2%}"
             ])
         
@@ -363,6 +434,28 @@ class Backtester:
     def print_summary(self) -> 'Backtester':
         """Print performance summary to console. Returns self for chaining."""
         print(self.summary())
+        return self
+    
+    def print_drawdown_periods(self, top_n: int = 5) -> 'Backtester':
+        """Print detailed drawdown periods to console. Returns self for chaining."""
+        drawdown_periods = self.metrics.get('drawdown_periods', [])
+        
+        if not drawdown_periods:
+            print("\nNo significant drawdown periods detected.")
+            return self
+        
+        periods_to_show = drawdown_periods[:top_n]
+        total_periods = len(drawdown_periods)
+        
+        print(f"\nTop {min(top_n, total_periods)} Drawdown Periods (sorted by depth, worst first):")
+        print("-" * 70)
+        for i, period in enumerate(periods_to_show, 1):
+            print(f"{i}. {period['start']} → {period['end']} | "
+                  f"Depth: {period['depth']:.2%} | Duration: {period['duration_days']} days")
+        
+        if total_periods > top_n:
+            print(f"\n(Showing {top_n} of {total_periods} total drawdown periods)")
+        
         return self
     
     def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> 'Backtester':
@@ -564,13 +657,36 @@ class CombinedBacktester:
         slope, intercept, r_value, _, _ = linregress(t, equity.values)
         linearity = r_value ** 2
         
+        # Calculate Sortino Ratio (only downside volatility)
+        downside_returns = port_returns[port_returns < 0]
+        if len(downside_returns) > 0:
+            downside_vol = downside_returns.std() * np.sqrt(252)
+            sortino = (annual_return - risk_free_rate) / downside_vol if downside_vol > 0 else 0
+        else:
+            sortino = 0
+        
+        # Calculate Calmar Ratio
+        calmar = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0
+        
+        # Identify Drawdown Periods
+        drawdown_periods = self._identify_drawdown_periods(equity)
+        
+        # Calculate VaR 95% and CVaR
+        var_95 = port_returns.quantile(0.05) if not port_returns.empty else 0
+        cvar = port_returns[port_returns <= var_95].mean() if not port_returns.empty and (port_returns <= var_95).any() else 0
+        
         self.metrics = {
             'total_return': total_return,
             'annual_return': annual_return,
             'annual_volatility': annual_vol,
             'sharpe_ratio': sharpe,
+            'sortino_ratio': sortino,
+            'calmar_ratio': calmar,
             'max_drawdown': max_drawdown,
             'linearity': linearity,
+            'drawdown_periods': drawdown_periods,
+            'var_95': var_95,
+            'cvar': cvar,
         }
         
         return self
@@ -583,6 +699,52 @@ class CombinedBacktester:
         
         df = pd.DataFrame(returns_dict)
         return df.dropna(how='all')
+
+    def _identify_drawdown_periods(self, equity_series: pd.Series) -> List[Dict]:
+        """Identify all drawdown periods with start/end dates and depth."""
+        rolling_max = equity_series.expanding().max()
+        drawdown = (equity_series / rolling_max - 1)
+        
+        in_drawdown = False
+        periods = []
+        start_date = None
+        
+        for i, (date, dd_value) in enumerate(drawdown.items()):
+            if dd_value < -1e-6:  # In drawdown
+                if not in_drawdown:
+                    in_drawdown = True
+                    start_date = i
+            else:  # Not in drawdown
+                if in_drawdown:
+                    end_date = i
+                    start_label = drawdown.index[start_date].strftime('%Y-%m-%d')
+                    end_label = drawdown.index[end_date].strftime('%Y-%m-%d')
+                    duration = (drawdown.index[end_date] - drawdown.index[start_date]).days
+                    depth = drawdown.iloc[start_date:end_date + 1].min()
+                    
+                    periods.append({
+                        'start': start_label,
+                        'end': end_label,
+                        'depth': depth,
+                        'duration_days': duration,
+                    })
+                    in_drawdown = False
+        
+        # Handle ongoing drawdown at end
+        if in_drawdown:
+            end_date = len(drawdown) - 1
+            start_label = drawdown.index[start_date].strftime('%Y-%m-%d')
+            end_label = drawdown.index[end_date].strftime('%Y-%m-%d')
+            duration = (drawdown.index[end_date] - drawdown.index[start_date]).days
+            depth = drawdown.iloc[start_date:end_date + 1].min()
+            periods.append({
+                'start': start_label,
+                'end': end_label,
+                'depth': depth,
+                'duration_days': duration,
+            })
+        
+        return sorted(periods, key=lambda x: x['depth'])  # Sort by depth (worst first)
 
     def get_portfolio_returns(self) -> pd.Series:
         """Compute weighted portfolio daily returns."""
@@ -644,8 +806,12 @@ class CombinedBacktester:
             lines.append(f"Total Return: {self.metrics.get('total_return', 0):.2%}")
             lines.append(f"Annual Return: {self.metrics.get('annual_return', 0):.2%}")
             lines.append(f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}")
+            lines.append(f"Sortino Ratio: {self.metrics.get('sortino_ratio', 0):.2f}")
+            lines.append(f"Calmar Ratio: {self.metrics.get('calmar_ratio', 0):.2f}")
             lines.append(f"Linearity: {self.metrics.get('linearity', 0):.4f}")
             lines.append(f"Max Drawdown: {self.metrics.get('max_drawdown', 0):.2%}")
+            lines.append(f"VaR 95%: {self.metrics.get('var_95', 0):.2%}")
+            lines.append(f"CVaR: {self.metrics.get('cvar', 0):.2%}")
         
         lines.append("")
         lines.append("Strategy Weights:")
@@ -664,6 +830,28 @@ class CombinedBacktester:
     def print_summary(self) -> 'CombinedBacktester':
         """Print portfolio summary."""
         print(self.summary())
+        return self
+    
+    def print_drawdown_periods(self, top_n: int = 5) -> 'CombinedBacktester':
+        """Print detailed drawdown periods to console. Returns self for chaining."""
+        drawdown_periods = self.metrics.get('drawdown_periods', [])
+        
+        if not drawdown_periods:
+            print("\nNo significant drawdown periods detected.")
+            return self
+        
+        periods_to_show = drawdown_periods[:top_n]
+        total_periods = len(drawdown_periods)
+        
+        print(f"\nTop {min(top_n, total_periods)} Drawdown Periods (sorted by depth, worst first):")
+        print("-" * 70)
+        for i, period in enumerate(periods_to_show, 1):
+            print(f"{i}. {period['start']} → {period['end']} | "
+                  f"Depth: {period['depth']:.2%} | Duration: {period['duration_days']} days")
+        
+        if total_periods > top_n:
+            print(f"\n(Showing {top_n} of {total_periods} total drawdown periods)")
+        
         return self
     
     def _plot_equity_line(self, ax, equity_series: pd.Series, y_min: float):
