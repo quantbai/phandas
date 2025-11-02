@@ -271,6 +271,25 @@ class Factor:
         result['factor'] = result.groupby('timestamp', group_keys=False)['factor'].apply(create_spread)
         return Factor(result, f"spread({self.name},{pct})")
 
+    def signal(self) -> 'Factor':
+        """Convert to dollar-neutral signal (demeaned & scaled by |sum|).
+        Enables direct addition: factor_A.signal() + factor_B.signal() combines correctly.
+        Returns NaN for entire cross-section if any value is NaN."""
+        result = self.data.copy()
+        
+        def to_dn_signal(group):
+            if group.isna().any():
+                return pd.Series(np.nan, index=group.index)
+            
+            demeaned = group - group.mean()
+            abs_sum = np.abs(demeaned).sum()
+            if abs_sum < 1e-10:
+                return pd.Series(np.nan, index=group.index)
+            return demeaned / abs_sum
+        
+        result['factor'] = result.groupby('timestamp', group_keys=False)['factor'].transform(to_dn_signal)
+        return Factor(result, f"signal({self.name})")
+
     def group_neutralize(self, group_data: 'Factor') -> 'Factor':
         """Neutralize against group membership (industry, sector, etc)."""
         self._validate_factor(group_data, "group_neutralize")
@@ -581,6 +600,63 @@ class Factor:
         result_data['factor'] = result_data['factor'].clip(lower=epsilon, upper=1-epsilon).apply(ppf_func)
 
         return Factor(result_data, f"ts_quantile({self.name},{window},{driver})")
+
+    def ts_kurtosis(self, window: int) -> 'Factor':
+        """Rolling excess kurtosis: E[(x - mean)^4] / std^4 - 3."""
+        self._validate_window(window)
+        
+        result = self.data.copy()
+        
+        def kurtosis_vectorized(group):
+            vals = group.values
+            n = len(vals)
+            kurt_vals = np.full(n, np.nan)
+            
+            for i in range(window - 1, n):
+                window_vals = vals[i-window+1:i+1]
+                
+                if np.isnan(window_vals).any():
+                    continue
+                
+                if len(np.unique(window_vals)) < 2:
+                    continue
+                
+                mean_val = np.mean(window_vals)
+                std_val = np.std(window_vals, ddof=0)
+                
+                if std_val < 1e-10:
+                    continue
+                
+                deviations = window_vals - mean_val
+                kurt = np.mean(deviations**4) / (std_val**4) - 3
+                kurt_vals[i] = kurt
+            
+            return pd.Series(kurt_vals, index=group.index)
+        
+        result['factor'] = result.groupby('symbol', group_keys=False)['factor'].apply(
+            kurtosis_vectorized
+        )
+        
+        return Factor(result, f"ts_kurtosis({self.name},{window})")
+
+    def ts_skewness(self, window: int) -> 'Factor':
+        """Rolling sample skewness with Bessel correction."""
+        self._validate_window(window)
+        
+        n = window
+        mean_val = self.ts_mean(window)
+        diff = self - mean_val
+        
+        sum_cube_dev = diff.power(3).ts_sum(window)
+        sum_sq_dev = diff.power(2).ts_sum(window)
+        
+        numerator = sum_cube_dev * ((n * (n - 1)) ** 1.5)
+        denominator = sum_sq_dev.power(1.5) * ((n - 1) * (n - 2))
+        
+        skew = numerator / denominator
+        skew.name = f"ts_skewness({self.name},{window})"
+        
+        return skew
 
     def ts_backfill(self, window: int, k: int = 1) -> 'Factor':
         """Backfill NaN with k-th most recent non-NaN value in window."""

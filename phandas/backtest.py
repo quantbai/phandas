@@ -321,10 +321,13 @@ class Backtester:
         return sorted(periods, key=lambda x: x['depth'])  # Sort by depth (worst first)
 
     def _build_date_cache(self, factor: 'Factor') -> dict:
-        """Preprocess factor data into date-indexed cache for O(1) lookup."""
+        """Preprocess factor data into date-indexed cache for O(1) lookup.
+        Only include dates with complete cross-sectional data (no NaN)."""
         cache = {}
         for date, group in factor.data.groupby('timestamp', sort=False):
-            cache[date] = group.set_index('symbol')['factor'].dropna()
+            series = group.set_index('symbol')['factor']
+            if not series.isna().any():
+                cache[date] = series
         return cache
     
     def _get_factor_data(self, factor: 'Factor', date) -> pd.Series:
@@ -352,7 +355,11 @@ class Backtester:
         raise ValueError("No valid start date found with overlapping data")
     
     def _calculate_target_holdings(self, factors: pd.Series) -> pd.Series:
-        """Calculate target dollar-neutral holdings from factors."""
+        """Calculate target dollar-neutral holdings from factors.
+        Skip normalization if factor is already a signal (already normalized)."""
+        if 'signal' in self.strategy_factor.name.lower():
+            return factors * self.portfolio.total_value
+        
         demeaned = factors - factors.mean()
         abs_sum = np.abs(demeaned).sum()
         
