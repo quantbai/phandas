@@ -48,6 +48,10 @@ def spread(factor: 'Factor', pct: float = 0.5) -> 'Factor':
     """Spread transformation (top/bottom pct% long-short)."""
     return factor.spread(pct)
 
+def signal(factor: 'Factor') -> 'Factor':
+    """Convert to dollar-neutral signal (demeaned & scaled by |sum|)."""
+    return factor.signal()
+
 def ts_rank(factor: 'Factor', window: int) -> 'Factor':
     """Rolling time-series rank."""
     return factor.ts_rank(window)
@@ -117,6 +121,14 @@ def ts_covariance(factor1: 'Factor', factor2: 'Factor', window: int) -> 'Factor'
 def ts_quantile(factor: 'Factor', window: int, driver: str = "gaussian") -> 'Factor':
     """Rolling quantile transformation."""
     return factor.ts_quantile(window, driver)
+
+def ts_kurtosis(factor: 'Factor', window: int) -> 'Factor':
+    """Rolling excess kurtosis."""
+    return factor.ts_kurtosis(window)
+
+def ts_skewness(factor: 'Factor', window: int) -> 'Factor':
+    """Rolling skewness."""
+    return factor.ts_skewness(window)
 
 def ts_av_diff(factor: 'Factor', window: int) -> 'Factor':
     """Difference from rolling mean."""

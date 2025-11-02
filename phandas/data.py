@@ -28,7 +28,11 @@ def fetch_data(
     exchange: str = 'binance',
     output_path: Optional[str] = None
 ) -> 'Panel':
-    """Fetch cryptocurrency OHLCV data (YYYY-MM-DD dates, saves to CSV if output_path provided)."""
+    """Fetch cryptocurrency OHLCV data. BTC and ETH are automatically fetched as market factors
+    for beta calculation but are not included in the portfolio symbols."""
+    user_symbols = list(set(symbols))
+    download_symbols = list(set(user_symbols + ['BTC', 'ETH']))
+    
     try:
         exchange_obj = getattr(ccxt, exchange)()
     except AttributeError:
@@ -41,8 +45,7 @@ def fetch_data(
     until = exchange_obj.parse8601(f'{end_date}T23:59:59Z') if end_date else None
     
     all_data = []
-    
-    for symbol in symbols:
+    for symbol in download_symbols:
         if symbol in _SYMBOL_MAP:
             data = _fetch_renamed_symbol(exchange_obj, _SYMBOL_MAP[symbol], timeframe, since, until)
             if data is not None:
@@ -57,7 +60,7 @@ def fetch_data(
         raise ValueError("No data fetched")
     
     combined = pd.concat(all_data, ignore_index=True)
-    result = _process_data(combined, timeframe)
+    result = _process_data(combined, timeframe, user_symbols)
     
     from .panel import Panel
     panel = Panel(result)
@@ -130,7 +133,7 @@ def _fetch_renamed_symbol(exchange, symbols: List[str], timeframe: str, since, u
     return combined
 
 
-def _process_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+def _process_data(df: pd.DataFrame, timeframe: str, user_symbols: List[str]) -> pd.DataFrame:
     """Process and align data to common time range."""
     pivoted = df.pivot_table(index='timestamp', columns='symbol', values='close')
     common_start = pivoted.apply(lambda s: s.first_valid_index()).max()
@@ -151,5 +154,14 @@ def _process_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         stacked.columns = ['timestamp', 'symbol', col]
         result_dfs.append(stacked.set_index(['timestamp', 'symbol']))
     
-    return pd.concat(result_dfs, axis=1).sort_index()
+    result = pd.concat(result_dfs, axis=1).sort_index()
+    
+    close_data = aligned_data['close']
+    for factor in ['BTC', 'ETH']:
+        if factor in close_data.columns:
+            result[f'{factor}_close'] = result.index.get_level_values('timestamp').map(
+                close_data[factor]
+            )
+    
+    return result[result.index.get_level_values('symbol').isin(user_symbols)]
 
