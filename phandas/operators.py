@@ -4,10 +4,6 @@ from typing import Union, List, Optional
 from .core import Factor 
 
 
-def group_neutralize(factor: 'Factor', group_data: 'Factor') -> 'Factor':
-    """Neutralize factor against specified groups."""
-    return factor.group_neutralize(group_data)
-
 def vector_neut(x: 'Factor', y: 'Factor') -> 'Factor':
     """Find vector x* orthogonal to y using vector projection."""
     return x.vector_neut(y)

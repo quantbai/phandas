@@ -273,7 +273,12 @@ class Factor:
 
     def signal(self) -> 'Factor':
         """Convert to dollar-neutral signal (demeaned & scaled by |sum|).
-        Enables direct addition: factor_A.signal() + factor_B.signal() combines correctly.
+        
+        Guarantees:
+        - Positive values sum to 0.5, negative values sum to -0.5
+        - Dollar-neutral: sum(values) ≈ 0
+        - Suitable for direct use as portfolio weights or combination
+        
         Returns NaN for entire cross-section if any value is NaN."""
         result = self.data.copy()
         
@@ -289,33 +294,6 @@ class Factor:
         
         result['factor'] = result.groupby('timestamp', group_keys=False)['factor'].transform(to_dn_signal)
         return Factor(result, f"signal({self.name})")
-
-    def group_neutralize(self, group_data: 'Factor') -> 'Factor':
-        """Neutralize against group membership (industry, sector, etc)."""
-        self._validate_factor(group_data, "group_neutralize")
-
-        merged = pd.merge(self.data, group_data.data, 
-                         on=['timestamp', 'symbol'],
-                         suffixes=('', '_group'))
-        
-        if merged.empty:
-            raise ValueError("No common data between factor and group data.")
-
-        def safe_neutralize(group):
-            if group['factor'].isna().any():
-                group['factor'] = np.nan
-            else:
-                group['factor'] = group.groupby('factor_group')['factor'].transform(
-                    lambda x: x - x.mean()
-                )
-            return group
-
-        merged = merged.groupby(['timestamp', 'factor_group'], group_keys=False).apply(
-            safe_neutralize, include_groups=False
-        )
-        
-        result_data = merged[['timestamp', 'symbol', 'factor']]
-        return Factor(result_data, name=f"group_neutralize({self.name},{group_data.name})")
 
     def vector_neut(self, other: 'Factor') -> 'Factor':
         """Remove linear component of other from self."""
@@ -1194,8 +1172,6 @@ class Factor:
     def __ne__(self, other: Union['Factor', float]) -> 'Factor':
         """Not equal: factor != other"""
         return self._comparison_op(other, lambda x, y: x != y, '!=')
-
-    # ==================== Data Access & Information ====================
 
     def to_weights(self, date: Optional[Union[str, pd.Timestamp]] = None) -> dict:
         """Convert to dollar-neutral portfolio weights (demeaned & normalized)."""
