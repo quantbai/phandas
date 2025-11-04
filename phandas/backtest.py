@@ -1,43 +1,34 @@
-"""
-Professional backtesting engine for factor strategies.
-
-Optimized for 3-column Factor format [timestamp, symbol, factor].
-Supports dollar-neutral portfolio-based backtesting with dynamic rebalancing,
-transaction cost modeling, and comprehensive performance metrics.
-"""
+"""Backtesting engine for factor strategies."""
 
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import TYPE_CHECKING, Union, Tuple, Dict, List, Optional
 import logging
-from scipy.stats import linregress
+from scipy.stats import linregress, skew, kurtosis, norm
 
 if TYPE_CHECKING:
     from .core import Factor
 
-
 logger = logging.getLogger(__name__)
 
-# Configure matplotlib with fallback fonts for Chinese/English support
 plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 
 
 class Portfolio:
-    """Manages trading portfolio state, positions, and trade execution."""
+    """Portfolio state and trade execution."""
     def __init__(self, initial_capital: float = 1000):
         self.initial_capital = initial_capital
         self.cash = initial_capital
         self.positions = {}
         self.holdings = {}
         self.total_value = initial_capital
-        
         self.history = []
         self.trade_log = []
 
     def update_market_value(self, date, prices: pd.Series):
-        """Mark-to-market portfolio valuation."""
+        """Mark-to-market valuation."""
         holdings_value = 0.0
         self.holdings.clear()
         
@@ -48,18 +39,13 @@ class Portfolio:
                 self.holdings[symbol] = value
                 holdings_value += value
         
-        previous_total_value = self.total_value
         self.total_value = self.cash + holdings_value
-        
-        self.history.append({
-            'date': date,
-            'total_value': self.total_value,
-        })
+        self.history.append({'date': date, 'total_value': self.total_value})
 
     def execute_trade(self, symbol: str, quantity: float, price: float, 
                      transaction_cost_rates: Union[float, Tuple[float, float]], 
                      trade_date: pd.Timestamp):
-        """Execute trade with transaction costs (separate buy/sell rates)."""
+        """Execute trade with separate buy/sell cost rates."""
         if isinstance(transaction_cost_rates, (list, tuple)):
             buy_cost_rate = transaction_cost_rates[0]
             sell_cost_rate = transaction_cost_rates[1]
@@ -85,7 +71,7 @@ class Portfolio:
         })
     
     def _build_datetime_df(self, data_list: list) -> pd.DataFrame:
-        """Convert data list to DataFrame with datetime index."""
+        """Convert list of dicts to DataFrame with datetime index."""
         if not data_list:
             return pd.DataFrame()
         df = pd.DataFrame(data_list)
@@ -102,11 +88,7 @@ class Portfolio:
 
 
 class Backtester:
-    """
-    Backtesting engine with 3-column Factor format [timestamp, symbol, factor].
-    
-    Optimized for fast backtesting with dynamic rebalancing and metrics calculation.
-    """
+    """Backtesting engine for factor strategies."""
     
     def __init__(
         self,
@@ -114,26 +96,30 @@ class Backtester:
         strategy_factor: 'Factor',
         transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
         initial_capital: float = 1000,
-        full_rebalance: bool = False
+        full_rebalance: bool = False,
+        neutralization: str = "market"
     ):
         """
         Parameters
         ----------
         price_factor : Factor
-            Price factor for entry/exit prices
+            Price data for entry/exit
         strategy_factor : Factor
-            Strategy factor for position weights
-        transaction_cost : Union[float, Tuple[float, float]]
-            Transaction cost rate(s) for buy/sell
+            Position weights
+        transaction_cost : float or (buy_rate, sell_rate)
+            Transaction cost rates
         initial_capital : float
-            Initial capital for backtesting
         full_rebalance : bool
-            If True, liquidate all positions daily then rebuild (turnover ~200%)
-            If False, incremental rebalancing (turnover ~20-50%)
+            If True: liquidate all daily (turnover ~200%)
+            If False: incremental rebalancing (turnover ~20-50%)
+        neutralization : str
+            "market": normalize to dollar-neutral weights (default)
+            "none": use strategy_factor directly (must be dollar-neutral)
         """
         self.price_factor = price_factor
         self.strategy_factor = strategy_factor
         self.full_rebalance = full_rebalance
+        self.neutralization = neutralization.lower()
         
         if isinstance(transaction_cost, (list, tuple)):
             self.transaction_cost_rates = tuple(transaction_cost)
@@ -163,8 +149,6 @@ class Backtester:
         self.portfolio.history.append({
             'date': initial_date,
             'total_value': self.portfolio.initial_capital,
-            'cash': self.portfolio.initial_capital,
-            'holdings_value': 0,
         })
 
         for i in range(start_idx, len(common_dates)):
@@ -185,7 +169,6 @@ class Backtester:
                 target_holdings = self._calculate_target_holdings(strategy_factors)
                 
                 if self.full_rebalance:
-                    # FULL LIQUIDATION: Sell all positions first
                     for symbol in list(self.portfolio.positions.keys()):
                         if symbol in current_prices.index:
                             quantity = -self.portfolio.positions[symbol]
@@ -193,10 +176,8 @@ class Backtester:
                             self.portfolio.execute_trade(symbol, quantity, price,
                                                         self.transaction_cost_rates, current_date)
                     
-                    # Update portfolio after liquidation
                     self.portfolio.update_market_value(current_date, current_prices)
                 
-                # Generate and execute orders
                 orders = self._generate_orders(target_holdings, current_prices)
                 for symbol, quantity in orders.items():
                     if symbol in current_prices.index:
@@ -218,7 +199,6 @@ class Backtester:
             return self
         
         equity_curve = history['total_value']
-        
         total_return = (equity_curve.iloc[-1] / equity_curve.iloc[0]) - 1
         
         days = (equity_curve.index[-1] - equity_curve.index[0]).days
@@ -237,12 +217,10 @@ class Backtester:
         drawdown = (equity_curve / rolling_max - 1)
         max_drawdown = drawdown.min()
         
-        # Calculate Equity Curve Linearity
         t = np.arange(len(equity_curve))
         slope, intercept, r_value, _, _ = linregress(t, equity_curve.values)
         linearity = r_value ** 2
         
-        # Calculate Sortino Ratio (only downside volatility)
         downside_returns = daily_returns[daily_returns < 0]
         if len(downside_returns) > 0:
             downside_vol = downside_returns.std() * np.sqrt(365)
@@ -250,15 +228,13 @@ class Backtester:
         else:
             sortino = 0
         
-        # Calculate Calmar Ratio (annual return / max drawdown)
         calmar = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0
-        
-        # Identify Drawdown Periods
         drawdown_periods = self._identify_drawdown_periods(equity_curve)
         
-        # Calculate VaR 95% and CVaR
         var_95 = daily_returns.quantile(0.05) if not daily_returns.empty else 0
         cvar = daily_returns[daily_returns <= var_95].mean() if not daily_returns.empty and (daily_returns <= var_95).any() else 0
+        
+        psr = self._calculate_psr(daily_returns) if not daily_returns.empty else 0
         
         self.metrics = {
             'total_return': total_return,
@@ -272,27 +248,42 @@ class Backtester:
             'drawdown_periods': drawdown_periods,
             'var_95': var_95,
             'cvar': cvar,
+            'psr': psr,
         }
         
         return self
     
+    def _calculate_psr(self, daily_returns: pd.Series, sr_benchmark: float = 0.0) -> float:
+        """Probabilistic Sharpe Ratio: statistical confidence (0-1) of beating benchmark Sharpe."""
+        if len(daily_returns) < 2:
+            return 0.0
+        
+        sr_obs = (daily_returns.mean() * 365) / (daily_returns.std() * np.sqrt(365)) \
+                 if daily_returns.std() > 0 else 0
+        
+        g3 = skew(daily_returns)
+        g4 = kurtosis(daily_returns, fisher=False)
+        T = len(daily_returns)
+        adjustment = np.sqrt(1 - g3 * sr_obs + ((g4 - 1) / 4) * sr_obs ** 2)
+        psr_stat = (sr_obs - sr_benchmark) / adjustment * np.sqrt(T / 365)    
+        psr = norm.cdf(psr_stat)
+        return float(np.clip(psr, 0.0, 1.0))
+
     def _identify_drawdown_periods(self, equity_curve: pd.Series) -> List[Dict]:
-        """Identify all drawdown periods with start/end dates and depth."""
+        """Identify drawdown periods (start/end dates and depth)."""
         rolling_max = equity_curve.expanding().max()
         drawdown = (equity_curve / rolling_max - 1)
         
         in_drawdown = False
         periods = []
         start_date = None
-        peak_value = None
         
         for date, dd_value in drawdown.items():
-            if dd_value < -1e-6:  # In drawdown
+            if dd_value < -1e-6:
                 if not in_drawdown:
                     in_drawdown = True
                     start_date = date
-                    peak_value = rolling_max.loc[date]
-            else:  # Not in drawdown
+            else:
                 if in_drawdown:
                     end_date = date
                     duration = (end_date - start_date).days
@@ -306,7 +297,6 @@ class Backtester:
                     })
                     in_drawdown = False
         
-        # Handle ongoing drawdown at end
         if in_drawdown:
             end_date = equity_curve.index[-1]
             duration = (end_date - start_date).days
@@ -318,11 +308,10 @@ class Backtester:
                 'duration_days': duration,
             })
         
-        return sorted(periods, key=lambda x: x['depth'])  # Sort by depth (worst first)
+        return sorted(periods, key=lambda x: x['depth'])
 
     def _build_date_cache(self, factor: 'Factor') -> dict:
-        """Preprocess factor data into date-indexed cache for O(1) lookup.
-        Only include dates with complete cross-sectional data (no NaN)."""
+        """Cache factor data by date (only complete cross-sections)."""
         cache = {}
         for date, group in factor.data.groupby('timestamp', sort=False):
             series = group.set_index('symbol')['factor']
@@ -331,7 +320,7 @@ class Backtester:
         return cache
     
     def _get_factor_data(self, factor: 'Factor', date) -> pd.Series:
-        """Extract factor data for specific date using cache."""
+        """Get factor data for date from cache."""
         if date is None:
             return pd.Series(dtype=float)
         
@@ -355,9 +344,8 @@ class Backtester:
         raise ValueError("No valid start date found with overlapping data")
     
     def _calculate_target_holdings(self, factors: pd.Series) -> pd.Series:
-        """Calculate target dollar-neutral holdings from factors.
-        Skip normalization if factor is already a signal (already normalized)."""
-        if 'signal' in self.strategy_factor.name.lower():
+        """Calculate target dollar-neutral holdings."""
+        if self.neutralization == "none":
             return factors * self.portfolio.total_value
         
         demeaned = factors - factors.mean()
@@ -368,11 +356,10 @@ class Backtester:
         
         weights = demeaned / abs_sum
         return weights * self.portfolio.total_value
-
+    
     def _generate_orders(self, target_holdings: pd.Series, prices: pd.Series) -> pd.Series:
-        """Generate trade orders based on target holdings and current prices."""
+        """Generate trade orders based on target vs current holdings."""
         current_holdings = self.portfolio.holdings
-        
         all_symbols = set(target_holdings.index) | set(current_holdings.keys())
         
         trade_quantities = {}
@@ -392,7 +379,7 @@ class Backtester:
         return pd.Series(trade_quantities)
     
     def get_daily_returns(self) -> pd.Series:
-        """Return daily returns series (aligned with portfolio history)."""
+        """Daily returns series."""
         history = self.portfolio.get_history_df()
         if history.empty or len(history) < 2:
             return pd.Series(dtype=float)
@@ -400,7 +387,7 @@ class Backtester:
         return equity.pct_change(fill_method=None).dropna()
 
     def get_equity_curve(self) -> pd.Series:
-        """Return normalized equity curve (starting at 1.0)."""
+        """Equity curve normalized to 1.0."""
         history = self.portfolio.get_history_df()
         if history.empty:
             return pd.Series(dtype=float)
@@ -408,7 +395,7 @@ class Backtester:
         return equity / equity.iloc[0]
 
     def summary(self) -> str:
-        """Return concise performance summary string."""
+        """Return concise performance summary."""
         if not self.metrics:
             return "No metrics available."
         
@@ -422,11 +409,15 @@ class Backtester:
             turnover_df = self.get_daily_turnover_df()
             avg_turnover = turnover_df['turnover'].mean() * 365 if not turnover_df.empty else 0
             
+            psr = self.metrics.get('psr', 0)
+            psr_label = '[High]' if psr > 0.75 else '[Medium]' if psr > 0.50 else '[Low]'
+            
             summary_lines.extend([
                 f"Period: {start} to {end}",
                 f"Total Return: {self.metrics.get('total_return', 0):.2%}",
                 f"Annual Return: {self.metrics.get('annual_return', 0):.2%}",
                 f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}",
+                f"PSR: {psr:.1%} {psr_label}",
                 f"Sortino Ratio: {self.metrics.get('sortino_ratio', 0):.2f}",
                 f"Calmar Ratio: {self.metrics.get('calmar_ratio', 0):.2f}",
                 f"Linearity: {self.metrics.get('linearity', 0):.4f}",
@@ -439,12 +430,12 @@ class Backtester:
         return "\n".join(summary_lines)
 
     def print_summary(self) -> 'Backtester':
-        """Print performance summary to console. Returns self for chaining."""
+        """Print performance summary. Returns self for chaining."""
         print(self.summary())
         return self
     
     def print_drawdown_periods(self, top_n: int = 5) -> 'Backtester':
-        """Print detailed drawdown periods to console. Returns self for chaining."""
+        """Print top N drawdown periods (sorted by depth). Returns self for chaining."""
         drawdown_periods = self.metrics.get('drawdown_periods', [])
         
         if not drawdown_periods:
@@ -454,7 +445,7 @@ class Backtester:
         periods_to_show = drawdown_periods[:top_n]
         total_periods = len(drawdown_periods)
         
-        print(f"\nTop {min(top_n, total_periods)} Drawdown Periods (sorted by depth, worst first):")
+        print(f"\nTop {min(top_n, total_periods)} Drawdown Periods (sorted by depth):")
         print("-" * 70)
         for i, period in enumerate(periods_to_show, 1):
             print(f"{i}. {period['start']} → {period['end']} | "
@@ -613,7 +604,7 @@ class Backtester:
 
 
 class CombinedBacktester:
-    """Multi-strategy portfolio combiner with correlation analysis."""
+    """Multi-strategy portfolio combiner."""
 
     def __init__(self, backtests: List[Backtester], weights: List[float]):
         """
@@ -659,12 +650,10 @@ class CombinedBacktester:
         drawdown = equity / rolling_max - 1
         max_drawdown = drawdown.min()
         
-        # Calculate Equity Curve Linearity
         t = np.arange(len(equity))
         slope, intercept, r_value, _, _ = linregress(t, equity.values)
         linearity = r_value ** 2
         
-        # Calculate Sortino Ratio (only downside volatility)
         downside_returns = port_returns[port_returns < 0]
         if len(downside_returns) > 0:
             downside_vol = downside_returns.std() * np.sqrt(252)
@@ -672,13 +661,9 @@ class CombinedBacktester:
         else:
             sortino = 0
         
-        # Calculate Calmar Ratio
         calmar = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0
-        
-        # Identify Drawdown Periods
         drawdown_periods = self._identify_drawdown_periods(equity)
         
-        # Calculate VaR 95% and CVaR
         var_95 = port_returns.quantile(0.05) if not port_returns.empty else 0
         cvar = port_returns[port_returns <= var_95].mean() if not port_returns.empty and (port_returns <= var_95).any() else 0
         
@@ -708,7 +693,7 @@ class CombinedBacktester:
         return df.dropna(how='all')
 
     def _identify_drawdown_periods(self, equity_series: pd.Series) -> List[Dict]:
-        """Identify all drawdown periods with start/end dates and depth."""
+        """Identify drawdown periods (start/end dates and depth)."""
         rolling_max = equity_series.expanding().max()
         drawdown = (equity_series / rolling_max - 1)
         
@@ -717,11 +702,11 @@ class CombinedBacktester:
         start_date = None
         
         for i, (date, dd_value) in enumerate(drawdown.items()):
-            if dd_value < -1e-6:  # In drawdown
+            if dd_value < -1e-6:
                 if not in_drawdown:
                     in_drawdown = True
                     start_date = i
-            else:  # Not in drawdown
+            else:
                 if in_drawdown:
                     end_date = i
                     start_label = drawdown.index[start_date].strftime('%Y-%m-%d')
@@ -737,7 +722,6 @@ class CombinedBacktester:
                     })
                     in_drawdown = False
         
-        # Handle ongoing drawdown at end
         if in_drawdown:
             end_date = len(drawdown) - 1
             start_label = drawdown.index[start_date].strftime('%Y-%m-%d')
@@ -751,10 +735,10 @@ class CombinedBacktester:
                 'duration_days': duration,
             })
         
-        return sorted(periods, key=lambda x: x['depth'])  # Sort by depth (worst first)
+        return sorted(periods, key=lambda x: x['depth'])
 
     def get_portfolio_returns(self) -> pd.Series:
-        """Compute weighted portfolio daily returns."""
+        """Weighted portfolio daily returns."""
         returns_df = self._get_aligned_returns()
         if returns_df.empty:
             return pd.Series(dtype=float)
@@ -763,7 +747,7 @@ class CombinedBacktester:
         return portfolio_returns
 
     def get_portfolio_equity(self) -> pd.Series:
-        """Compute portfolio equity curve."""
+        """Portfolio equity curve."""
         port_returns = self.get_portfolio_returns()
         if port_returns.empty:
             return pd.Series(dtype=float)
@@ -774,7 +758,7 @@ class CombinedBacktester:
         return equity * initial_capital
 
     def correlation_matrix(self) -> pd.DataFrame:
-        """Calculate correlation matrix of strategy returns."""
+        """Correlation matrix of strategy returns."""
         returns_df = self._get_aligned_returns()
         if returns_df.empty or len(returns_df) < 2:
             logger.warning("Insufficient data for correlation calculation")
@@ -789,7 +773,7 @@ class CombinedBacktester:
         return corr
 
     def print_correlation_matrix(self) -> 'CombinedBacktester':
-        """Print correlation matrix to console. Returns self for chaining."""
+        """Print correlation matrix. Returns self for chaining."""
         corr = self.correlation_matrix()
         if not corr.empty:
             print("\nCorrelation Matrix:")
@@ -797,7 +781,7 @@ class CombinedBacktester:
         return self
 
     def summary(self, compact: bool = False) -> str:
-        """Return portfolio performance summary (aligned with Backtester format)."""
+        """Portfolio performance summary."""
         lines = []
         
         strategy_names = ", ".join([bt.strategy_factor.name for bt in self.backtests])
@@ -835,12 +819,12 @@ class CombinedBacktester:
         return "\n".join(lines)
 
     def print_summary(self) -> 'CombinedBacktester':
-        """Print portfolio summary."""
+        """Print portfolio summary. Returns self for chaining."""
         print(self.summary())
         return self
     
     def print_drawdown_periods(self, top_n: int = 5) -> 'CombinedBacktester':
-        """Print detailed drawdown periods to console. Returns self for chaining."""
+        """Print top N drawdown periods. Returns self for chaining."""
         drawdown_periods = self.metrics.get('drawdown_periods', [])
         
         if not drawdown_periods:
@@ -850,7 +834,7 @@ class CombinedBacktester:
         periods_to_show = drawdown_periods[:top_n]
         total_periods = len(drawdown_periods)
         
-        print(f"\nTop {min(top_n, total_periods)} Drawdown Periods (sorted by depth, worst first):")
+        print(f"\nTop {min(top_n, total_periods)} Drawdown Periods (sorted by depth):")
         print("-" * 70)
         for i, period in enumerate(periods_to_show, 1):
             print(f"{i}. {period['start']} → {period['end']} | "
@@ -972,25 +956,29 @@ def backtest(
     transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
     initial_capital: float = 1000,
     full_rebalance: bool = False,
+    neutralization: str = "market",
     auto_run: bool = True
 ) -> Backtester:
     """
-    Convenience function for quick backtesting.
+    Quick backtesting convenience function.
     
     Parameters
     ----------
     price_factor : Factor
     strategy_factor : Factor
-    transaction_cost : Union[float, Tuple[float, float]]
-        Single value or (buy_cost_rate, sell_cost_rate)
+    transaction_cost : float or (buy_rate, sell_rate)
     initial_capital : float
     full_rebalance : bool
-        If True, liquidate all positions daily then rebuild (turnover ~200%)
-        If False, incremental rebalancing (turnover ~20-50%)
+        If True: liquidate all daily (turnover ~200%)
+        If False: incremental rebalancing (turnover ~20-50%)
+    neutralization : str
+        If "market": normalize to dollar-neutral weights (default)
+        If "none": use strategy_factor directly (must be dollar-neutral)
     auto_run : bool
         Automatically run backtest and calculate metrics
     """
-    bt = Backtester(price_factor, strategy_factor, transaction_cost, initial_capital, full_rebalance)
+    bt = Backtester(price_factor, strategy_factor, transaction_cost, initial_capital, 
+                   full_rebalance, neutralization)
     
     if auto_run:
         bt.run().calculate_metrics()
