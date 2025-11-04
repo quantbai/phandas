@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import TYPE_CHECKING, Union, Tuple, Dict, List, Optional
 import logging
-from scipy.stats import linregress
+from scipy.stats import linregress, skew, kurtosis, norm
 
 if TYPE_CHECKING:
     from .core import Factor
@@ -234,6 +234,8 @@ class Backtester:
         var_95 = daily_returns.quantile(0.05) if not daily_returns.empty else 0
         cvar = daily_returns[daily_returns <= var_95].mean() if not daily_returns.empty and (daily_returns <= var_95).any() else 0
         
+        psr = self._calculate_psr(daily_returns) if not daily_returns.empty else 0
+        
         self.metrics = {
             'total_return': total_return,
             'annual_return': annual_return,
@@ -246,10 +248,27 @@ class Backtester:
             'drawdown_periods': drawdown_periods,
             'var_95': var_95,
             'cvar': cvar,
+            'psr': psr,
         }
         
         return self
     
+    def _calculate_psr(self, daily_returns: pd.Series, sr_benchmark: float = 0.0) -> float:
+        """Probabilistic Sharpe Ratio: statistical confidence (0-1) of beating benchmark Sharpe."""
+        if len(daily_returns) < 2:
+            return 0.0
+        
+        sr_obs = (daily_returns.mean() * 365) / (daily_returns.std() * np.sqrt(365)) \
+                 if daily_returns.std() > 0 else 0
+        
+        g3 = skew(daily_returns)
+        g4 = kurtosis(daily_returns, fisher=False)
+        T = len(daily_returns)
+        adjustment = np.sqrt(1 - g3 * sr_obs + ((g4 - 1) / 4) * sr_obs ** 2)
+        psr_stat = (sr_obs - sr_benchmark) / adjustment * np.sqrt(T / 365)    
+        psr = norm.cdf(psr_stat)
+        return float(np.clip(psr, 0.0, 1.0))
+
     def _identify_drawdown_periods(self, equity_curve: pd.Series) -> List[Dict]:
         """Identify drawdown periods (start/end dates and depth)."""
         rolling_max = equity_curve.expanding().max()
@@ -390,11 +409,15 @@ class Backtester:
             turnover_df = self.get_daily_turnover_df()
             avg_turnover = turnover_df['turnover'].mean() * 365 if not turnover_df.empty else 0
             
+            psr = self.metrics.get('psr', 0)
+            psr_label = '[High]' if psr > 0.75 else '[Medium]' if psr > 0.50 else '[Low]'
+            
             summary_lines.extend([
                 f"Period: {start} to {end}",
                 f"Total Return: {self.metrics.get('total_return', 0):.2%}",
                 f"Annual Return: {self.metrics.get('annual_return', 0):.2%}",
                 f"Sharpe Ratio: {self.metrics.get('sharpe_ratio', 0):.2f}",
+                f"PSR: {psr:.1%} {psr_label}",
                 f"Sortino Ratio: {self.metrics.get('sortino_ratio', 0):.2f}",
                 f"Calmar Ratio: {self.metrics.get('calmar_ratio', 0):.2f}",
                 f"Linearity: {self.metrics.get('linearity', 0):.4f}",

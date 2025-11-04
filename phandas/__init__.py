@@ -3,7 +3,7 @@ A multi-factor quantitative trading framework for cryptocurrency markets.
 """
 
 __author__ = "Phantom Management"
-__version__ = "0.12.1"
+__version__ = "0.12.2"
 
 from .core import Factor
 from .panel import Panel
@@ -31,7 +31,7 @@ __all__ = [
     'fetch_data',
     
     'Backtester', 'backtest', 'CombinedBacktester',
-    
+
     'rebalance', 'Rebalancer', 'OKXTrader',
 
     'Universe',
