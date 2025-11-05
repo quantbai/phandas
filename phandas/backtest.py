@@ -456,8 +456,47 @@ class Backtester:
         
         return self
     
-    def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> 'Backtester':
-        """Plot equity curve with drawdown and turnover subplots."""
+    def _calculate_benchmark_equity(self) -> pd.Series:
+        """Equal-weight benchmark: buy all assets on first trading date, hold."""
+        history = self.portfolio.get_history_df()
+        if history.empty or len(history) < 2:
+            return pd.Series(dtype=float)
+        
+        first_date = history.index[1]
+        if first_date not in self._price_cache:
+            return pd.Series(dtype=float)
+        
+        prices_first = self._price_cache[first_date]
+        if prices_first.empty:
+            return pd.Series(dtype=float)
+        
+        alloc_per_asset = self.portfolio.initial_capital / len(prices_first)
+        holdings = {s: alloc_per_asset / prices_first[s] for s in prices_first.index}
+        
+        values, dates = [], []
+        for date in sorted(self._price_cache.keys()):
+            if date < first_date:
+                continue
+            prices = self._price_cache[date]
+            if prices.empty:
+                continue
+            values.append(sum(holdings[s] * prices[s] for s in holdings if s in prices.index))
+            dates.append(date)
+        
+        return pd.Series(values, index=pd.DatetimeIndex(dates))
+    
+    def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True, show_benchmark: bool = True) -> 'Backtester':
+        """Plot equity curve with drawdown, turnover subplots and optional benchmark.
+        
+        Parameters
+        ----------
+        figsize : tuple
+            Figure size
+        show_summary : bool
+            Show summary statistics
+        show_benchmark : bool
+            Show equal-weight benchmark comparison
+        """
         history = self.portfolio.get_history_df()
         if history.empty:
             logger.warning("No equity data to plot")
@@ -467,6 +506,13 @@ class Backtester:
         equity_norm = equity_curve / equity_curve.iloc[0]
         rolling_max = equity_norm.cummax()
         drawdown = equity_norm / rolling_max - 1.0
+        
+        benchmark_series = None
+        benchmark_norm = None
+        if show_benchmark:
+            benchmark_series = self._calculate_benchmark_equity()
+            if not benchmark_series.empty and len(benchmark_series) > 0:
+                benchmark_norm = benchmark_series / benchmark_series.iloc[0]
         
         turnover_df = self.get_daily_turnover_df()
         
@@ -480,6 +526,12 @@ class Backtester:
         ax.set_facecolor('#fcfcfc')
         y_min = equity_curve.min()
         self._plot_equity_line(ax, equity_curve, y_min)
+        
+        if benchmark_norm is not None and len(benchmark_norm) > 0:
+            benchmark_abs = benchmark_norm * self.portfolio.initial_capital
+            y_min = min(y_min, benchmark_abs.min())
+            ax.plot(benchmark_norm.index, benchmark_abs, color='#f97316', linewidth=1.2, 
+                   alpha=0.8, linestyle='--')
         
         ax.set_title(f'Equity Curve ({self.strategy_factor.name})', 
                     fontsize=12.5, fontweight='400', color='#1f2937', pad=14)
