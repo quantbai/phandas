@@ -57,8 +57,7 @@ _PLOT_STYLES = {
 def _plot_equity_line(ax, equity_series: pd.Series, y_min: float) -> None:
     """Layered equity curve visualization."""
     for alpha, color in _PLOT_COLORS['equity_fill']:
-        ax.fill_between(equity_series.index, y_min, equity_series,
-                       alpha=alpha, color=color, interpolate=True)
+        ax.fill_between(equity_series.index, y_min, equity_series, alpha=alpha, color=color, interpolate=True)
     ax.plot(equity_series.index, equity_series, color=_PLOT_COLORS['equity_line'], 
            linewidth=_PLOT_STYLES['linewidth'], alpha=_PLOT_STYLES['line_alpha'])
 
@@ -74,7 +73,7 @@ def _plot_drawdown(ax, drawdown_series: pd.Series) -> None:
 def _identify_drawdown_periods(equity_series: pd.Series) -> List[Dict]:
     """Identify drawdown periods with depth and duration."""
     rolling_max = equity_series.expanding().max()
-    drawdown = (equity_series / rolling_max - 1)
+    drawdown = equity_series / rolling_max - 1
     
     in_drawdown = False
     periods = []
@@ -88,30 +87,21 @@ def _identify_drawdown_periods(equity_series: pd.Series) -> List[Dict]:
         else:
             if in_drawdown:
                 end_idx = i
-                start_label = drawdown.index[start_idx].strftime(_DATE_FORMAT)
-                end_label = drawdown.index[end_idx].strftime(_DATE_FORMAT)
-                duration = (drawdown.index[end_idx] - drawdown.index[start_idx]).days
-                depth = drawdown.iloc[start_idx:end_idx + 1].min()
-                
                 periods.append({
-                    'start': start_label,
-                    'end': end_label,
-                    'depth': depth,
-                    'duration_days': duration,
+                    'start': drawdown.index[start_idx].strftime(_DATE_FORMAT),
+                    'end': drawdown.index[end_idx].strftime(_DATE_FORMAT),
+                    'depth': drawdown.iloc[start_idx:end_idx + 1].min(),
+                    'duration_days': (drawdown.index[end_idx] - drawdown.index[start_idx]).days,
                 })
                 in_drawdown = False
     
     if in_drawdown:
         end_idx = len(drawdown) - 1
-        start_label = drawdown.index[start_idx].strftime(_DATE_FORMAT)
-        end_label = drawdown.index[end_idx].strftime(_DATE_FORMAT)
-        duration = (drawdown.index[end_idx] - drawdown.index[start_idx]).days
-        depth = drawdown.iloc[start_idx:end_idx + 1].min()
         periods.append({
-            'start': start_label,
-            'end': end_label,
-            'depth': depth,
-            'duration_days': duration,
+            'start': drawdown.index[start_idx].strftime(_DATE_FORMAT),
+            'end': drawdown.index[end_idx].strftime(_DATE_FORMAT),
+            'depth': drawdown.iloc[start_idx:end_idx + 1].min(),
+            'duration_days': (drawdown.index[end_idx] - drawdown.index[start_idx]).days,
         })
     
     return sorted(periods, key=lambda x: x['depth'])
@@ -119,12 +109,11 @@ def _identify_drawdown_periods(equity_series: pd.Series) -> List[Dict]:
 
 def _calculate_performance_metrics(returns: pd.Series, risk_free_rate: float = 0.0, 
                                    annualization_factor: float = 365.0) -> Dict:
-    """Calculate Sharpe, Sortino, Calmar, linearity, and risk metrics from returns."""
+    """Calculate Sharpe, Sortino, Calmar, linearity, and risk metrics."""
     if returns.empty or len(returns) < 2:
         return {}
     
     equity = (1 + returns).cumprod()
-    
     total_return = equity.iloc[-1] - 1
     days = len(returns)
     annual_return = (1 + total_return) ** (annualization_factor / days) - 1 if days > 1 else 0
@@ -132,25 +121,20 @@ def _calculate_performance_metrics(returns: pd.Series, risk_free_rate: float = 0
     sharpe = (annual_return - risk_free_rate) / annual_vol if annual_vol > 0 else 0
     
     rolling_max = equity.expanding().max()
-    drawdown = (equity / rolling_max - 1)
+    drawdown = equity / rolling_max - 1
     max_drawdown = drawdown.min()
     calmar = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0
     
     t = np.arange(len(equity))
-    slope, intercept, r_value, _, _ = linregress(t, equity.values)
+    r_value = linregress(t, equity.values)[2]
     linearity = r_value ** 2
     
     downside_returns = returns[returns < 0]
-    if len(downside_returns) > 0:
-        downside_vol = downside_returns.std() * np.sqrt(annualization_factor)
-        sortino = (annual_return - risk_free_rate) / downside_vol if downside_vol > 0 else 0
-    else:
-        sortino = 0
+    downside_vol = downside_returns.std() * np.sqrt(annualization_factor) if len(downside_returns) > 0 else 0
+    sortino = (annual_return - risk_free_rate) / downside_vol if downside_vol > 0 else 0
     
     var_95 = returns.quantile(0.05)
     cvar = returns[returns <= var_95].mean() if (returns <= var_95).any() else 0
-    
-    drawdown_periods = _identify_drawdown_periods(equity)
     
     return {
         'total_return': total_return,
@@ -161,7 +145,7 @@ def _calculate_performance_metrics(returns: pd.Series, risk_free_rate: float = 0
         'calmar_ratio': calmar,
         'max_drawdown': max_drawdown,
         'linearity': linearity,
-        'drawdown_periods': drawdown_periods,
+        'drawdown_periods': _identify_drawdown_periods(equity),
         'var_95': var_95,
         'cvar': cvar,
     }
@@ -182,8 +166,8 @@ class Portfolio:
         """Update holdings value and total portfolio value."""
         holdings_value = 0.0
         self.holdings.clear()
-        
         prices_dict = prices.to_dict()
+        
         for symbol, qty in self.positions.items():
             if symbol in prices_dict:
                 value = qty * prices_dict[symbol]
@@ -198,8 +182,7 @@ class Portfolio:
                      trade_date: pd.Timestamp):
         """Execute trade with asymmetric buy/sell costs."""
         if isinstance(transaction_cost_rates, (list, tuple)):
-            buy_cost_rate = transaction_cost_rates[0]
-            sell_cost_rate = transaction_cost_rates[1]
+            buy_cost_rate, sell_cost_rate = transaction_cost_rates
         else:
             buy_cost_rate = sell_cost_rate = transaction_cost_rates
         
@@ -222,7 +205,7 @@ class Portfolio:
         })
     
     def _build_datetime_df(self, data_list: list) -> pd.DataFrame:
-        """Build DataFrame with datetime index."""
+        """DataFrame with datetime index."""
         if not data_list:
             return pd.DataFrame()
         df = pd.DataFrame(data_list)
@@ -250,24 +233,7 @@ class Backtester:
         full_rebalance: bool = False,
         neutralization: str = "market"
     ):
-        """
-        Initialize backtester.
-        
-        Parameters
-        ----------
-        price_factor : Factor
-            Price data for entry/exit
-        strategy_factor : Factor
-            Position weights or factor values
-        transaction_cost : float or (buy_rate, sell_rate)
-            Transaction costs (default: 3bps)
-        initial_capital : float
-            Starting portfolio value (default: 1000)
-        full_rebalance : bool
-            True: liquidate all daily; False: incremental rebalancing
-        neutralization : str
-            "market": dollar-neutral; "none": raw strategy_factor
-        """
+        """Initialize backtester."""
         self.price_factor = price_factor
         self.strategy_factor = strategy_factor
         self.full_rebalance = full_rebalance
@@ -313,7 +279,6 @@ class Backtester:
                     continue
                 
                 self.portfolio.update_market_value(current_date, current_prices)
-                
                 if not prev_date:
                     continue
                 
@@ -323,20 +288,16 @@ class Backtester:
                 if self.full_rebalance:
                     for symbol in list(self.portfolio.positions.keys()):
                         if symbol in current_prices.index:
-                            quantity = -self.portfolio.positions[symbol]
-                            price = current_prices.loc[symbol]
-                            self.portfolio.execute_trade(symbol, quantity, price,
-                                                        self.transaction_cost_rates, current_date)
-                    
+                            self.portfolio.execute_trade(
+                                symbol, -self.portfolio.positions[symbol], 
+                                current_prices.loc[symbol],
+                                self.transaction_cost_rates, current_date)
                     self.portfolio.update_market_value(current_date, current_prices)
                 
-                orders = self._generate_orders(target_holdings, current_prices)
-                for symbol, quantity in orders.items():
+                for symbol, quantity in self._generate_orders(target_holdings, current_prices).items():
                     if symbol in current_prices.index:
-                        price = current_prices.loc[symbol]
-                        self.portfolio.execute_trade(symbol, quantity, price, 
+                        self.portfolio.execute_trade(symbol, quantity, current_prices.loc[symbol], 
                                                     self.transaction_cost_rates, current_date)
-                
             except Exception as e:
                 logger.warning(f"Error on {current_date}: {e}")
                 continue
@@ -360,24 +321,23 @@ class Backtester:
         return self
     
     def _calculate_psr(self, daily_returns: pd.Series, sr_benchmark: float = 0.0) -> float:
-        """Probabilistic Sharpe Ratio - confidence of outperforming benchmark."""
+        """Probabilistic Sharpe Ratio."""
         if len(daily_returns) < 2:
             return 0.0
         
-        sr_obs = (daily_returns.mean() * 365) / (daily_returns.std() * np.sqrt(365)) \
-                 if daily_returns.std() > 0 else 0
+        std = daily_returns.std()
+        sr_obs = (daily_returns.mean() * 365) / (std * np.sqrt(365)) if std > 0 else 0
         
-        g3 = skew(daily_returns)
-        g4 = kurtosis(daily_returns, fisher=False)
         T = len(daily_returns)
-        adjustment = np.sqrt(1 - g3 * sr_obs + ((g4 - 1) / 4) * sr_obs ** 2)
-        psr_stat = (sr_obs - sr_benchmark) / adjustment * np.sqrt(T / 365)    
+        adjustment = np.sqrt(1 - skew(daily_returns) * sr_obs + 
+                           ((kurtosis(daily_returns, fisher=False) - 1) / 4) * sr_obs ** 2)
+        psr_stat = (sr_obs - sr_benchmark) / adjustment * np.sqrt(T / 365)
         psr = norm.cdf(psr_stat)
         return float(np.clip(psr, 0.0, 1.0))
 
 
     def _build_date_cache(self, factor: 'Factor') -> dict:
-        """Cache factor data by date (complete cross-sections only)."""
+        """Cache factor data by date."""
         cache = {}
         for date, group in factor.data.groupby('timestamp', sort=False):
             series = group.set_index('symbol')['factor']
@@ -416,29 +376,22 @@ class Backtester:
         
         demeaned = factors - factors.mean()
         abs_sum = np.abs(demeaned).sum()
-        
         if abs_sum < 1e-10:
             return pd.Series(0.0, index=factors.index)
         
-        weights = demeaned / abs_sum
-        return weights * self.portfolio.total_value
+        return (demeaned / abs_sum) * self.portfolio.total_value
     
     def _generate_orders(self, target_holdings: pd.Series, prices: pd.Series) -> pd.Series:
         """Generate trade orders from target vs current holdings."""
         current_holdings = self.portfolio.holdings
         all_symbols = set(target_holdings.index) | set(current_holdings.keys())
-        
         trade_quantities = {}
         prices_dict = prices.to_dict()
         
         for symbol in all_symbols:
             if symbol not in prices_dict:
                 continue
-            
-            target_value = target_holdings.get(symbol, 0)
-            current_value = current_holdings.get(symbol, 0)
-            trade_value = target_value - current_value
-            
+            trade_value = target_holdings.get(symbol, 0) - current_holdings.get(symbol, 0)
             if abs(trade_value) > 1e-10:
                 trade_quantities[symbol] = trade_value / prices_dict[symbol]
         
@@ -520,7 +473,7 @@ class Backtester:
         return self
     
     def _calculate_benchmark_equity(self) -> pd.Series:
-        """Equal-weight benchmark - buy all assets on first date, hold."""
+        """Equal-weight benchmark: buy all assets on first date, hold."""
         history = self.portfolio.get_history_df()
         if history.empty or len(history) < 2:
             return pd.Series(dtype=float)
@@ -549,7 +502,7 @@ class Backtester:
         return pd.Series(values, index=pd.DatetimeIndex(dates))
     
     def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True, show_benchmark: bool = True) -> 'Backtester':
-        """Plot equity, drawdown, and turnover with optional summary and benchmark."""
+        """Plot equity, drawdown, turnover, summary, and benchmark."""
         history = self.portfolio.get_history_df()
         if history.empty:
             logger.warning("No equity data to plot")
@@ -637,7 +590,7 @@ class Backtester:
         return self
     
     def get_daily_turnover_df(self) -> pd.DataFrame:
-        """Daily turnover = |trades| / NAV."""
+        """Daily turnover (|trades| / NAV)."""
         trade_log_df = self.portfolio.get_trade_log_df()
         history_df = self.portfolio.get_history_df()
         
@@ -683,12 +636,10 @@ class Backtester:
                 
                 forward_date = unique_dates[i + period]
                 
-                # Get data at current and forward dates
                 factor_t = strategy_data[strategy_data['timestamp'] == date][['symbol', 'factor']].set_index('symbol')
                 price_t = price_data[price_data['timestamp'] == date][['symbol', 'factor']].set_index('symbol')
                 price_f = price_data[price_data['timestamp'] == forward_date][['symbol', 'factor']].set_index('symbol')
                 
-                # Align symbols
                 symbols = factor_t.index.intersection(price_t.index).intersection(price_f.index)
                 if len(symbols) < 2:
                     continue
@@ -696,7 +647,6 @@ class Backtester:
                 factor_vals = factor_t.loc[symbols, 'factor'].values
                 returns = (price_f.loc[symbols, 'factor'].values - price_t.loc[symbols, 'factor'].values) / price_t.loc[symbols, 'factor'].values
                 
-                # Skip if any NaN
                 valid = ~(np.isnan(factor_vals) | np.isnan(returns))
                 if valid.sum() < 2:
                     continue
@@ -704,11 +654,9 @@ class Backtester:
                 factor_vals = factor_vals[valid]
                 returns = returns[valid]
                 
-                # IC: Pearson(factor, returns)
                 ic, _ = pearsonr(factor_vals, returns)
                 ic_values.append(ic)
                 
-                # RankIC: Pearson(rank(factor), rank(returns))
                 factor_rank = rankdata(factor_vals)
                 returns_rank = rankdata(returns)
                 rankic, _ = pearsonr(factor_rank, returns_rank)
@@ -733,13 +681,7 @@ class Backtester:
         return results
     
     def print_ic(self, periods: Union[int, List[int]] = None) -> 'Backtester':
-        """Print RankIC statistics for multiple periods (alphalens format).
-        
-        Parameters
-        ----------
-        periods : list, optional
-            Forward periods to calculate IC. Default: [1, 5, 10, 20]
-        """
+        """Print RankIC statistics for multiple periods."""
         if periods is None:
             periods = [1, 5, 10, 20]
         elif isinstance(periods, int):
@@ -791,7 +733,7 @@ class CombinedBacktester:
     """Multi-strategy portfolio combining."""
 
     def __init__(self, backtests: List[Backtester], weights: List[float]):
-        """Combine backtests with weights (must sum to 1.0)."""
+        """Combine backtests with equal or custom weights."""
         if len(backtests) != len(weights):
             raise ValueError("Number of weights must match number of backtests")
         if not np.isclose(sum(weights), 1.0, atol=1e-10):
@@ -809,7 +751,7 @@ class CombinedBacktester:
         return self
 
     def _get_aligned_returns(self) -> pd.DataFrame:
-        """Align daily returns across all strategies."""
+        """Align returns across strategies."""
         returns_dict = {}
         for i, bt in enumerate(self.backtests):
             returns_dict[f'strategy_{i}'] = bt.get_daily_returns()
@@ -818,7 +760,7 @@ class CombinedBacktester:
         return df.dropna(how='all')
 
     def get_portfolio_returns(self) -> pd.Series:
-        """Weighted portfolio returns."""
+        """Weighted returns."""
         returns_df = self._get_aligned_returns()
         if returns_df.empty:
             return pd.Series(dtype=float)
@@ -827,7 +769,7 @@ class CombinedBacktester:
         return portfolio_returns
 
     def get_portfolio_equity(self) -> pd.Series:
-        """Weighted portfolio equity curve."""
+        """Weighted equity curve."""
         port_returns = self.get_portfolio_returns()
         if port_returns.empty:
             return pd.Series(dtype=float)
@@ -838,7 +780,7 @@ class CombinedBacktester:
         return equity * initial_capital
 
     def correlation_matrix(self) -> pd.DataFrame:
-        """Strategy returns correlation matrix."""
+        """Strategy correlation matrix."""
         returns_df = self._get_aligned_returns()
         if returns_df.empty or len(returns_df) < 2:
             logger.warning("Insufficient data for correlation calculation")
@@ -853,7 +795,7 @@ class CombinedBacktester:
         return corr
 
     def print_correlation_matrix(self) -> 'CombinedBacktester':
-        """Print correlation matrix and return self for chaining."""
+        """Print correlation matrix."""
         corr = self.correlation_matrix()
         if not corr.empty:
             print("\nCorrelation Matrix:")
@@ -926,7 +868,7 @@ class CombinedBacktester:
         return self
     
     def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> 'CombinedBacktester':
-        """Plot combined portfolio equity and drawdown."""
+        """Plot portfolio equity, drawdown, and summary."""
         equity = self.get_portfolio_equity()
         if equity.empty or len(equity) < 2:
             logger.warning("No equity data to plot")

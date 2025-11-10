@@ -21,28 +21,7 @@ def fetch_data(
     sources: Optional[List[str]] = None,
     output_path: Optional[str] = None
 ) -> 'Panel':
-    """Fetch, merge, and align multi-source data to common time range.
-    
-    Parameters
-    ----------
-    symbols : list of str
-        Symbols to fetch
-    timeframe : str, default '1d'
-        Timeframe ('1m', '5m', '1h', '1d', '1w', '1M')
-    start_date : str, optional
-        Start date ('YYYY-MM-DD')
-    end_date : str, optional
-        End date ('YYYY-MM-DD')
-    sources : list of str, optional
-        Data sources. Default ['binance']
-    output_path : str, optional
-        Path to save output CSV
-    
-    Returns
-    -------
-    Panel
-        Merged and aligned data from all sources
-    """
+    """Fetch, merge, and align multi-source data."""
     if sources is None:
         sources = ['binance']
     
@@ -105,29 +84,11 @@ def fetch_binance(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch OHLCV data from Binance.
-    
-    Parameters
-    ----------
-    symbols : list of str
-        Symbols to fetch
-    timeframe : str, default '1d'
-        Timeframe ('1m', '5m', '1h', '1d', '1w', '1M')
-    start_date : str, optional
-        Start date ('YYYY-MM-DD')
-    end_date : str, optional
-        End date ('YYYY-MM-DD')
-    
-    Returns
-    -------
-    pandas.DataFrame or None
-        OHLCV data (timestamp, symbol, open, high, low, close, volume)
-        Returns None on failure
-    """
+    """Fetch OHLCV data from Binance."""
     SYMBOL_MAP = {'MATIC': ['MATIC', 'POL'], 'POL': ['MATIC', 'POL']}
     
     def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
-        """Fetch OHLCV data for a symbol with pagination."""
+        """Fetch OHLCV data for a symbol."""
         try:
             market_symbol = f'{symbol}/USDT'
             
@@ -170,7 +131,7 @@ def fetch_binance(
             return None
     
     def _fetch_renamed_symbol(exchange, symbols_list: List[str], timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
-        """Fetch and merge data for renamed symbols (e.g., MATIC->POL)."""
+        """Fetch and merge data for renamed symbols."""
         dfs = []
         for symbol in symbols_list:
             df = _fetch_single_symbol(exchange, symbol, timeframe, since, until)
@@ -225,26 +186,7 @@ def fetch_benchmark(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch market benchmark data (BTC, ETH close prices).
-    
-    Parameters
-    ----------
-    symbols : list of str
-        Symbols to attach benchmarks to
-    timeframe : str, default '1d'
-        Timeframe ('1m', '5m', '1h', '1d', '1w', '1M')
-    start_date : str, optional
-        Start date ('YYYY-MM-DD')
-    end_date : str, optional
-        End date ('YYYY-MM-DD')
-    
-    Returns
-    -------
-    pandas.DataFrame or None
-        Columns (timestamp, symbol, BTC_close, ETH_close)
-        Each symbol has identical benchmark values
-        Returns None on failure
-    """
+    """Fetch market benchmark data (BTC, ETH)."""
     SYMBOL_MAP = {'MATIC': ['MATIC', 'POL'], 'POL': ['MATIC', 'POL']}
     
     def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
@@ -363,17 +305,7 @@ def fetch_calendar(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch time-based features (year, month, day) for symbols.
-    
-    Args:
-        symbols: List of symbols to generate features for
-        timeframe: Timeframe (used to generate correct date range, default: '1d')
-        start_date: Start date (e.g. '2020-01-01'). Required.
-        end_date: End date (e.g. '2024-01-01'). If None, uses today's date.
-    
-    Returns:
-        DataFrame with columns (timestamp, symbol, year, month, day), or None if start_date missing
-    """
+    """Fetch time-based features (year, month, day)."""
     try:
         if not start_date:
             logger.warning("Calendar requires start_date")
@@ -394,11 +326,11 @@ def fetch_calendar(
             for date in dates:
                 dayofmonth = date.day
                 if dayofmonth <= 10:
-                    dayofmonth_position = 1  # 月初
+                    dayofmonth_position = 1
                 elif dayofmonth <= 20:
-                    dayofmonth_position = 2  # 月中
+                    dayofmonth_position = 2
                 else:
-                    dayofmonth_position = 3  # 月末
+                    dayofmonth_position = 3
                 
                 is_week_end = 1 if date.dayofweek + 1 >= 6 else 0
                 
@@ -408,9 +340,9 @@ def fetch_calendar(
                     'year': date.year,
                     'month': date.month,
                     'day': date.day,
-                    'dayofweek': date.dayofweek + 1,  # 1-7 (Mon-Sun)
-                    'dayofmonth_position': dayofmonth_position,  # 1=月初, 2=月中, 3=月末
-                    'is_week_end': is_week_end,  # 1=週末, 0=工作日
+                    'dayofweek': date.dayofweek + 1,
+                    'dayofmonth_position': dayofmonth_position,
+                    'is_week_end': is_week_end,
                 })
         
         if not rows:
@@ -427,7 +359,7 @@ def fetch_calendar(
 
 
 def _process_data(df: pd.DataFrame, timeframe: str, user_symbols: List[str]) -> pd.DataFrame:
-    """Align data to common time range (齊頭) and fill gaps forward."""
+    """Align data to common time range and fill gaps."""
     FREQ_MAP = {
         '1m': 'min', '5m': '5min', '15m': '15min', '30m': '30min',
         '1h': 'h', '4h': '4h', '1d': 'D', '1w': 'W', '1M': 'MS',
