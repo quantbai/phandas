@@ -2,7 +2,6 @@
 
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from typing import TYPE_CHECKING, Union, Tuple, Dict, List, Optional
 import logging
 from scipy.stats import linregress, skew, kurtosis, norm
@@ -10,64 +9,9 @@ from scipy.stats import linregress, skew, kurtosis, norm
 if TYPE_CHECKING:
     from .core import Factor
 
+from .plot import BacktestPlotter, CombinedBacktestPlotter, _DATE_FORMAT
+
 logger = logging.getLogger(__name__)
-
-plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans', 'sans-serif']
-plt.rcParams['axes.unicode_minus'] = False
-
-_DATE_FORMAT = '%Y-%m-%d'
-
-_PLOT_COLORS = {
-    'equity_fill': [(0.22, '#2563eb'), (0.12, '#3b82f6'), (0.06, '#60a5fa'), (0.03, '#93c5fd'), (0.015, '#dbeafe')],
-    'equity_line': '#1e40af',
-    'benchmark_line': '#f97316',
-    'drawdown_fill': '#ef4444',
-    'drawdown_line': '#991b1b',
-    'background': '#fcfcfc',
-    'white': '#ffffff',
-    'text': '#1f2937',
-    'text_light': '#6b7280',
-    'text_muted': '#9ca3af',
-    'text_info': '#374151',
-    'grid': '#e5e7eb',
-    'turnover_line': '#10b981',
-}
-
-_PLOT_STYLES = {
-    'title_size': 12.5,
-    'ylabel_size': 10.5,
-    'xlabel_size': 10.5,
-    'label_size': 9.5,
-    'small_label_size': 9.0,
-    'grid_alpha': 0.15,
-    'grid_width': 0.4,
-    'grid_alpha_secondary': 0.12,
-    'spine_width': 0.5,
-    'tick_length': 3,
-    'linewidth': 1.05,
-    'benchmark_linewidth': 1.2,
-    'benchmark_alpha': 0.8,
-    'thin_linewidth': 0.8,
-    'line_alpha': 0.95,
-    'box_alpha': 0.96,
-    'fill_alpha': 0.35,
-}
-
-
-def _plot_equity_line(ax, equity_series: pd.Series, y_min: float) -> None:
-    """Layered equity curve visualization."""
-    for alpha, color in _PLOT_COLORS['equity_fill']:
-        ax.fill_between(equity_series.index, y_min, equity_series, alpha=alpha, color=color, interpolate=True)
-    ax.plot(equity_series.index, equity_series, color=_PLOT_COLORS['equity_line'], 
-           linewidth=_PLOT_STYLES['linewidth'], alpha=_PLOT_STYLES['line_alpha'])
-
-
-def _plot_drawdown(ax, drawdown_series: pd.Series) -> None:
-    """Drawdown visualization."""
-    ax.fill_between(drawdown_series.index, 0, drawdown_series, 
-                   color=_PLOT_COLORS['drawdown_fill'], alpha=_PLOT_STYLES['fill_alpha'], step='pre')
-    ax.plot(drawdown_series.index, drawdown_series, color=_PLOT_COLORS['drawdown_line'], 
-           linewidth=_PLOT_STYLES['thin_linewidth'])
 
 
 def _identify_drawdown_periods(equity_series: pd.Series) -> List[Dict]:
@@ -405,14 +349,6 @@ class Backtester:
         equity = history['total_value']
         return equity.pct_change(fill_method=None).dropna()
 
-    def get_equity_curve(self) -> pd.Series:
-        """Equity curve normalized to 1.0 at start."""
-        history = self.portfolio.get_history_df()
-        if history.empty:
-            return pd.Series(dtype=float)
-        equity = history['total_value']
-        return equity / equity.iloc[0]
-
     def summary(self) -> str:
         """Performance summary string."""
         if not self.metrics:
@@ -503,90 +439,8 @@ class Backtester:
     
     def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True, show_benchmark: bool = True) -> 'Backtester':
         """Plot equity, drawdown, turnover, summary, and benchmark."""
-        history = self.portfolio.get_history_df()
-        if history.empty:
-            logger.warning("No equity data to plot")
-            return self
-        
-        equity_curve = history['total_value']
-        equity_norm = equity_curve / equity_curve.iloc[0]
-        rolling_max = equity_norm.cummax()
-        drawdown = equity_norm / rolling_max - 1.0
-        
-        benchmark_series = None
-        benchmark_norm = None
-        if show_benchmark:
-            benchmark_series = self._calculate_benchmark_equity()
-            if not benchmark_series.empty and len(benchmark_series) > 0:
-                benchmark_norm = benchmark_series / benchmark_series.iloc[0]
-        
-        turnover_df = self.get_daily_turnover_df()
-        
-        plt.style.use('default')
-        fig = plt.figure(figsize=figsize, constrained_layout=True)
-        gs = fig.add_gridspec(3, 1, height_ratios=[3, 1, 1])
-        ax = fig.add_subplot(gs[0, 0])
-        ax_dd = fig.add_subplot(gs[1, 0], sharex=ax)
-        ax_to = fig.add_subplot(gs[2, 0], sharex=ax)
-        
-        ax.set_facecolor(_PLOT_COLORS['background'])
-        y_min = equity_curve.min()
-        _plot_equity_line(ax, equity_curve, y_min)
-        
-        if benchmark_norm is not None and len(benchmark_norm) > 0:
-            benchmark_abs = benchmark_norm * self.portfolio.initial_capital
-            y_min = min(y_min, benchmark_abs.min())
-            ax.plot(benchmark_norm.index, benchmark_abs, color=_PLOT_COLORS['benchmark_line'], 
-                   linewidth=_PLOT_STYLES['benchmark_linewidth'], alpha=_PLOT_STYLES['benchmark_alpha'], linestyle='--')
-        
-        ax.set_title(f'Equity Curve ({self.strategy_factor.name})', 
-                    fontsize=_PLOT_STYLES['title_size'], fontweight='400', color=_PLOT_COLORS['text'], pad=14)
-        ax.set_ylabel('Equity Value', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
-        ax.grid(True, alpha=_PLOT_STYLES['grid_alpha'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.tick_params(axis='both', which='major', labelsize=_PLOT_STYLES['label_size'], colors=_PLOT_COLORS['text_light'], 
-                      width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
-        
-        if show_summary:
-            summary_text = self.summary()
-            ax.text(0.015, 0.98, summary_text, transform=ax.transAxes, fontsize=_PLOT_STYLES['label_size'], 
-                    verticalalignment='top', horizontalalignment='left', color=_PLOT_COLORS['text_info'],
-                    bbox=dict(boxstyle='round,pad=0.75', facecolor=_PLOT_COLORS['white'], 
-                             edgecolor=_PLOT_COLORS['grid'], alpha=_PLOT_STYLES['box_alpha'], linewidth=1))
-        
-        ax_dd.set_facecolor(_PLOT_COLORS['white'])
-        _plot_drawdown(ax_dd, drawdown)
-        ax_dd.set_ylabel('Drawdown', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
-        ax_dd.grid(True, alpha=_PLOT_STYLES['grid_alpha_secondary'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
-        ax_dd.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
-        ax_dd.spines['top'].set_visible(False)
-        ax_dd.spines['right'].set_visible(False)
-        ax_dd.tick_params(axis='both', which='major', labelsize=_PLOT_STYLES['small_label_size'], colors=_PLOT_COLORS['text_light'], 
-                          width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
-        
-        ax_to.set_facecolor(_PLOT_COLORS['white'])
-        if not turnover_df.empty:
-            ax_to.plot(turnover_df.index, turnover_df['turnover'], color=_PLOT_COLORS['turnover_line'], 
-                      linewidth=_PLOT_STYLES['thin_linewidth'], alpha=_PLOT_STYLES['line_alpha'])
-            ax_to.set_ylabel('Turnover', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
-            ax_to.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
-            ax_to.grid(True, alpha=_PLOT_STYLES['grid_alpha_secondary'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
-        else:
-            ax_to.text(0.5, 0.5, 'No Turnover Data', transform=ax_to.transAxes, 
-                      ha='center', va='center', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_muted'])
-        
-        ax_to.set_xlabel('Date', fontsize=_PLOT_STYLES['xlabel_size'], color=_PLOT_COLORS['text_light'])
-        ax_to.spines['top'].set_visible(False)
-        ax_to.spines['right'].set_visible(False)
-        ax_to.tick_params(axis='both', which='major', labelsize=_PLOT_STYLES['small_label_size'], colors=_PLOT_COLORS['text_light'], 
-                          width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
-        
-        plt.setp(ax.get_xticklabels(), visible=False)
-        plt.setp(ax_dd.get_xticklabels(), visible=False)
-        
-        plt.show()
+        plotter = BacktestPlotter(self)
+        plotter.plot_equity(figsize, show_summary, show_benchmark)
         return self
     
     def get_daily_turnover_df(self) -> pd.DataFrame:
@@ -611,99 +465,6 @@ class Backtester:
         combined['turnover'] = combined['daily_trade_value'] / combined['daily_nav']
         return combined[['turnover']]
     
-    def calculate_ic(self, periods: Union[int, List[int]] = 1) -> Dict:
-        """Calculate IC and RankIC metrics for given forward periods."""
-        from scipy.stats import rankdata, pearsonr
-        
-        if isinstance(periods, int):
-            periods = [periods]
-        
-        strategy_data = self.strategy_factor.data.copy().sort_values(['symbol', 'timestamp'])
-        price_data = self.price_factor.data.copy().sort_values(['symbol', 'timestamp'])
-        
-        if strategy_data.empty or price_data.empty:
-            return {}
-        
-        results = {}
-        unique_dates = sorted(strategy_data['timestamp'].unique())
-        
-        for period in periods:
-            ic_values, rankic_values = [], []
-            
-            for i, date in enumerate(unique_dates):
-                if i + period >= len(unique_dates):
-                    break
-                
-                forward_date = unique_dates[i + period]
-                
-                factor_t = strategy_data[strategy_data['timestamp'] == date][['symbol', 'factor']].set_index('symbol')
-                price_t = price_data[price_data['timestamp'] == date][['symbol', 'factor']].set_index('symbol')
-                price_f = price_data[price_data['timestamp'] == forward_date][['symbol', 'factor']].set_index('symbol')
-                
-                symbols = factor_t.index.intersection(price_t.index).intersection(price_f.index)
-                if len(symbols) < 2:
-                    continue
-                
-                factor_vals = factor_t.loc[symbols, 'factor'].values
-                returns = (price_f.loc[symbols, 'factor'].values - price_t.loc[symbols, 'factor'].values) / price_t.loc[symbols, 'factor'].values
-                
-                valid = ~(np.isnan(factor_vals) | np.isnan(returns))
-                if valid.sum() < 2:
-                    continue
-                
-                factor_vals = factor_vals[valid]
-                returns = returns[valid]
-                
-                ic, _ = pearsonr(factor_vals, returns)
-                ic_values.append(ic)
-                
-                factor_rank = rankdata(factor_vals)
-                returns_rank = rankdata(returns)
-                rankic, _ = pearsonr(factor_rank, returns_rank)
-                rankic_values.append(rankic)
-            
-            if ic_values:
-                ic_mean = np.nanmean(ic_values)
-                ic_std = np.nanstd(ic_values)
-                rankic_mean = np.nanmean(rankic_values)
-                rankic_std = np.nanstd(rankic_values)
-                
-                results[period] = {
-                    'ic_mean': ic_mean,
-                    'ic_std': ic_std,
-                    'icir': (ic_mean / ic_std * np.sqrt(365)) if ic_std > 0 else 0,
-                    'rankic_mean': rankic_mean,
-                    'rankic_std': rankic_std,
-                    'rankicir': (rankic_mean / rankic_std * np.sqrt(365)) if rankic_std > 0 else 0,
-                    'n': len(ic_values)
-                }
-        
-        return results
-    
-    def print_ic(self, periods: Union[int, List[int]] = None) -> 'Backtester':
-        """Print RankIC statistics for multiple periods."""
-        if periods is None:
-            periods = [1, 5, 10, 20]
-        elif isinstance(periods, int):
-            periods = [periods]
-        
-        ic_results = self.calculate_ic(periods)
-        if not ic_results:
-            logger.warning("No IC data available")
-            return self
-        
-        print(f"\nIC Analysis ({self.strategy_factor.name})")
-        print("-" * 80)
-        print(f"{'Period':<10} {'RankIC Mean':<16} {'RankIC Std':<16} {'RankICIR':<16} {'Samples':<10}")
-        print("-" * 80)
-        
-        for period in sorted(ic_results.keys()):
-            metrics = ic_results[period]
-            print(f"{period}d{' '*7} {metrics['rankic_mean']:>13.4f}  "
-                  f"{metrics['rankic_std']:>13.4f}  {metrics['rankicir']:>13.4f}  {metrics['n']:>8}")
-        
-        print("-" * 80)
-        return self
 
     def __repr__(self):
         """String representation."""
@@ -869,57 +630,8 @@ class CombinedBacktester:
     
     def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> 'CombinedBacktester':
         """Plot portfolio equity, drawdown, and summary."""
-        equity = self.get_portfolio_equity()
-        if equity.empty or len(equity) < 2:
-            logger.warning("No equity data to plot")
-            return self
-        
-        equity_norm = equity / equity.iloc[0]
-        rolling_max = equity_norm.cummax()
-        drawdown = equity_norm / rolling_max - 1.0
-        
-        plt.style.use('default')
-        fig = plt.figure(figsize=figsize, constrained_layout=True)
-        gs = fig.add_gridspec(2, 1, height_ratios=[3, 1])
-        ax = fig.add_subplot(gs[0, 0])
-        ax_dd = fig.add_subplot(gs[1, 0], sharex=ax)
-        
-        ax.set_facecolor(_PLOT_COLORS['background'])
-        y_min = equity.min()
-        _plot_equity_line(ax, equity, y_min)
-        
-        strategy_names = ", ".join([bt.strategy_factor.name for bt in self.backtests])
-        ax.set_title(f'Combined Portfolio Equity ({strategy_names})', 
-                    fontsize=_PLOT_STYLES['title_size'], fontweight='400', color=_PLOT_COLORS['text'], pad=14)
-        ax.set_ylabel('Equity Value', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
-        ax.grid(True, alpha=_PLOT_STYLES['grid_alpha'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.tick_params(axis='both', which='major', labelsize=_PLOT_STYLES['label_size'], colors=_PLOT_COLORS['text_light'], 
-                      width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
-        
-        if show_summary:
-            summary_text = self.summary()
-            ax.text(0.015, 0.98, summary_text, transform=ax.transAxes, fontsize=_PLOT_STYLES['label_size'], 
-                    verticalalignment='top', horizontalalignment='left', color=_PLOT_COLORS['text_info'],
-                    bbox=dict(boxstyle='round,pad=0.75', facecolor=_PLOT_COLORS['white'], 
-                             edgecolor=_PLOT_COLORS['grid'], alpha=_PLOT_STYLES['box_alpha'], linewidth=1))
-        
-        ax_dd.set_facecolor(_PLOT_COLORS['white'])
-        _plot_drawdown(ax_dd, drawdown)
-        ax_dd.set_ylabel('Drawdown', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
-        ax_dd.set_xlabel('Date', fontsize=_PLOT_STYLES['xlabel_size'], color=_PLOT_COLORS['text_light'])
-        ax_dd.grid(True, alpha=_PLOT_STYLES['grid_alpha_secondary'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
-        ax_dd.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
-        ax_dd.spines['top'].set_visible(False)
-        ax_dd.spines['right'].set_visible(False)
-        ax_dd.tick_params(axis='both', which='major', labelsize=_PLOT_STYLES['small_label_size'], colors=_PLOT_COLORS['text_light'], 
-                          width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
-        
-        plt.setp(ax.get_xticklabels(), visible=False)
-        
-        plt.show()
+        plotter = CombinedBacktestPlotter(self)
+        plotter.plot_equity(figsize, show_summary)
         return self
 
     def __add__(self, other: Union[Backtester, 'CombinedBacktester']) -> 'CombinedBacktester':
