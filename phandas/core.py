@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 from typing import Union, Optional, Callable, List
 from scipy.stats import norm, uniform, cauchy
-import matplotlib.pyplot as plt
 
 
 class Factor:
@@ -401,28 +400,17 @@ class Factor:
         
         result = self.data.copy()
         
-        def ts_rank_vectorized(group):
-            vals = group.values
-            n = len(vals)
-            ranks = np.full(n, np.nan)
-            
-            for i in range(window - 1, n):
-                window_vals = vals[i-window+1:i+1]
-                if np.isnan(window_vals).any():
-                    continue
-                if len(np.unique(window_vals)) == 1:
-                    continue
-                
-                sorted_idx = np.argsort(window_vals)
-                rank_array = np.empty_like(sorted_idx, dtype=float)
-                rank_array[sorted_idx] = np.arange(1, window + 1)
-                ranks[i] = rank_array[-1] / window
-            
-            return pd.Series(ranks, index=group.index)
+        def rank_window(w):
+            if np.isnan(w).any() or len(np.unique(w)) == 1:
+                return np.nan
+            sorted_idx = np.argsort(w)
+            rank_array = np.empty_like(sorted_idx, dtype=float)
+            rank_array[sorted_idx] = np.arange(1, len(w) + 1)
+            return rank_array[-1] / len(w)
         
-        result['factor'] = result.groupby('symbol', group_keys=False)['factor'].apply(
-            ts_rank_vectorized
-        )
+        result['factor'] = result.groupby('symbol')['factor'].rolling(
+            window, min_periods=window
+        ).apply(rank_window, raw=True).reset_index(level=0, drop=True)
         
         return Factor(result, f"ts_rank({self.name},{window})")
     
@@ -611,7 +599,7 @@ class Factor:
         return Factor(result, f"ts_kurtosis({self.name},{window})")
 
     def ts_skewness(self, window: int) -> 'Factor':
-        """Rolling sample skewness with Bessel correction."""
+        """Rolling sample skewness (Fisher-Pearson standard formula)."""
         self._validate_window(window)
         
         n = window
@@ -621,7 +609,7 @@ class Factor:
         sum_cube_dev = diff.power(3).ts_sum(window)
         sum_sq_dev = diff.power(2).ts_sum(window)
         
-        numerator = sum_cube_dev * ((n * (n - 1)) ** 1.5)
+        numerator = sum_cube_dev * n
         denominator = sum_sq_dev.power(1.5) * ((n - 1) * (n - 2))
         
         skew = numerator / denominator
@@ -775,100 +763,107 @@ class Factor:
         result = result[['timestamp', 'symbol', 'factor']]
         return Factor(result, f"ts_covariance({self.name},{other.name},{window})")
 
-    def ts_regression(self, x_factor: 'Factor', window: int, lag: int = 0, rettype: int = 0) -> 'Factor':
-        """Rolling OLS regression Y=α+β*X. rettype: 0=residual, 1=α, 2=β, 3=pred, 4=SSE, 5=SST, 6=R², 7=MSE, 8=stderr_β, 9=stderr_α."""
+    def ts_regression(self, x_factor, window: int, lag: int = 0, rettype: int = 0) -> 'Factor':
+        """Rolling OLS regression. Y=α+β*X (univariate) or Y=α+Σβi*Xi (multivariate list).
+        rettype: 0=residual, 1=α, 2=β[0], 3=pred, 4=SSE, 5=SST, 6=R², 7=MSE, 8=stderr_β[0], 9=stderr_α, 100+i=β[i]."""
         self._validate_window(window)
         if lag < 0:
             raise ValueError("Lag must be non-negative")
-        if not 0 <= rettype <= 9:
-            raise ValueError("rettype must be between 0 and 9")
+        
+        is_multi = isinstance(x_factor, list)
+        if is_multi:
+            if not all(isinstance(f, Factor) for f in x_factor):
+                raise TypeError("x_factor list must contain only Factor objects")
+            x_factors = x_factor
+        else:
+            if not isinstance(x_factor, Factor):
+                raise TypeError("x_factor must be Factor or list of Factors")
+            if rettype >= 100:
+                raise ValueError("rettype 100+ only for multivariate mode")
+            x_factors = [x_factor]
         
         y_data = self.data.rename(columns={'factor': 'y'})
-        x_data = x_factor.data.rename(columns={'factor': 'x'})
-
-        if lag > 0:
-            x_data['x'] = x_data.groupby('symbol')['x'].shift(lag)
-
-        merged = pd.merge(y_data, x_data, on=['timestamp', 'symbol'])
-
+        merged = y_data.copy()
+        
+        for i, xf in enumerate(x_factors):
+            x_data = xf.data.rename(columns={'factor': f'x{i}'})
+            if lag > 0:
+                x_data[f'x{i}'] = x_data.groupby('symbol')[f'x{i}'].shift(lag)
+            merged = pd.merge(merged, x_data, on=['timestamp', 'symbol'])
+        
         if merged.empty:
-            raise ValueError("No common data for regression.")
-
+            raise ValueError("No common data for regression")
+        
         merged = merged.sort_values(['symbol', 'timestamp'])
-
-        def rolling_regression_vectorized(group):
+        x_cols = [f'x{i}' for i in range(len(x_factors))]
+        
+        def rolling_regression(group):
             y = group['y'].values
-            x = group['x'].values
-            n = len(y)
+            X = group[x_cols].values
+            n, m = len(y), len(x_cols)
             results = np.full(n, np.nan)
             
             for i in range(window - 1, n):
                 y_win = y[i-window+1:i+1]
-                x_win = x[i-window+1:i+1]
+                X_win = X[i-window+1:i+1]
                 
-                valid = ~(np.isnan(y_win) | np.isnan(x_win))
-                if valid.sum() < 2:
+                valid = ~(np.isnan(y_win) | np.isnan(X_win).any(axis=1))
+                if valid.sum() < m + 2:
                     continue
                 
-                y_valid = y_win[valid]
-                x_valid = x_win[valid]
-                
-                if np.std(x_valid) == 0:
-                    continue
-                
-                n_valid = len(y_valid)
-                x_mat = np.column_stack([np.ones(n_valid), x_valid])
+                y_v = y_win[valid]
+                X_v = X_win[valid]
+                X_mat = np.column_stack([np.ones(len(y_v)), X_v])
                 
                 try:
-                    XtX = x_mat.T @ x_mat
-                    if np.linalg.cond(XtX) > 1e10:
+                    if np.linalg.cond(X_mat.T @ X_mat) > 1e10:
                         continue
                     
-                    Xty = x_mat.T @ y_valid
-                    params = np.linalg.solve(XtX, Xty)
-                    
-                    alpha, beta = params[0], params[1]
-                    y_pred = x_mat @ params
-                    residuals = y_valid - y_pred
+                    params = np.linalg.lstsq(X_mat, y_v, rcond=None)[0]
+                    residuals = y_v - X_mat @ params
+                    SSE = (residuals ** 2).sum()
+                    SST = ((y_v - y_v.mean()) ** 2).sum()
                     
                     if rettype == 0:
                         results[i] = residuals[-1]
                     elif rettype == 1:
-                        results[i] = alpha
+                        results[i] = params[0]
                     elif rettype == 2:
-                        results[i] = beta
+                        results[i] = params[1]
                     elif rettype == 3:
-                        results[i] = y_pred[-1]
-                    else:
-                        SSE = np.sum(residuals ** 2)
-                        SST = np.sum((y_valid - y_valid.mean()) ** 2)
-                        
-                        if rettype == 4:
-                            results[i] = SSE
-                        elif rettype == 5:
-                            results[i] = SST
-                        elif rettype == 6:
-                            results[i] = 1 - (SSE / SST) if SST > 0 else np.nan
-                        elif rettype == 7:
-                            df_resid = n_valid - 2
-                            results[i] = SSE / df_resid if df_resid > 0 else np.nan
-                        elif rettype in [8, 9]:
-                            df_resid = n_valid - 2
-                            MSE = SSE / df_resid if df_resid > 0 else 0
-                            if MSE > 0:
-                                var_covar = MSE * np.linalg.inv(XtX)
-                                results[i] = np.sqrt(var_covar[1, 1]) if rettype == 8 else np.sqrt(var_covar[0, 0])
+                        results[i] = (X_mat @ params)[-1]
+                    elif rettype == 4:
+                        results[i] = SSE
+                    elif rettype == 5:
+                        results[i] = SST
+                    elif rettype == 6:
+                        results[i] = 1 - SSE / SST if SST > 0 else np.nan
+                    elif rettype == 7:
+                        df = len(y_v) - m - 1
+                        results[i] = SSE / df if df > 0 else np.nan
+                    elif rettype in [8, 9]:
+                        df = len(y_v) - m - 1
+                        MSE = SSE / df if df > 0 else 0
+                        if MSE > 0:
+                            var_covar = MSE * np.linalg.inv(X_mat.T @ X_mat)
+                            idx = 2 if rettype == 8 else 0
+                            results[i] = np.sqrt(var_covar[idx, idx])
+                    elif rettype >= 100:
+                        idx = rettype - 100 + 1
+                        if idx < len(params):
+                            results[i] = params[idx]
                 except:
                     continue
             
             return pd.Series(results, index=group.index)
-
+        
         merged['factor'] = merged.groupby('symbol', group_keys=False).apply(
-            rolling_regression_vectorized, include_groups=False
+            rolling_regression, include_groups=False
         ).values
-
+        
         result = merged[['timestamp', 'symbol', 'factor']]
-        return Factor(result, name=f"ts_regression({self.name},{x_factor.name},{window},lag={lag},rettype={rettype})")
+        x_name = ','.join([f.name for f in x_factors]) if is_multi else x_factors[0].name
+        return Factor(result, name=f"ts_regression({self.name},{x_name},{window},lag={lag},rettype={rettype})")
 
     def abs(self) -> 'Factor':
         """Absolute value: |x|."""
@@ -1221,85 +1216,6 @@ class Factor:
     def plot(self, symbol: Optional[str] = None, figsize: tuple = (12, 6), 
              title: Optional[str] = None) -> None:
         """Plot factor over time. symbol=None plots all symbols in subgrid."""
-        if symbol is None:
-            self._plot_all_symbols(figsize, title)
-        else:
-            self._plot_single_symbol(symbol, figsize, title)
-    
-    def _plot_single_symbol(self, symbol: str, figsize: tuple, title: Optional[str]):
-        """Plot factor values for single symbol."""
-        data = self.data[self.data['symbol'] == symbol].copy()
-        if data.empty:
-            print(f"No data found for symbol: {symbol}")
-            return
-        
-        data = data.sort_values('timestamp')
-        
-        fig, ax = plt.subplots(figsize=figsize)
-        ax.set_facecolor('#fcfcfc')
-        
-        ax.plot(data['timestamp'], data['factor'], color='#2563eb', linewidth=1.2, alpha=0.8)
-        ax.fill_between(data['timestamp'], data['factor'], alpha=0.15, color='#2563eb')
-        
-        plot_title = title or f'{self.name} ({symbol})'
-        ax.set_title(plot_title, fontsize=12.5, fontweight='400', color='#1f2937', pad=14)
-        ax.set_xlabel('Date', fontsize=10.5, color='#6b7280')
-        ax.set_ylabel('Factor Value', fontsize=10.5, color='#6b7280')
-        ax.grid(True, alpha=0.15, color='#e5e7eb', linestyle='-', linewidth=0.4)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.tick_params(axis='both', which='major', labelsize=9.5, colors='#6b7280', 
-                      width=0.5, length=3)
-        
-        plt.tight_layout()
-        plt.show()
-    
-    def _plot_all_symbols(self, figsize: tuple, title: Optional[str]):
-        """Plot factor values for all symbols."""
-        symbols = sorted(self.data['symbol'].unique())
-        n_symbols = len(symbols)
-        
-        if n_symbols == 0:
-            print("No data to plot")
-            return
-        
-        n_cols = min(3, n_symbols)
-        n_rows = (n_symbols + n_cols - 1) // n_cols
-        
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, constrained_layout=True)
-        if n_symbols == 1:
-            axes = np.array([axes])
-        else:
-            axes = axes.flatten() if n_symbols > 1 else np.array([axes])
-        
-        colors = ['#2563eb', '#059669', '#dc2626', '#7c3aed', '#f59e0b', '#06b6d4']
-        
-        for idx, symbol in enumerate(symbols):
-            ax = axes[idx]
-            data = self.data[self.data['symbol'] == symbol].copy()
-            data = data.sort_values('timestamp')
-            
-            color = colors[idx % len(colors)]
-            ax.plot(data['timestamp'], data['factor'], color=color, linewidth=1.2, alpha=0.8)
-            ax.fill_between(data['timestamp'], data['factor'], alpha=0.15, color=color)
-            
-            ax.set_title(symbol, fontsize=11, fontweight='500', color='#1f2937')
-            ax.set_xlabel('Date', fontsize=9.5, color='#6b7280')
-            ax.set_ylabel('Factor Value', fontsize=9.5, color='#6b7280')
-            ax.grid(True, alpha=0.12, color='#e5e7eb', linestyle='-', linewidth=0.4)
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            ax.tick_params(axis='both', which='major', labelsize=8.5, colors='#6b7280',
-                          width=0.5, length=3)
-            ax.set_facecolor('#fcfcfc')
-            
-            dates = data['timestamp'].values
-            n_dates = len(dates)
-            if n_dates > 2:
-                tick_indices = [0, n_dates // 2, n_dates - 1]
-                ax.set_xticks([dates[i] for i in tick_indices])
-        
-        for idx in range(n_symbols, len(axes)):
-            axes[idx].set_visible(False)
-        
-        plt.show()
+        from .plot import FactorPlotter
+        plotter = FactorPlotter(self)
+        plotter.plot(symbol, figsize, title)
