@@ -12,7 +12,7 @@ class Panel:
         df = data.copy()
         if not isinstance(df.index, pd.MultiIndex):
             if 'timestamp' in df.columns and 'symbol' in df.columns:
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
                 df = df.set_index(['timestamp', 'symbol']).sort_index()
             else:
                 raise ValueError("Data must have timestamp and symbol columns or MultiIndex")
@@ -21,7 +21,8 @@ class Panel:
     @classmethod
     def from_csv(cls, path: str) -> 'Panel':
         """Load from CSV."""
-        df = pd.read_csv(path, parse_dates=['timestamp'])
+        df = pd.read_csv(path, parse_dates=['timestamp'], dtype={'timestamp': str})
+        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
         if 'timestamp' in df.columns and 'symbol' in df.columns:
             df = df.set_index(['timestamp', 'symbol']).sort_index()
         return cls(df)
