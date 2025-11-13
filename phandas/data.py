@@ -32,16 +32,26 @@ def fetch_data(
     }
     
     raw_dfs = []
+    binance_end_date = None
+    
     for source in sources:
         if source not in source_map:
             raise ValueError(f"Unknown source: {source}. Available: {list(source_map.keys())}")
         
         logger.info(f"Fetching from {source}...")
-        df = source_map[source](symbols, timeframe, start_date, end_date)
+        
+        if source == 'binance':
+            df = source_map[source](symbols, timeframe, start_date, end_date)
+            if df is not None and 'timestamp' in df.columns:
+                binance_end_date = df['timestamp'].max().strftime('%Y-%m-%d')
+                logger.info(f"  Binance data ends at: {binance_end_date}")
+        else:
+            source_end_date = binance_end_date or end_date
+            df = source_map[source](symbols, timeframe, start_date, source_end_date)
+        
         if df is not None:
-            if not isinstance(df.index, pd.MultiIndex):
-                if 'timestamp' in df.columns and 'symbol' in df.columns:
-                    df = df.set_index(['timestamp', 'symbol'])
+            if not isinstance(df.index, pd.MultiIndex) and 'timestamp' in df.columns and 'symbol' in df.columns:
+                df = df.set_index(['timestamp', 'symbol'])
             raw_dfs.append(df)
     
     if not raw_dfs:
@@ -49,9 +59,7 @@ def fetch_data(
     
     combined = pd.concat(raw_dfs, axis=1)
     
-    dup_cols = combined.columns[combined.columns.duplicated()]
-    if len(dup_cols) > 0:
-        logger.warning(f"Duplicate columns will be dropped: {list(dup_cols)}")
+    if combined.columns.duplicated().any():
         combined = combined.loc[:, ~combined.columns.duplicated(keep='first')]
     
     logger.info(f"Combined columns: {list(combined.columns)}")
@@ -133,20 +141,20 @@ def fetch_binance(
     def _fetch_renamed_symbol(exchange, symbols_list: List[str], timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
         """Fetch and merge data for renamed symbols."""
         dfs = []
-        for symbol in symbols_list:
+        for i, symbol in enumerate(symbols_list):
             df = _fetch_single_symbol(exchange, symbol, timeframe, since, until)
             if df is not None:
+                df['_order'] = i
                 dfs.append(df)
         
         if not dfs:
             return None
         
         combined = pd.concat(dfs, ignore_index=True)
-        combined = combined.sort_values('timestamp').drop_duplicates(subset=['timestamp'], keep='last')
-        return combined
+        combined = combined.sort_values(['timestamp', '_order']).drop_duplicates(subset=['timestamp'], keep='last')
+        return combined.drop('_order', axis=1)
     
-    user_symbols = list(set(symbols))
-    download_symbols = user_symbols
+    download_symbols = list(set(symbols))
     
     try:
         exchange_obj = ccxt.binance()
@@ -159,7 +167,7 @@ def fetch_binance(
         return None
     
     since = exchange_obj.parse8601(f'{start_date}T00:00:00Z') if start_date else None
-    until = exchange_obj.parse8601(f'{end_date}T23:59:59Z') if end_date else None
+    until = exchange_obj.parse8601(f'{end_date}T00:00:00Z') if end_date else None
     
     all_data = []
     for symbol in download_symbols:
@@ -232,16 +240,17 @@ def fetch_benchmark(
     def _fetch_renamed_symbol(exchange, symbols_list: List[str], timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
         """Fetch and merge close prices for renamed symbols."""
         dfs = []
-        for symbol in symbols_list:
+        for i, symbol in enumerate(symbols_list):
             df = _fetch_single_symbol(exchange, symbol, timeframe, since, until)
             if df is not None:
+                df['_order'] = i
                 dfs.append(df)
         
         if not dfs:
             return None
         
         combined = pd.concat(dfs, ignore_index=True)
-        combined = combined.sort_values('timestamp').drop_duplicates(subset=['timestamp'], keep='last')
+        combined = combined.sort_values(['timestamp', '_order']).drop_duplicates(subset=['timestamp'], keep='last')
         return combined[['timestamp', 'close']]
     
     try:
@@ -255,7 +264,7 @@ def fetch_benchmark(
         return None
     
     since = exchange_obj.parse8601(f'{start_date}T00:00:00Z') if start_date else None
-    until = exchange_obj.parse8601(f'{end_date}T23:59:59Z') if end_date else None
+    until = exchange_obj.parse8601(f'{end_date}T00:00:00Z') if end_date else None
     
     factor_symbols = ['BTC', 'ETH']
     factor_data = {}
@@ -305,14 +314,21 @@ def fetch_calendar(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch time-based features (year, month, day)."""
+    """Fetch time-based features (year, month, day).
+    
+    Note: end_date must be provided to avoid using local system time.
+    """
     try:
         if not start_date:
             logger.warning("Calendar requires start_date")
             return None
         
+        if not end_date:
+            logger.warning("Calendar requires end_date (do not use local system time)")
+            return None
+        
         start = pd.to_datetime(start_date)
-        end = pd.to_datetime(end_date) if end_date else pd.Timestamp.today()
+        end = pd.to_datetime(end_date)
         
         FREQ_MAP = {
             '1m': 'min', '5m': '5min', '15m': '15min', '30m': '30min',
@@ -325,17 +341,11 @@ def fetch_calendar(
         for symbol in symbols:
             for date in dates:
                 dayofmonth = date.day
-                if dayofmonth <= 10:
-                    dayofmonth_position = 1
-                elif dayofmonth <= 20:
-                    dayofmonth_position = 2
-                else:
-                    dayofmonth_position = 3
-                
-                is_week_end = 1 if date.dayofweek + 1 >= 6 else 0
+                dayofmonth_position = 1 if dayofmonth <= 10 else (2 if dayofmonth <= 20 else 3)
+                is_week_end = int(date.dayofweek + 1 >= 6)
                 
                 rows.append({
-                    'timestamp': date,
+                    'timestamp': pd.Timestamp(date),
                     'symbol': symbol,
                     'year': date.year,
                     'month': date.month,
@@ -368,7 +378,6 @@ def _process_data(df: pd.DataFrame, timeframe: str, user_symbols: List[str]) -> 
     pivoted = df.pivot_table(index='timestamp', columns='symbol', values='close')
     common_start = pivoted.apply(lambda s: s.first_valid_index()).max()
     end_date = df['timestamp'].max()
-    
     freq = FREQ_MAP.get(timeframe, 'D')
     full_range = pd.date_range(start=common_start, end=end_date, freq=freq)
     

@@ -503,7 +503,13 @@ class Factor:
     def ts_count_nans(self, window: int) -> 'Factor':
         """Count NaN values in rolling window."""
         self._validate_window(window)
-        result = self._apply_rolling(lambda x: x.isna().sum(), window)
+        
+        result = self.data.copy()
+        result['factor'] = (result.groupby('symbol')['factor']
+                           .rolling(window, min_periods=1)
+                           .apply(lambda x: x.isna().sum(), raw=False)
+                           .reset_index(level=0, drop=True))
+        
         return Factor(result, f"ts_count_nans({self.name},{window})")
     
     def ts_av_diff(self, window: int) -> 'Factor':
@@ -623,6 +629,8 @@ class Factor:
         if k <= 0:
             raise ValueError("k must be a positive integer")
 
+        result = self.data.copy()
+        
         def backfill_func(s):
             if pd.isna(s.iloc[-1]):
                 non_nan = s.dropna()
@@ -630,7 +638,11 @@ class Factor:
                     return non_nan.iloc[-k]
             return s.iloc[-1]
 
-        result = self._apply_rolling(backfill_func, window)
+        result['factor'] = (result.groupby('symbol')['factor']
+                           .rolling(window, min_periods=1)
+                           .apply(backfill_func, raw=False)
+                           .reset_index(level=0, drop=True))
+        
         return Factor(result, f"ts_backfill({self.name},{window},{k})")
     
     def ts_decay_exp_window(self, window: int, factor: float = 1.0, nan: bool = True) -> 'Factor':
@@ -651,7 +663,12 @@ class Factor:
             weight_sum = weights.sum()
             return (valid_s * weights).sum() / weight_sum if weight_sum > 0 else (np.nan if nan else 0.0)
         
-        result = self._apply_rolling(decay_func, window)
+        result = self.data.copy()
+        result['factor'] = (result.groupby('symbol')['factor']
+                           .rolling(window, min_periods=1)
+                           .apply(decay_func, raw=False)
+                           .reset_index(level=0, drop=True))
+        
         return Factor(result, f"ts_decay_exp_window({self.name},{window},{factor},{nan})")
     
     def ts_decay_linear(self, window: int, dense: bool = False) -> 'Factor':
@@ -676,8 +693,13 @@ class Factor:
                 weight_sum = weights.sum()
                 
             return weighted_sum / weight_sum if weight_sum > 0 else np.nan
-            
-        result = self._apply_rolling(linear_decay_func, window)
+        
+        result = self.data.copy()
+        result['factor'] = (result.groupby('symbol')['factor']
+                           .rolling(window, min_periods=1)
+                           .apply(linear_decay_func, raw=False)
+                           .reset_index(level=0, drop=True))
+        
         return Factor(result, f"ts_decay_linear({self.name},{window},dense={dense})")
     
     def ts_delay(self, window: int) -> 'Factor':

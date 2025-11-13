@@ -43,7 +43,7 @@ from phandas import *
 
 # Fetch market data
 panel = fetch_data(
-    symbols=['BTC', 'ETH', 'SOL', 'DOGE', 'XRP', 'ADA'],
+    symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'],
     timeframe='1d',
     start_date='2023-01-01'
 )
@@ -104,7 +104,7 @@ from phandas import *
 
 # 獲取市場資料
 panel = fetch_data(
-    symbols=['BTC', 'ETH', 'SOL', 'DOGE', 'XRP', 'ADA'],
+    symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'],
     timeframe='1d',
     start_date='2023-01-01'
 )
@@ -141,6 +141,6 @@ result.plot_equity()
 
 ## License
 
-This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
+This project is licensed under the BSD 3-Clause License - see [LICENSE](LICENSE) file for details.
 
 
