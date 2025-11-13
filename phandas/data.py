@@ -128,7 +128,7 @@ def fetch_binance(
                 return None
                 
             df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df['symbol'] = symbol
             
             logger.info(f"Fetched {len(df)} records for {symbol}")
@@ -230,7 +230,7 @@ def fetch_benchmark(
                 return None
                 
             df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             return df[['timestamp', 'close']]
             
         except Exception as e:
@@ -345,7 +345,7 @@ def fetch_calendar(
                 is_week_end = int(date.dayofweek + 1 >= 6)
                 
                 rows.append({
-                    'timestamp': pd.Timestamp(date, tz='UTC'),
+                    'timestamp': pd.Timestamp(date),
                     'symbol': symbol,
                     'year': date.year,
                     'month': date.month,
@@ -375,9 +375,6 @@ def _process_data(df: pd.DataFrame, timeframe: str, user_symbols: List[str]) -> 
         '1h': 'h', '4h': '4h', '1d': 'D', '1w': 'W', '1M': 'MS',
     }
     
-    if df['timestamp'].dt.tz is not None:
-        df['timestamp'] = df['timestamp'].dt.tz_localize(None)
-    
     pivoted = df.pivot_table(index='timestamp', columns='symbol', values='close')
     common_start = pivoted.apply(lambda s: s.first_valid_index()).max()
     end_date = df['timestamp'].max()
@@ -394,9 +391,5 @@ def _process_data(df: pd.DataFrame, timeframe: str, user_symbols: List[str]) -> 
             result_dfs.append(stacked.set_index(['timestamp', 'symbol']))
     
     result = pd.concat(result_dfs, axis=1).sort_index()
-    result.index = result.index.set_levels(
-        result.index.levels[0].tz_localize('UTC'), level=0
-    )
-    
     return result[result.index.get_level_values('symbol').isin(user_symbols)]
 
