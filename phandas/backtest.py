@@ -98,6 +98,7 @@ def _calculate_performance_metrics(returns: pd.Series, risk_free_rate: float = 0
 class Portfolio:
     """Portfolio state with trade execution and valuation."""
     def __init__(self, initial_capital: float = 1000):
+        """Initialize portfolio with starting capital."""
         self.initial_capital = initial_capital
         self.cash = initial_capital
         self.positions = {}
@@ -149,7 +150,7 @@ class Portfolio:
         })
     
     def _build_datetime_df(self, data_list: list) -> pd.DataFrame:
-        """DataFrame with datetime index."""
+        """Build DataFrame with datetime index from list of dicts."""
         if not data_list:
             return pd.DataFrame()
         df = pd.DataFrame(data_list)
@@ -281,7 +282,7 @@ class Backtester:
 
 
     def _build_date_cache(self, factor: 'Factor') -> dict:
-        """Cache factor data by date."""
+        """Build cache of factor data indexed by date."""
         cache = {}
         for date, group in factor.data.groupby('timestamp', sort=False):
             series = group.set_index('symbol')['factor']
@@ -300,7 +301,7 @@ class Backtester:
             return self._strategy_cache.get(date, pd.Series(dtype=float))
     
     def _find_start_date(self, dates) -> int:
-        """Find first date with complete data in both factors."""
+        """Find first date with complete data in both factors and prior strategy data."""
         for i, date in enumerate(dates):
             if i == 0:
                 continue
@@ -326,7 +327,7 @@ class Backtester:
         return (demeaned / abs_sum) * self.portfolio.total_value
     
     def _generate_orders(self, target_holdings: pd.Series, prices: pd.Series) -> pd.Series:
-        """Generate trade orders from target vs current holdings."""
+        """Generate trade order quantities from target holdings vs current positions."""
         current_holdings = self.portfolio.holdings
         all_symbols = set(target_holdings.index) | set(current_holdings.keys())
         trade_quantities = {}
@@ -383,7 +384,7 @@ class Backtester:
 
     def print_summary(self) -> 'Backtester':
         """Print summary and return self for chaining."""
-        print(self.summary())
+        logger.info(self.summary())
         return self
     
     def print_drawdown_periods(self, top_n: int = 5) -> 'Backtester':
@@ -391,20 +392,20 @@ class Backtester:
         drawdown_periods = self.metrics.get('drawdown_periods', [])
         
         if not drawdown_periods:
-            print("\nNo significant drawdown periods detected.")
+            logger.info("No significant drawdown periods detected.")
             return self
         
         periods_to_show = drawdown_periods[:top_n]
         total_periods = len(drawdown_periods)
         
-        print(f"\nTop {min(top_n, total_periods)} Drawdown Periods (sorted by depth):")
-        print("-" * 70)
+        logger.info(f"Top {min(top_n, total_periods)} Drawdown Periods (sorted by depth):")
+        logger.info("-" * 70)
         for i, period in enumerate(periods_to_show, 1):
-            print(f"{i}. {period['start']} → {period['end']} | "
+            logger.info(f"{i}. {period['start']} → {period['end']} | "
                   f"Depth: {period['depth']:.2%} | Duration: {period['duration_days']} days")
         
         if total_periods > top_n:
-            print(f"\n(Showing {top_n} of {total_periods} total drawdown periods)")
+            logger.info(f"Showing {top_n} of {total_periods} total drawdown periods")
         
         return self
     
@@ -559,8 +560,8 @@ class CombinedBacktester:
         """Print correlation matrix."""
         corr = self.correlation_matrix()
         if not corr.empty:
-            print("\nCorrelation Matrix:")
-            print(corr.to_string(max_cols=None, max_rows=None, float_format=lambda x: f'{x:.6f}'))
+            logger.info("Correlation Matrix:")
+            logger.info(corr.to_string(max_cols=None, max_rows=None, float_format=lambda x: f'{x:.6f}'))
         return self
 
     def summary(self) -> str:
@@ -603,7 +604,7 @@ class CombinedBacktester:
 
     def print_summary(self) -> 'CombinedBacktester':
         """Print summary and return self for chaining."""
-        print(self.summary())
+        logger.info(self.summary())
         return self
     
     def print_drawdown_periods(self, top_n: int = 5) -> 'CombinedBacktester':
@@ -611,20 +612,20 @@ class CombinedBacktester:
         drawdown_periods = self.metrics.get('drawdown_periods', [])
         
         if not drawdown_periods:
-            print("\nNo significant drawdown periods detected.")
+            logger.info("No significant drawdown periods detected.")
             return self
         
         periods_to_show = drawdown_periods[:top_n]
         total_periods = len(drawdown_periods)
         
-        print(f"\nTop {min(top_n, total_periods)} Drawdown Periods (sorted by depth):")
-        print("-" * 70)
+        logger.info(f"Top {min(top_n, total_periods)} Drawdown Periods (sorted by depth):")
+        logger.info("-" * 70)
         for i, period in enumerate(periods_to_show, 1):
-            print(f"{i}. {period['start']} → {period['end']} | "
+            logger.info(f"{i}. {period['start']} → {period['end']} | "
                   f"Depth: {period['depth']:.2%} | Duration: {period['duration_days']} days")
         
         if total_periods > top_n:
-            print(f"\n(Showing {top_n} of {total_periods} total drawdown periods)")
+            logger.info(f"Showing {top_n} of {total_periods} total drawdown periods")
         
         return self
     

@@ -1,14 +1,18 @@
 """Multi-column market data container with (timestamp, symbol) MultiIndex."""
 
 import pandas as pd
+import logging
 from typing import Union, Optional, List
 from .core import Factor
+
+logger = logging.getLogger(__name__)
 
 
 class Panel:
     """Multi-column data with (timestamp, symbol) MultiIndex."""
     
     def __init__(self, data: pd.DataFrame):
+        """Initialize Panel from DataFrame with (timestamp, symbol) MultiIndex."""
         df = data.copy()
         if not isinstance(df.index, pd.MultiIndex):
             if 'timestamp' in df.columns and 'symbol' in df.columns:
@@ -66,7 +70,7 @@ class Panel:
         return Panel(result)
     
     def __radd__(self, other):
-        """Support sum() function."""
+        """Support sum() with initial value 0."""
         if other == 0:
             return self
         return self.__add__(other)
@@ -105,15 +109,16 @@ class Panel:
         n_symbols = len(symbols.unique())
         n_periods = len(timestamps.unique())
         
-        print(f"Panel: {self.data.shape[0]} obs, {len(self.data.columns)} columns")
-        print(f"  symbols={n_symbols}, periods={n_periods}")
-        print(f"  time: {timestamps.min().strftime('%Y-%m-%d')} to {timestamps.max().strftime('%Y-%m-%d')}")
-        print("  NaN per column:")
+        logger.info(f"Panel: {self.data.shape[0]} obs, {len(self.data.columns)} columns")
+        logger.info(f"  symbols={n_symbols}, periods={n_periods}")
+        logger.info(f"  time: {timestamps.min().strftime('%Y-%m-%d')} to {timestamps.max().strftime('%Y-%m-%d')}")
+        logger.info("  NaN per column:")
         for col in self.data.columns:
             n_nan = self.data[col].isna().sum()
-            print(f"    {col}: {n_nan} ({n_nan/len(self.data):.1%})")
+            logger.info(f"    {col}: {n_nan} ({n_nan/len(self.data):.1%})")
     
     def __repr__(self):
+        """String representation with data shape and coverage info."""
         timestamps = self.data.index.get_level_values('timestamp')
         symbols = self.data.index.get_level_values('symbol')
         n_symbols = len(symbols.unique())
@@ -124,6 +129,7 @@ class Panel:
                 f"symbols={n_symbols}, periods={n_periods}, valid={valid_ratio:.1%}, range={time_range})")
     
     def __str__(self):
+        """Human-readable string summary."""
         n_symbols = len(self.data.index.get_level_values('symbol').unique())
         return f"Panel: {self.data.shape[0]} obs, {len(self.data.columns)} columns, {n_symbols} symbols"
 

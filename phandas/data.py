@@ -96,7 +96,7 @@ def fetch_binance(
     SYMBOL_MAP = {'MATIC': ['MATIC', 'POL'], 'POL': ['MATIC', 'POL']}
     
     def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
-        """Fetch OHLCV data for a symbol."""
+        """Fetch OHLCV candlestick data for single symbol."""
         try:
             market_symbol = f'{symbol}/USDT'
             
@@ -139,7 +139,7 @@ def fetch_binance(
             return None
     
     def _fetch_renamed_symbol(exchange, symbols_list: List[str], timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
-        """Fetch and merge data for renamed symbols."""
+        """Fetch and merge OHLCV data for renamed symbols (e.g., MATIC->POL)."""
         dfs = []
         for i, symbol in enumerate(symbols_list):
             df = _fetch_single_symbol(exchange, symbol, timeframe, since, until)
@@ -198,7 +198,7 @@ def fetch_benchmark(
     SYMBOL_MAP = {'MATIC': ['MATIC', 'POL'], 'POL': ['MATIC', 'POL']}
     
     def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
-        """Fetch close price for a symbol."""
+        """Fetch close price candlestick data for single symbol."""
         try:
             market_symbol = f'{symbol}/USDT'
             
@@ -238,7 +238,7 @@ def fetch_benchmark(
             return None
     
     def _fetch_renamed_symbol(exchange, symbols_list: List[str], timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
-        """Fetch and merge close prices for renamed symbols."""
+        """Fetch and merge close prices for renamed symbols (e.g., MATIC->POL)."""
         dfs = []
         for i, symbol in enumerate(symbols_list):
             df = _fetch_single_symbol(exchange, symbol, timeframe, since, until)
@@ -369,7 +369,7 @@ def fetch_calendar(
 
 
 def _process_data(df: pd.DataFrame, timeframe: str, user_symbols: List[str]) -> pd.DataFrame:
-    """Align data to common time range and fill gaps."""
+    """Align multi-source data to common time range and forward fill gaps."""
     FREQ_MAP = {
         '1m': 'min', '5m': '5min', '15m': '15min', '30m': '30min',
         '1h': 'h', '4h': '4h', '1d': 'D', '1w': 'W', '1M': 'MS',

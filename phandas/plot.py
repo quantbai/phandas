@@ -3,11 +3,14 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import logging
 from typing import Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .backtest import Backtester, CombinedBacktester
     from .core import Factor
+
+logger = logging.getLogger(__name__)
 
 _DATE_FORMAT = '%Y-%m-%d'
 
@@ -242,7 +245,7 @@ class FactorPlotter:
         """Plot factor values for single symbol."""
         data = self.factor.data[self.factor.data['symbol'] == symbol].copy()
         if data.empty:
-            print(f"No data found for symbol: {symbol}")
+            logger.warning(f"No data found for symbol: {symbol}")
             return
         
         data = data.sort_values('timestamp')
@@ -272,7 +275,7 @@ class FactorPlotter:
         n_symbols = len(symbols)
         
         if n_symbols == 0:
-            print("No data to plot")
+            logger.warning("No data to plot")
             return
         
         n_cols = min(3, n_symbols)

@@ -1,15 +1,18 @@
 import requests
 import pandas as pd
+import logging
 
-""" Universe Class to Get Top Cryptocurrencies with filter (optional) by Market Cap & Volume """
+logger = logging.getLogger(__name__)
+
 class Universe:
+    """Fetch top cryptocurrencies from CoinGecko with optional filters on market cap and volume."""
     def __init__(self, 
                  top: int = 100, 
                  market_cap_threshold: int | None = None, 
                  volume_threshold: int | None = None, 
-                 # Columns to keep in the final DataFrame, if it is None keep all the default columns
                  keep_columns: list[str] | None = None,
                  vs_currency: str = "usd"):
+        """Initialize Universe with filters. Args: top (default 100), market_cap_threshold, volume_threshold, keep_columns, vs_currency."""
         
         self.top = top
         self.market_cap_threshold = market_cap_threshold
@@ -21,9 +24,9 @@ class Universe:
             keep_columns=keep_columns
         )
 
-    """ Filter Functions """
     @staticmethod
     def is_stable(name: str, symbol: str) -> bool:
+        """Check if coin is stablecoin (USD-pegged)."""
         stable_keywords = ["usd", "usdt", "usdc", "busd", "dai", "ust", "tusd"]
         name = name.lower()
         symbol = symbol.lower()
@@ -31,6 +34,7 @@ class Universe:
 
     @staticmethod
     def is_wrapped(name: str, symbol: str) -> bool:
+        """Check if coin is wrapped, bridged, or synthetic derivative."""
         wrapped_keywords = ["wrap", "wrapped", "staked", "bridged", "pool", "pegged", "synthetic"]
         name = name.lower()
         symbol = symbol.lower()
@@ -38,6 +42,7 @@ class Universe:
 
     @staticmethod
     def is_fake_or_clone(name: str, symbol: str) -> bool:
+        """Check if coin is fake, clone, or fork of major coin."""
         name = name.lower()
         symbol = symbol.lower()
         legit = {
@@ -54,15 +59,13 @@ class Universe:
             return True
         return False
 
-    """ Main Function to Get Top Coins """
     def top_coins(self, 
                 top: int = 100, 
                 market_cap_threshold: int | None = None, 
                 volume_threshold: int | None = None,
                 keep_columns: list[str] | None = None) -> pd.DataFrame:
-
+        """Fetch top coins from CoinGecko API with optional filtering."""
         coins = []
-        # CoinGecko API per_page max is 250
         per_page = top if top < 250 else 250
         total_pages = (top // per_page) + 1
 
@@ -77,18 +80,18 @@ class Universe:
             }
             r = requests.get(url, params=params)
             if r.status_code != 200:
-                print(f"⚠️ CoinGecko API '{page}' page error, status code: {r.status_code}")
+                logger.warning(f"CoinGecko API '{page}' page error, status code: {r.status_code}")
                 continue
             coins.extend(r.json())
 
-        """ Filter Stable & Wrapped Coin """
+        # Filter out stablecoins, wrapped, and fake coins
         df = pd.DataFrame(coins)
         df["is_stable"] = df.apply(lambda x: self.is_stable(x["name"], x["symbol"]), axis=1)
         df["is_wrapped"] = df.apply(lambda x: self.is_wrapped(x["name"], x["symbol"]), axis=1)
         df["is_fake"] = df.apply(lambda x: self.is_fake_or_clone(x["name"], x["symbol"]), axis=1)
         df = df[(df["is_stable"] == False) & (df["is_wrapped"] == False) & (df["is_fake"] == False)]
 
-        """ Filter by Market Cap & Volume """
+        # Filter by market cap and trading volume thresholds
         if market_cap_threshold is not None:
             df = df[df["market_cap"] >= market_cap_threshold]
         if volume_threshold is not None:
@@ -100,6 +103,6 @@ class Universe:
 
         return df
     
-    """ Convert self.coins to symbols list with upper case """
     def to_symbols(self) -> list[str]:
+        """Convert coins to uppercase symbol list."""
         return [symbol.upper() for symbol in self.coins["symbol"].tolist()]

@@ -24,17 +24,17 @@ def median(factor: 'Factor') -> 'Factor':
     """Cross-sectional median per timestamp."""
     return factor.median()
 
-def normalize(factor: 'Factor', useStd: bool = False, limit: float = 0.0) -> 'Factor':
+def normalize(factor: 'Factor', use_std: bool = False, limit: float = 0.0) -> 'Factor':
     """Cross-sectional demean; optional std normalization and clipping."""
-    return factor.normalize(useStd, limit)
+    return factor.normalize(use_std, limit)
 
 def quantile(factor: 'Factor', driver: str = "gaussian", sigma: float = 1.0) -> 'Factor':
     """Cross-sectional quantile transform (normal/uniform/Cauchy)."""
     return factor.quantile(driver, sigma)
 
-def scale(factor: 'Factor', scale: float = 1.0, longscale: float = -1.0, shortscale: float = -1.0) -> 'Factor':
+def scale(factor: 'Factor', scale: float = 1.0, long_scale: float = -1.0, short_scale: float = -1.0) -> 'Factor':
     """Scale to sum(|factor|)=scale; support separate long/short sizing."""
-    return factor.scale(scale, longscale, shortscale)
+    return factor.scale(scale, long_scale, short_scale)
 
 def zscore(factor: 'Factor') -> 'Factor':
     """Cross-sectional standardization (mean=0, std=1)."""
@@ -72,7 +72,7 @@ def ts_std_dev(factor: 'Factor', window: int) -> 'Factor':
     """Rolling standard deviation over window (requires full window)."""
     return factor.ts_std_dev(window)
 
-def where(condition: Factor, x: Union[Factor, float], y: Union[Factor, float]) -> Factor:
+def where(condition: 'Factor', x: Union['Factor', float], y: Union['Factor', float]) -> 'Factor':
     """Select x when condition=True, else y."""
     if not isinstance(x, Factor):
         raise TypeError("The `x` argument must be a Factor object for `where` operator.")

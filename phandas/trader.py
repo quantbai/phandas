@@ -2,7 +2,10 @@
 import time
 import string
 import random
+import logging
 from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_client_order_id() -> str:
@@ -783,17 +786,17 @@ class Rebalancer:
         
         current_position_total = sum(abs(h['usd_value']) for h in self.current_holdings.values())
         
-        print("\n========== 調倉計算詳情 ==========")
-        print(f"帳戶總權益: ${self.budget:,.2f}")
-        print(f"當前持倉總額: ${current_position_total:,.2f}")
+        logger.info("========== 調倉計算詳情 ==========")
+        logger.info(f"帳戶總權益: ${self.budget:,.2f}")
+        logger.info(f"當前持倉總額: ${current_position_total:,.2f}")
         
-        print("\n目標權重:")
+        logger.info("目標權重:")
         for symbol, weight in sorted(self.target_weights.items()):
-            print(f"  {symbol:6} {weight:+.4f}")
+            logger.info(f"  {symbol:6} {weight:+.4f}")
         
-        print("\n每幣種持倉 → 目標 → 差值:")
-        print(f"{'幣種':6} {'當前':>12} {'目標':>12} {'差值':>12} {'操作':>10}")
-        print("-" * 58)
+        logger.info("每幣種持倉 → 目標 → 差值:")
+        logger.info(f"{'幣種':6} {'當前':>12} {'目標':>12} {'差值':>12} {'操作':>10}")
+        logger.info("-" * 58)
         
         for trade in self.plan_data:
             symbol = trade['symbol']
@@ -802,7 +805,7 @@ class Rebalancer:
             diff_usd = trade['diff_usd']
             action = trade['action']
             
-            print(f"{symbol:6} ${current_usd:>11.2f} ${target_usd:>11.2f} ${diff_usd:>+11.2f} {action:>10}")
+            logger.info(f"{symbol:6} ${current_usd:>11.2f} ${target_usd:>11.2f} ${diff_usd:>+11.2f} {action:>10}")
         
         return self
     
@@ -866,7 +869,7 @@ class Rebalancer:
     
     def print_summary(self) -> 'Rebalancer':
         """Print rebalancing summary."""
-        print(self.summary())
+        logger.info(self.summary())
         return self
     
     def get_result(self) -> Dict:
