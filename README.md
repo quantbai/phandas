@@ -45,7 +45,8 @@ from phandas import *
 panel = fetch_data(
     symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'],
     timeframe='1d',
-    start_date='2023-01-01'
+    start_date='2023-01-01',
+    sources=['binance', 'benchmark', 'calendar'],
 )
 
 # Extract factors
@@ -106,7 +107,8 @@ from phandas import *
 panel = fetch_data(
     symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'],
     timeframe='1d',
-    start_date='2023-01-01'
+    start_date='2023-01-01',
+    sources=['binance', 'benchmark', 'calendar'],
 )
 
 # 提取因子

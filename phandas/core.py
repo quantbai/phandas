@@ -2,8 +2,11 @@
 
 import pandas as pd
 import numpy as np
+import logging
 from typing import Union, Optional, Callable, List
 from scipy.stats import norm, uniform, cauchy
+
+logger = logging.getLogger(__name__)
 
 
 class Factor:
@@ -178,26 +181,26 @@ class Factor:
         )
         return Factor(result, f"quantile({self.name},driver={driver},sigma={sigma})")
 
-    def scale(self, scale: float = 1.0, longscale: float = -1.0, shortscale: float = -1.0) -> 'Factor':
-        """Scale to sum(|factor|)=scale; separate long/short scaling if longscale/shortscale > 0."""
+    def scale(self, scale: float = 1.0, long_scale: float = -1.0, short_scale: float = -1.0) -> 'Factor':
+        """Scale to sum(|factor|)=scale; separate long/short scaling if long_scale/short_scale > 0."""
         result = self.data.copy()
 
         def apply_scale(group: pd.Series):
-            if longscale != -1.0 or shortscale != -1.0:
+            if long_scale != -1.0 or short_scale != -1.0:
                 scaled_group = group.copy()
                 
                 long_mask = group > 0
                 short_mask = group < 0
                 
-                if long_mask.any() and longscale > 0:
+                if long_mask.any() and long_scale > 0:
                     long_abs_sum = group[long_mask].abs().sum()
                     if long_abs_sum > 0:
-                        scaled_group[long_mask] = (group[long_mask] / long_abs_sum) * longscale
+                        scaled_group[long_mask] = (group[long_mask] / long_abs_sum) * long_scale
                 
-                if short_mask.any() and shortscale > 0:
+                if short_mask.any() and short_scale > 0:
                     short_abs_sum = group[short_mask].abs().sum()
                     if short_abs_sum > 0:
-                        scaled_group[short_mask] = (group[short_mask] / short_abs_sum) * shortscale
+                        scaled_group[short_mask] = (group[short_mask] / short_abs_sum) * short_scale
                 
                 return scaled_group
             else:
@@ -207,10 +210,10 @@ class Factor:
                 return (group / abs_sum) * scale
 
         result['factor'] = result.groupby('timestamp')['factor'].transform(apply_scale)
-        return Factor(result, f"scale({self.name},scale={scale},longscale={longscale},shortscale={shortscale})")
+        return Factor(result, f"scale({self.name},scale={scale},long_scale={long_scale},short_scale={short_scale})")
 
-    def normalize(self, useStd: bool = False, limit: float = 0.0) -> 'Factor':
-        """Cross-sectional demean; divide by std if useStd; clip to [-limit, limit] if limit>0."""
+    def normalize(self, use_std: bool = False, limit: float = 0.0) -> 'Factor':
+        """Cross-sectional demean; divide by std if use_std; clip to [-limit, limit] if limit>0."""
         result = self.data.copy()
 
         def apply_normalize(group: pd.Series):
@@ -219,7 +222,7 @@ class Factor:
             
             normalized_group = group - group.mean()
 
-            if useStd:
+            if use_std:
                 std_val = group.std()
                 if std_val == 0 or pd.isna(std_val):
                     return pd.Series(np.nan, index=group.index)
@@ -231,11 +234,11 @@ class Factor:
             return normalized_group
 
         result['factor'] = result.groupby('timestamp')['factor'].transform(apply_normalize)
-        return Factor(result, f"normalize({self.name},useStd={useStd},limit={limit})")
+        return Factor(result, f"normalize({self.name},use_std={use_std},limit={limit})")
 
     def zscore(self) -> 'Factor':
         """Cross-sectional standardization (mean=0, std=1)."""
-        return self.normalize(useStd=True)
+        return self.normalize(use_std=True)
 
     def spread(self, pct: float = 0.5) -> 'Factor':
         """Long-short binary signal: top pct% → +0.5, bottom pct% → -0.5, else 0."""
@@ -1217,9 +1220,9 @@ class Factor:
         nan_ratio = n_nan / n_obs if n_obs > 0 else 0
         time_range = f"{self.data['timestamp'].min().strftime('%Y-%m-%d')} to {self.data['timestamp'].max().strftime('%Y-%m-%d')}"
         
-        print(f"Factor: {self.name}")
-        print(f"  obs={n_obs}, symbols={n_symbols}, period={time_range}")
-        print(f"  NaN: {n_nan} ({nan_ratio:.1%})")
+        logger.info(f"Factor: {self.name}")
+        logger.info(f"  obs={n_obs}, symbols={n_symbols}, period={time_range}")
+        logger.info(f"  NaN: {n_nan} ({nan_ratio:.1%})")
     
     def __repr__(self):
         """Detailed representation with metadata."""
@@ -1235,9 +1238,9 @@ class Factor:
         n_symbols = self.data['symbol'].nunique()
         return f"Factor({self.name}): {len(self.data)} obs, {n_symbols} symbols"
 
-    def plot(self, symbol: Optional[str] = None, figsize: tuple = (12, 6), 
+    def show(self, symbol: Optional[str] = None, figsize: tuple = (12, 6), 
              title: Optional[str] = None) -> None:
-        """Plot factor over time. symbol=None plots all symbols in subgrid."""
+        """Display factor time series plot. symbol=None shows all symbols in subgrid."""
         from .plot import FactorPlotter
         plotter = FactorPlotter(self)
         plotter.plot(symbol, figsize, title)
