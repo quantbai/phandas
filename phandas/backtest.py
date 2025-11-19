@@ -282,7 +282,7 @@ class Backtester:
 
 
     def _build_date_cache(self, factor: 'Factor') -> dict:
-        """Build cache of factor data indexed by date."""
+        """Cache factor data by date (skip dates with NaN)."""
         cache = {}
         for date, group in factor.data.groupby('timestamp', sort=False):
             series = group.set_index('symbol')['factor']
@@ -301,11 +301,11 @@ class Backtester:
             return self._strategy_cache.get(date, pd.Series(dtype=float))
     
     def _find_start_date(self, dates) -> int:
-        """Find first date with complete data in both factors and prior strategy data."""
+        """Find first date with complete data in both factors."""
         for i, date in enumerate(dates):
             if i == 0:
                 continue
-            prev_date = dates[i-1]
+            prev_date = dates[i - 1]
             
             strategy_data = self._get_factor_data(self.strategy_factor, prev_date)
             price_data = self._get_factor_data(self.price_factor, date)
@@ -410,17 +410,14 @@ class Backtester:
         return self
     
     def _calculate_benchmark_equity(self) -> pd.Series:
-        """Equal-weight benchmark: buy all assets on first date, hold."""
+        """Equal-weight buy-and-hold benchmark."""
         history = self.portfolio.get_history_df()
         if history.empty or len(history) < 2:
             return pd.Series(dtype=float)
         
         first_date = history.index[1]
-        if first_date not in self._price_cache:
-            return pd.Series(dtype=float)
-        
-        prices_first = self._price_cache[first_date]
-        if prices_first.empty:
+        prices_first = self._price_cache.get(first_date)
+        if prices_first is None or prices_first.empty:
             return pd.Series(dtype=float)
         
         alloc_per_asset = self.portfolio.initial_capital / len(prices_first)
@@ -443,6 +440,11 @@ class Backtester:
         plotter = BacktestPlotter(self)
         plotter.plot_equity(figsize, show_summary, show_benchmark)
         return self
+    
+    def get_equity_curve(self) -> List[float]:
+        """Get equity curve as list (zero-cost, returns pre-computed data)."""
+        history = self.portfolio.get_history_df()
+        return history['total_value'].tolist() if not history.empty else []
     
     def get_daily_turnover_df(self) -> pd.DataFrame:
         """Daily turnover (|trades| / NAV)."""
@@ -513,11 +515,9 @@ class CombinedBacktester:
         return self
 
     def _get_aligned_returns(self) -> pd.DataFrame:
-        """Align returns across strategies."""
-        returns_dict = {}
-        for i, bt in enumerate(self.backtests):
-            returns_dict[f'strategy_{i}'] = bt.get_daily_returns()
-        
+        """Align returns across all strategies."""
+        returns_dict = {f'strategy_{i}': bt.get_daily_returns() 
+                       for i, bt in enumerate(self.backtests)}
         df = pd.DataFrame(returns_dict)
         return df.dropna(how='all')
 
@@ -549,12 +549,9 @@ class CombinedBacktester:
             return pd.DataFrame()
         
         corr = returns_df.corr()
-        
         rename_map = {f'strategy_{i}': self.backtests[i].strategy_factor.name 
                      for i in range(len(self.backtests))}
-        corr = corr.rename(index=rename_map, columns=rename_map)
-        
-        return corr
+        return corr.rename(index=rename_map, columns=rename_map)
 
     def print_correlation_matrix(self) -> 'CombinedBacktester':
         """Print correlation matrix."""
