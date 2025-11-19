@@ -70,6 +70,38 @@ result = backtest(
 result.plot_equity()
 ```
 
+### MCP Support (Model Context Protocol)
+
+Phandas provides a built-in MCP server, allowing AI agents (like Claude) to directly use Phandas tools to fetch data and analyze markets.
+
+#### Configuration for Claude Desktop
+
+Add the following to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "phandas": {
+      "command": "uvx",
+      "args": ["phandas", "phandas-mcp"]
+    }
+  }
+}
+```
+
+Or if you have installed it in your local environment (requires `pip install phandas`):
+
+```json
+{
+  "mcpServers": {
+    "phandas": {
+      "command": "python",
+      "args": ["-m", "phandas.mcp_server"]
+    }
+  }
+}
+```
+
 ---
 
 Developed by Phantom Management.
@@ -130,6 +162,38 @@ result = backtest(
 )
 
 result.plot_equity()
+```
+
+### MCP 支援 (Model Context Protocol)
+
+Phandas 內建 MCP 伺服器，允許 AI 代理（如 Claude）直接使用 Phandas 工具來獲取資料與分析市場。
+
+#### Claude Desktop 設定
+
+請將以下內容加入您的 `claude_desktop_config.json`：
+
+```json
+{
+  "mcpServers": {
+    "phandas": {
+      "command": "uvx",
+      "args": ["phandas", "phandas-mcp"]
+    }
+  }
+}
+```
+
+或者，如果您已在本地環境安裝（需先執行 `pip install phandas`）：
+
+```json
+{
+  "mcpServers": {
+    "phandas": {
+      "command": "python",
+      "args": ["-m", "phandas.mcp_server"]
+    }
+  }
+}
 ```
 
 ---

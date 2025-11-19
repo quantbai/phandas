@@ -18,8 +18,13 @@ setup(
         'scipy>=1.9.0',
         'python-okx>=0.4.0',
         'requests>=2.25.0',
-        
+        'mcp>=0.1.0',
     ],
+    entry_points={
+        'console_scripts': [
+            'phandas-mcp=phandas.mcp_server:main',
+        ],
+    },
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
