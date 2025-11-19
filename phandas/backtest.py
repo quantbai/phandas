@@ -51,7 +51,7 @@ def _identify_drawdown_periods(equity_series: pd.Series) -> List[Dict]:
     return sorted(periods, key=lambda x: x['depth'])
 
 
-def _calculate_performance_metrics(returns: pd.Series, risk_free_rate: float = 0.0, 
+def _calculate_performance_metrics(returns: pd.Series, risk_free_rate: float = 0.03, 
                                    annualization_factor: float = 365.0) -> Dict:
     """Calculate Sharpe, Sortino, Calmar, linearity, and risk metrics."""
     if returns.empty or len(returns) < 2:
@@ -249,7 +249,7 @@ class Backtester:
         
         return self
     
-    def calculate_metrics(self, risk_free_rate: float = 0.0) -> 'Backtester':
+    def calculate_metrics(self, risk_free_rate: float = 0.03) -> 'Backtester':
         """Calculate performance metrics and return self for chaining."""
         history = self.portfolio.get_history_df()
         if history.empty or len(history) < 2:
@@ -259,7 +259,7 @@ class Backtester:
         equity_curve = history['total_value']
         daily_returns = equity_curve.pct_change(fill_method=None).dropna()
         
-        self.metrics = _calculate_performance_metrics(daily_returns, risk_free_rate, annualization_factor=365.0)
+        self.metrics = _calculate_performance_metrics(daily_returns, risk_free_rate, annualization_factor=365)
         psr = self._calculate_psr(daily_returns) if not daily_returns.empty else 0
         self.metrics['psr'] = psr
         
@@ -508,10 +508,10 @@ class CombinedBacktester:
         self.metrics = {}
         self.calculate_metrics()
 
-    def calculate_metrics(self, risk_free_rate: float = 0.0) -> 'CombinedBacktester':
+    def calculate_metrics(self, risk_free_rate: float = 0.03) -> 'CombinedBacktester':
         """Calculate combined portfolio metrics."""
         port_returns = self.get_portfolio_returns()
-        self.metrics = _calculate_performance_metrics(port_returns, risk_free_rate, annualization_factor=252.0)
+        self.metrics = _calculate_performance_metrics(port_returns, risk_free_rate, annualization_factor=365)
         return self
 
     def _get_aligned_returns(self) -> pd.DataFrame:

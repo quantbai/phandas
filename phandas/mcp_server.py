@@ -159,8 +159,8 @@ def execute_factor_backtest(
     Returns:
         JSON string with backtest results containing:
         - status: 'success' or 'error'
-        - summary: Performance metrics (total_return, sharpe_ratio, max_drawdown, linearity, etc.)
-        - drawdown_periods: List of major drawdown periods with depth and duration
+        - summary: Performance metrics (total_return, annual_return, sharpe_ratio, max_drawdown)
+        - factor_expression: Complete factor expression (one-line, including intermediate variables)
         - error: Error message if status is 'error'
     
     Examples:
@@ -210,16 +210,15 @@ def execute_factor_backtest(
             'total_return': summary.get('total_return', 0),
             'annual_return': summary.get('annual_return', 0),
             'sharpe_ratio': summary.get('sharpe_ratio', 0),
-            'sortino_ratio': summary.get('sortino_ratio', 0),
             'max_drawdown': summary.get('max_drawdown', 0),
-            'linearity': summary.get('linearity', 0),
-            'annual_volatility': summary.get('annual_volatility', 0),
         }
+        
+        factor_expr = namespace['factor'].name if hasattr(namespace['factor'], 'name') else 'factor'
         
         result = {
             'status': 'success',
             'summary': key_metrics,
-            'drawdown_periods': summary.get('drawdown_periods', [])[:5],
+            'factor_expression': factor_expr,
             'error': None
         }
         
