@@ -1,3 +1,4 @@
+"""OKX cryptocurrency perpetual swap trading and portfolio rebalancing."""
 
 import time
 import string
@@ -9,9 +10,18 @@ logger = logging.getLogger(__name__)
 
 
 def _generate_client_order_id() -> str:
+    """Generate unique client order ID."""
     timestamp = str(int(time.time() * 1000))
     random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
     return f"t{timestamp}{random_suffix}"[:32]
+
+
+def _safe_float(val) -> float:
+    """Safe float conversion with error handling."""
+    try:
+        return float(val) if val and val != '' else 0.0
+    except (ValueError, TypeError):
+        return 0.0
 
 
 class OKXTrader:
@@ -136,12 +146,6 @@ class OKXTrader:
             return {'error': res.get('msg', 'Unknown error')}
         
         inst = res['data'][0]
-        
-        def _safe_float(val):
-            try:
-                return float(val) if val and val != '' else None
-            except (ValueError, TypeError):
-                return None
         
         return {
             'symbol': inst.get('instId'),
@@ -338,12 +342,6 @@ class OKXTrader:
     
     def get_account_balance_info(self) -> Dict:
         """Get account balance information."""
-        def _safe_float(val):
-            try:
-                return float(val) if val and val != '' else 0.0
-            except (ValueError, TypeError):
-                return 0.0
-        
         res = self.account_api.get_account_balance()
         if res['code'] != '0' or not res['data']:
             return {'error': res.get('msg', 'Unknown error')}

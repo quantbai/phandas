@@ -1,6 +1,9 @@
+"""Cryptocurrency universe fetcher with CoinGecko API."""
+
 import requests
 import pandas as pd
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -8,11 +11,11 @@ class Universe:
     """Fetch top cryptocurrencies from CoinGecko with optional filters on market cap and volume."""
     def __init__(self, 
                  top: int = 100, 
-                 market_cap_threshold: int | None = None, 
-                 volume_threshold: int | None = None, 
-                 keep_columns: list[str] | None = None,
+                 market_cap_threshold: Optional[int] = None, 
+                 volume_threshold: Optional[int] = None, 
+                 keep_columns: Optional[list] = None,
                  vs_currency: str = "usd"):
-        """Initialize Universe with filters. Args: top (default 100), market_cap_threshold, volume_threshold, keep_columns, vs_currency."""
+        """Initialize Universe with optional filters on market cap, volume, and columns."""
         
         self.top = top
         self.market_cap_threshold = market_cap_threshold
@@ -61,9 +64,9 @@ class Universe:
 
     def top_coins(self, 
                 top: int = 100, 
-                market_cap_threshold: int | None = None, 
-                volume_threshold: int | None = None,
-                keep_columns: list[str] | None = None) -> pd.DataFrame:
+                market_cap_threshold: Optional[int] = None, 
+                volume_threshold: Optional[int] = None,
+                keep_columns: Optional[list] = None) -> pd.DataFrame:
         """Fetch top coins from CoinGecko API with optional filtering."""
         coins = []
         per_page = top if top < 250 else 250
@@ -103,6 +106,6 @@ class Universe:
 
         return df
     
-    def to_symbols(self) -> list[str]:
+    def to_symbols(self) -> list:
         """Convert coins to uppercase symbol list."""
         return [symbol.upper() for symbol in self.coins["symbol"].tolist()]

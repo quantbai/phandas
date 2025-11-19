@@ -5,12 +5,18 @@ import ccxt
 import time
 import os
 import logging
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from .panel import Panel
 
 logger = logging.getLogger(__name__)
+
+TIMEFRAME_MAP = {
+    '1m': 'min', '5m': '5min', '15m': '15min', '30m': '30min',
+    '1h': 'h', '4h': '4h', '1d': 'D', '1w': 'W', '1M': 'MS',
+}
+FETCH_BATCH_SIZE = 1000
 
 
 def fetch_data(
@@ -21,7 +27,37 @@ def fetch_data(
     sources: Optional[List[str]] = None,
     output_path: Optional[str] = None
 ) -> 'Panel':
-    """Fetch, merge, and align multi-source data."""
+    """Fetch, merge, and align multi-source data.
+    
+    Defaults to Daily resolution ('1d') and all available sources: 
+    ['binance', 'vwap', 'benchmark', 'calendar'].
+    """
+    if sources is None:
+        sources = ['binance', 'vwap', 'benchmark', 'calendar']
+        
+    return fetch_panel_core(
+        symbols=symbols,
+        timeframe=timeframe,
+        start_date=start_date,
+        end_date=end_date,
+        sources=sources,
+        output_path=output_path
+    )
+
+
+def fetch_panel_core(
+    symbols: List[str], 
+    timeframe: str = '1d',
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    sources: Optional[List[str]] = None,
+    output_path: Optional[str] = None
+) -> 'Panel':
+    """Core function to fetch, merge, and align multi-source data (Any resolution).
+    
+    This function is the internal engine that supports arbitrary timeframes.
+    It orchestrates fetching from individual sources and aligning them into a Panel.
+    """
     if sources is None:
         sources = ['binance']
     
@@ -29,6 +65,7 @@ def fetch_data(
         'binance': fetch_binance,
         'benchmark': fetch_benchmark,
         'calendar': fetch_calendar,
+        'vwap': fetch_vwap,
     }
     
     raw_dfs = []
@@ -36,23 +73,30 @@ def fetch_data(
     
     for source in sources:
         if source not in source_map:
-            raise ValueError(f"Unknown source: {source}. Available: {list(source_map.keys())}")
+            logger.warning(f"Unknown source: {source}. Available: {list(source_map.keys())}")
+            continue
         
         logger.info(f"Fetching from {source}...")
         
-        if source == 'binance':
-            df = source_map[source](symbols, timeframe, start_date, end_date)
-            if df is not None and 'timestamp' in df.columns:
-                binance_end_date = df['timestamp'].max().strftime('%Y-%m-%d')
-                logger.info(f"  Binance data ends at: {binance_end_date}")
-        else:
-            source_end_date = binance_end_date or end_date
-            df = source_map[source](symbols, timeframe, start_date, source_end_date)
+        try:
+            if source == 'binance':
+                df = source_map[source](symbols, timeframe, start_date, end_date)
+                if df is not None and 'timestamp' in df.columns:
+                    binance_end_date = df['timestamp'].max().strftime('%Y-%m-%d')
+                    logger.info(f"  Binance data ends at: {binance_end_date}")
+            else:
+                source_end_date = binance_end_date or end_date
+                df = source_map[source](symbols, timeframe, start_date, source_end_date)
+            
+            if df is not None:
+                if not isinstance(df.index, pd.MultiIndex) and 'timestamp' in df.columns and 'symbol' in df.columns:
+                    df = df.set_index(['timestamp', 'symbol'])
+                raw_dfs.append(df)
+            else:
+                logger.warning(f"  No data returned from {source}")
         
-        if df is not None:
-            if not isinstance(df.index, pd.MultiIndex) and 'timestamp' in df.columns and 'symbol' in df.columns:
-                df = df.set_index(['timestamp', 'symbol'])
-            raw_dfs.append(df)
+        except Exception as e:
+            logger.error(f"  Failed to fetch from {source}: {e}")
     
     if not raw_dfs:
         raise ValueError("No data fetched from any source")
@@ -86,106 +130,167 @@ def fetch_data(
     return result
 
 
+def _fetch_ohlcv_data(
+    exchange, 
+    symbols: List[str], 
+    timeframe: str, 
+    since, 
+    until=None,
+    columns_post_process: Optional[Callable] = None
+) -> Optional[pd.DataFrame]:
+    """Generic OHLCV fetcher with optional column post-processing.
+    
+    Parameters
+    ----------
+    exchange : ccxt.Exchange
+        Exchange instance with fetchOHLCV support
+    symbols : List[str]
+        Symbols to fetch
+    timeframe : str
+        Timeframe (e.g., '1d', '1h')
+    since : int
+        Milliseconds timestamp
+    until : int, optional
+        Upper bound timestamp
+    columns_post_process : Callable, optional
+        Function to select/rename columns from raw OHLCV
+    """
+    SYMBOL_RENAMES = {'MATIC': ['MATIC', 'POL'], 'POL': ['MATIC', 'POL']}
+    
+    def _fetch_single(sym: str) -> Optional[pd.DataFrame]:
+        try:
+            market_sym = f'{sym}/USDT'
+            exchange.load_markets()
+            if market_sym not in exchange.symbols:
+                logger.warning(f"{market_sym} not available")
+                return None
+            
+            all_candles = []
+            cursor = since
+            
+            while True:
+                batch = exchange.fetch_ohlcv(market_sym, timeframe, since=cursor, limit=FETCH_BATCH_SIZE)
+                if not batch:
+                    break
+                
+                if until:
+                    batch = [c for c in batch if c[0] <= until]
+                    all_candles.extend(batch)
+                    if len(batch) < FETCH_BATCH_SIZE:
+                        break
+                else:
+                    all_candles.extend(batch)
+                
+                cursor = batch[-1][0] + 1
+                time.sleep(exchange.rateLimit / 1000)
+            
+            if not all_candles:
+                return None
+            
+            df = pd.DataFrame(all_candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df['symbol'] = sym
+            
+            return df
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch {sym}: {e}")
+            return None
+    
+    dfs = []
+    for symbol in symbols:
+        df = _fetch_single(symbol)
+        if df is not None:
+            dfs.append(df)
+    
+    if not dfs:
+        return None
+    
+    result = pd.concat(dfs, ignore_index=True)
+    
+    if columns_post_process:
+        result = columns_post_process(result)
+    
+    return result
+
+
 def fetch_binance(
     symbols: List[str],
     timeframe: str = '1d',
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch OHLCV data from Binance."""
-    SYMBOL_MAP = {'MATIC': ['MATIC', 'POL'], 'POL': ['MATIC', 'POL']}
+    """Fetch OHLCV data from Binance.
     
-    def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
-        """Fetch OHLCV candlestick data for single symbol."""
-        try:
-            market_symbol = f'{symbol}/USDT'
-            
-            exchange.load_markets()
-            if market_symbol not in exchange.symbols:
-                logger.warning(f"{market_symbol} not available on exchange")
-                return None
-            
-            all_ohlcv = []
-            limit = 1000
-            
-            while True:
-                ohlcv = exchange.fetch_ohlcv(market_symbol, timeframe, since=since, limit=limit)
-                if not ohlcv:
-                    break
-                
-                if until:
-                    ohlcv = [candle for candle in ohlcv if candle[0] <= until]
-                    all_ohlcv.extend(ohlcv)
-                    if len(ohlcv) < limit:
-                        break
-                else:
-                    all_ohlcv.extend(ohlcv)
-                
-                since = ohlcv[-1][0] + 1
-                time.sleep(exchange.rateLimit / 1000)
-            
-            if not all_ohlcv:
-                return None
-                
-            df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df['symbol'] = symbol
-            
-            logger.info(f"Fetched {len(df)} records for {symbol}")
-            return df
-            
-        except Exception as e:
-            logger.warning(f"Failed to fetch {symbol}: {e}")
-            return None
-    
-    def _fetch_renamed_symbol(exchange, symbols_list: List[str], timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
-        """Fetch and merge OHLCV data for renamed symbols (e.g., MATIC->POL)."""
-        dfs = []
-        for i, symbol in enumerate(symbols_list):
-            df = _fetch_single_symbol(exchange, symbol, timeframe, since, until)
-            if df is not None:
-                df['_order'] = i
-                dfs.append(df)
-        
-        if not dfs:
-            return None
-        
-        combined = pd.concat(dfs, ignore_index=True)
-        combined = combined.sort_values(['timestamp', '_order']).drop_duplicates(subset=['timestamp'], keep='last')
-        return combined.drop('_order', axis=1)
-    
-    download_symbols = list(set(symbols))
-    
+    Handles symbol renames (e.g., MATIC -> POL): fetches MATIC historical data
+    before 2024-09 and POL data after, then merges them.
+    """
     try:
-        exchange_obj = ccxt.binance()
+        exchange = ccxt.binance()
+        if not exchange.has['fetchOHLCV']:
+            logger.error("Binance does not support OHLCV")
+            return None
+        
+        since = exchange.parse8601(f'{start_date}T00:00:00Z') if start_date else None
+        until = exchange.parse8601(f'{end_date}T00:00:00Z') if end_date else None
+        
+        symbols_to_fetch = list(set(symbols))
+        
+        if 'POL' in symbols_to_fetch:
+            pol_since = exchange.parse8601('2024-09-01T00:00:00Z')
+            
+            if since is None or since < pol_since:
+                matic_until = pol_since - 1
+                logger.info("Fetching MATIC historical data for POL before 2024-09")
+                matic_data = _fetch_ohlcv_data(
+                    exchange, 
+                    ['MATIC'] + [s for s in symbols_to_fetch if s != 'POL'],
+                    timeframe, 
+                    since, 
+                    matic_until
+                )
+                
+                pol_data = _fetch_ohlcv_data(
+                    exchange,
+                    symbols_to_fetch,
+                    timeframe,
+                    pol_since,
+                    until
+                )
+                
+                if matic_data is not None and pol_data is not None:
+                    matic_data.loc[matic_data['symbol'] == 'MATIC', 'symbol'] = 'POL'
+                    result = pd.concat([matic_data, pol_data], ignore_index=True)
+                    result = result.sort_values('timestamp').reset_index(drop=True)
+                    
+                    pol_rows = result[result['symbol'] == 'POL'].copy()
+                    if len(pol_rows) > 0:
+                        pol_rows = pol_rows.set_index('timestamp').sort_index()
+                        pol_rows = pol_rows.reindex(
+                            pd.date_range(pol_rows.index.min(), pol_rows.index.max(), freq='D')
+                        ).ffill()
+                        pol_rows = pol_rows.reset_index().rename(columns={'index': 'timestamp'})
+                        pol_rows['volume'] = pol_rows['volume'].fillna(0)
+                        result = pd.concat([
+                            result[result['symbol'] != 'POL'],
+                            pol_rows
+                        ], ignore_index=True)
+                        result = result.sort_values('timestamp').reset_index(drop=True)
+                    
+                    return result
+                elif matic_data is not None:
+                    matic_data.loc[matic_data['symbol'] == 'MATIC', 'symbol'] = 'POL'
+                    return matic_data
+                elif pol_data is not None:
+                    return pol_data
+                else:
+                    return None
+        
+        return _fetch_ohlcv_data(exchange, symbols_to_fetch, timeframe, since, until)
+        
     except Exception as e:
         logger.error(f"Failed to initialize Binance: {e}")
         return None
-    
-    if not exchange_obj.has['fetchOHLCV']:
-        logger.error("Binance does not support OHLCV")
-        return None
-    
-    since = exchange_obj.parse8601(f'{start_date}T00:00:00Z') if start_date else None
-    until = exchange_obj.parse8601(f'{end_date}T00:00:00Z') if end_date else None
-    
-    all_data = []
-    for symbol in download_symbols:
-        if symbol in SYMBOL_MAP:
-            data = _fetch_renamed_symbol(exchange_obj, SYMBOL_MAP[symbol], timeframe, since, until)
-            if data is not None:
-                data['symbol'] = 'POL'
-                all_data.append(data)
-        else:
-            data = _fetch_single_symbol(exchange_obj, symbol, timeframe, since, until)
-            if data is not None:
-                all_data.append(data)
-    
-    if not all_data:
-        logger.warning("No data fetched from Binance")
-        return None
-    
-    return pd.concat(all_data, ignore_index=True)
 
 
 def fetch_benchmark(
@@ -194,118 +299,48 @@ def fetch_benchmark(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch market benchmark data (BTC, ETH)."""
-    SYMBOL_MAP = {'MATIC': ['MATIC', 'POL'], 'POL': ['MATIC', 'POL']}
-    
-    def _fetch_single_symbol(exchange, symbol: str, timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
-        """Fetch close price candlestick data for single symbol."""
-        try:
-            market_symbol = f'{symbol}/USDT'
-            
-            exchange.load_markets()
-            if market_symbol not in exchange.symbols:
-                logger.warning(f"{market_symbol} not available on exchange")
-                return None
-            
-            all_ohlcv = []
-            limit = 1000
-            
-            while True:
-                ohlcv = exchange.fetch_ohlcv(market_symbol, timeframe, since=since, limit=limit)
-                if not ohlcv:
-                    break
-                
-                if until:
-                    ohlcv = [candle for candle in ohlcv if candle[0] <= until]
-                    all_ohlcv.extend(ohlcv)
-                    if len(ohlcv) < limit:
-                        break
-                else:
-                    all_ohlcv.extend(ohlcv)
-                
-                since = ohlcv[-1][0] + 1
-                time.sleep(exchange.rateLimit / 1000)
-            
-            if not all_ohlcv:
-                return None
-                
-            df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            return df[['timestamp', 'close']]
-            
-        except Exception as e:
-            logger.warning(f"Failed to fetch {symbol}: {e}")
-            return None
-    
-    def _fetch_renamed_symbol(exchange, symbols_list: List[str], timeframe: str, since, until=None) -> Optional[pd.DataFrame]:
-        """Fetch and merge close prices for renamed symbols (e.g., MATIC->POL)."""
-        dfs = []
-        for i, symbol in enumerate(symbols_list):
-            df = _fetch_single_symbol(exchange, symbol, timeframe, since, until)
-            if df is not None:
-                df['_order'] = i
-                dfs.append(df)
-        
-        if not dfs:
-            return None
-        
-        combined = pd.concat(dfs, ignore_index=True)
-        combined = combined.sort_values(['timestamp', '_order']).drop_duplicates(subset=['timestamp'], keep='last')
-        return combined[['timestamp', 'close']]
-    
+    """Fetch market benchmark data (BTC, ETH) for all symbols."""
     try:
-        exchange_obj = ccxt.binance()
+        exchange = ccxt.binance()
+        if not exchange.has['fetchOHLCV']:
+            logger.error("Binance does not support OHLCV")
+            return None
+        
+        since = exchange.parse8601(f'{start_date}T00:00:00Z') if start_date else None
+        until = exchange.parse8601(f'{end_date}T00:00:00Z') if end_date else None
+        
+        def extract_close(df):
+            return df[['timestamp', 'close']]
+        
+        factor_data = {}
+        for factor in ['BTC', 'ETH']:
+            df = _fetch_ohlcv_data(exchange, [factor], timeframe, since, until, extract_close)
+            if df is not None:
+                df = df.rename(columns={'close': f'{factor}_close'})
+                factor_data[factor] = df
+        
+        if not factor_data:
+            logger.warning("No factor data fetched")
+            return None
+        
+        combined = pd.concat(factor_data.values(), axis=1)
+        combined = combined.loc[:, ~combined.columns.duplicated(keep='first')]
+        
+        rows = [
+            {
+                'timestamp': ts,
+                'symbol': sym,
+                **row.to_dict()
+            }
+            for sym in symbols
+            for ts, row in combined.reset_index().iterrows()
+        ]
+        
+        return pd.DataFrame(rows) if rows else None
+        
     except Exception as e:
-        logger.error(f"Failed to initialize Binance: {e}")
+        logger.error(f"Failed to fetch benchmark: {e}")
         return None
-    
-    if not exchange_obj.has['fetchOHLCV']:
-        logger.error("Binance does not support OHLCV")
-        return None
-    
-    since = exchange_obj.parse8601(f'{start_date}T00:00:00Z') if start_date else None
-    until = exchange_obj.parse8601(f'{end_date}T00:00:00Z') if end_date else None
-    
-    factor_symbols = ['BTC', 'ETH']
-    factor_data = {}
-    
-    for factor in factor_symbols:
-        if factor in SYMBOL_MAP:
-            data = _fetch_renamed_symbol(exchange_obj, SYMBOL_MAP[factor], timeframe, since, until)
-            if data is not None:
-                data = data.rename(columns={'close': f'{factor}_close'})
-                factor_data[factor] = data
-        else:
-            data = _fetch_single_symbol(exchange_obj, factor, timeframe, since, until)
-            if data is not None:
-                data = data.rename(columns={'close': f'{factor}_close'})
-                factor_data[factor] = data
-    
-    if not factor_data:
-        logger.warning("No factor data fetched")
-        return None
-    
-    combined = list(factor_data.values())[0]
-    for data in list(factor_data.values())[1:]:
-        combined = combined.merge(data, on='timestamp', how='outer')
-    
-    rows = []
-    for symbol in symbols:
-        for _, row in combined.iterrows():
-            rows.append({
-                'timestamp': row['timestamp'],
-                'symbol': symbol,
-                'BTC_close': row['BTC_close'],
-                'ETH_close': row['ETH_close'],
-            })
-    
-    if not rows:
-        logger.warning("No factor records generated")
-        return None
-    
-    df = pd.DataFrame(rows)
-    logger.info(f"Generated {len(df)} factor records for {len(symbols)} symbols")
-    return df
 
 
 def fetch_calendar(
@@ -314,71 +349,45 @@ def fetch_calendar(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch time-based features (year, month, day).
+    """Fetch time-based features (year, month, day, dayofweek)."""
+    if not start_date or not end_date:
+        logger.warning("Calendar requires both start_date and end_date")
+        return None
     
-    Note: end_date must be provided to avoid using local system time.
-    """
     try:
-        if not start_date:
-            logger.warning("Calendar requires start_date")
-            return None
-        
-        if not end_date:
-            logger.warning("Calendar requires end_date (do not use local system time)")
-            return None
-        
         start = pd.to_datetime(start_date)
         end = pd.to_datetime(end_date)
-        
-        FREQ_MAP = {
-            '1m': 'min', '5m': '5min', '15m': '15min', '30m': '30min',
-            '1h': 'h', '4h': '4h', '1d': 'D', '1w': 'W', '1M': 'MS',
-        }
-        freq = FREQ_MAP.get(timeframe, 'D')
+        freq = TIMEFRAME_MAP.get(timeframe, 'D')
         dates = pd.date_range(start=start, end=end, freq=freq)
         
-        rows = []
-        for symbol in symbols:
-            for date in dates:
-                dayofmonth = date.day
-                dayofmonth_position = 1 if dayofmonth <= 10 else (2 if dayofmonth <= 20 else 3)
-                is_week_end = int(date.dayofweek + 1 >= 6)
-                
-                rows.append({
-                    'timestamp': pd.Timestamp(date),
-                    'symbol': symbol,
-                    'year': date.year,
-                    'month': date.month,
-                    'day': date.day,
-                    'dayofweek': date.dayofweek + 1,
-                    'dayofmonth_position': dayofmonth_position,
-                    'is_week_end': is_week_end,
-                })
+        rows = [
+            {
+                'timestamp': date,
+                'symbol': sym,
+                'year': date.year,
+                'month': date.month,
+                'day': date.day,
+                'dayofweek': date.dayofweek + 1,
+                'dayofmonth_position': 1 + (date.day - 1) // 10,
+                'is_week_end': int(date.dayofweek >= 4),
+            }
+            for sym in symbols
+            for date in dates
+        ]
         
-        if not rows:
-            logger.warning("No dates generated from calendar")
-            return None
-        
-        df = pd.DataFrame(rows)
-        logger.info(f"Generated {len(df)} calendar records for {len(symbols)} symbols")
-        return df
+        return pd.DataFrame(rows) if rows else None
         
     except Exception as e:
-        logger.warning(f"Failed to generate calendar: {e}")
+        logger.error(f"Failed to generate calendar: {e}")
         return None
 
 
 def _process_data(df: pd.DataFrame, timeframe: str, user_symbols: List[str]) -> pd.DataFrame:
     """Align multi-source data to common time range and forward fill gaps."""
-    FREQ_MAP = {
-        '1m': 'min', '5m': '5min', '15m': '15min', '30m': '30min',
-        '1h': 'h', '4h': '4h', '1d': 'D', '1w': 'W', '1M': 'MS',
-    }
-    
     pivoted = df.pivot_table(index='timestamp', columns='symbol', values='close')
     common_start = pivoted.apply(lambda s: s.first_valid_index()).max()
     end_date = df['timestamp'].max()
-    freq = FREQ_MAP.get(timeframe, 'D')
+    freq = TIMEFRAME_MAP.get(timeframe, 'D')
     full_range = pd.date_range(start=common_start, end=end_date, freq=freq)
     
     result_dfs = []
@@ -393,3 +402,55 @@ def _process_data(df: pd.DataFrame, timeframe: str, user_symbols: List[str]) -> 
     result = pd.concat(result_dfs, axis=1).sort_index()
     return result[result.index.get_level_values('symbol').isin(user_symbols)]
 
+
+def fetch_vwap(
+    symbols: List[str],
+    timeframe: str = '1d',
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+) -> Optional[pd.DataFrame]:
+    """Fetch and calculate Volume Weighted Average Price (VWAP).
+    
+    For daily ('1d'): Aggregates hourly data for accurate daily VWAP.
+    For intraday: Cumulative VWAP anchored to trading day start (UTC).
+    """
+    try:
+        is_daily = timeframe == '1d'
+        fetch_tf = '1h' if is_daily else timeframe
+        
+        if start_date:
+            extended_start = pd.to_datetime(start_date).normalize().strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            extended_start = None
+
+        df = fetch_binance(symbols, fetch_tf, extended_start, end_date)
+        if df is None or df.empty:
+            return None
+
+        df['typical_price'] = (df['high'] + df['low'] + df['close']) / 3
+        df['pv'] = df['typical_price'] * df['volume']
+        df['date'] = df['timestamp'].dt.date
+
+        if is_daily:
+            agg = df.groupby(['symbol', 'date']).agg({
+                'pv': 'sum',
+                'volume': 'sum',
+                'timestamp': 'first'
+            }).reset_index()
+            agg['vwap'] = agg['pv'] / agg['volume']
+            agg['timestamp'] = pd.to_datetime(agg['date'])
+            result_df = agg[['timestamp', 'symbol', 'vwap']]
+        else:
+            df['pv_cumsum'] = df.groupby(['symbol', 'date'])['pv'].cumsum()
+            df['vol_cumsum'] = df.groupby(['symbol', 'date'])['volume'].cumsum()
+            df['vwap'] = df['pv_cumsum'] / df['vol_cumsum']
+            result_df = df[['timestamp', 'symbol', 'vwap']]
+
+        if start_date:
+            result_df = result_df[result_df['timestamp'] >= pd.to_datetime(start_date)]
+
+        return result_df
+
+    except Exception as e:
+        logger.error(f"Failed to calculate VWAP: {e}")
+        return None
