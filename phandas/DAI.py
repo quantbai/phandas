@@ -127,7 +127,7 @@ class DAIOnChainScraper:
             w3 = Web3(Web3.HTTPProvider(config['rpc']))
             
             if not w3.is_connected():
-                logger.error(f"❌ 無法連接 {config['name']} RPC")
+                logger.error(f" 無法連接 {config['name']} RPC")
                 return None
             
             block_num = w3.eth.block_number
@@ -193,7 +193,7 @@ class DAIOnChainScraper:
         
         current_block = self.get_current_block(chain_key)
         if current_block is None:
-            logger.error(f"❌ {config['name']} 無法獲取當前區塊")
+            logger.error(f" {config['name']} 無法獲取當前區塊")
             return []
         
         end_date = datetime.now(pytz.UTC)
@@ -247,14 +247,14 @@ class DAIOnChainScraper:
         logger.info(f"✓ {config['name']} 獲取到 {len(all_data)}/{days} 筆數據 ({success_rate:.1f}%)")
         
         if failed_days:
-            logger.warning(f"  ⚠️ {config['name']} 失敗了 {len(failed_days)} 天（API限流或超時）")
+            logger.warning(f"   {config['name']} 失敗了 {len(failed_days)} 天（API限流或超時）")
         
         return all_data
     
     def fetch_solana_historical(self, days: int = 730) -> List[Dict]:
         """查詢Solana上DAI的歷史"""
         if not self.solana_config.get('dai_mint'):
-            logger.warning("❌ Solana: 未配置DAI mint address")
+            logger.warning(" Solana: 未配置DAI mint address")
             logger.info("   提示：Solana上DAI流量極少。如果知道官方mint address，請配置在代碼中")
             return []
         
@@ -286,7 +286,7 @@ class DAIOnChainScraper:
                 break
         
         if all_data:
-            logger.info(f"⚠️ Solana: 獲取到 {len(all_data)} 筆數據")
+            logger.info(f" Solana: 獲取到 {len(all_data)} 筆數據")
             logger.info("  注意：Solana上DAI歷史數據需要特殊方法，這裡只顯示當前值")
         
         return all_data
@@ -491,10 +491,6 @@ class DAIOnChainScraper:
         
         print("\n" + "="*70)
 
-
-# ============================================================================
-# 使用示例
-# ============================================================================
 if __name__ == "__main__":
     import os
     
@@ -505,17 +501,11 @@ if __name__ == "__main__":
     
     scraper = DAIOnChainScraper()
     
-    # =========================================================================
-    # 【重要】配置Solana的DAI mint address（可選）
-    # =========================================================================
-    # scraper.solana_config['dai_mint'] = 'YOUR_DAI_MINT_ADDRESS'
-    # =========================================================================
-    
     print("\n" + "="*70)
     print("DAI 鏈上數據爬蟲 - 選擇運行模式")
     print("="*70)
-    print("\n【模式1】爬取2年歷史數據（首次運行，耗時1-2小時）")
-    print("【模式2】僅獲取當前快照（快速，幾秒鐘）")
+    print("\n【模式1】爬取2年歷史數據")
+    print("【模式2】僅獲取當前快照")
     
     SCRAPE_HISTORY = True  # ← 改為 False 只獲取當前快照
     
