@@ -59,12 +59,12 @@ open = panel['open']
 momentum_20 = (close / close.ts_delay(20)) - 1
 
 # Neutralize against volume
-neutralized_factor = vector_neut(rank(momentum_20), rank(-volume))
+factor = vector_neut(rank(momentum_20), rank(-volume))
 
 # Backtest strategy
 result = backtest(
-    price_factor=open, 
-    strategy_factor=neutralized_factor,
+    entry_price_factor=open, 
+    strategy_factor=factor,
     transaction_cost=(0.0003, 0.0003)
 )
 
@@ -150,12 +150,12 @@ open = panel['open']
 momentum_20 = (close / close.ts_delay(20)) - 1
 
 # 對成交量進行中性化
-neutralized_factor = vector_neut(rank(momentum_20), rank(-volume))
+factor = vector_neut(rank(momentum_20), rank(-volume))
 
 # 回測策略
 result = backtest(
-    price_factor=open, 
-    strategy_factor=neutralized_factor,
+    entry_price_factor=open, 
+    strategy_factor=factor,
     transaction_cost=(0.0003, 0.0003)
 )
 

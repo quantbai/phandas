@@ -191,7 +191,7 @@ def execute_factor_backtest(
             })
         
         bt_results = backtest(
-            price_factor=panel['open'],
+            entry_price_factor=panel['open'],
             strategy_factor=namespace['factor'],
             transaction_cost=(transaction_cost, transaction_cost),
             full_rebalance=full_rebalance,
