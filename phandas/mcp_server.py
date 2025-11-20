@@ -6,7 +6,6 @@ import pandas as pd
 import json
 import logging
 
-# Initialize FastMCP server
 mcp = FastMCP("phandas")
 logger = logging.getLogger(__name__)
 
@@ -44,20 +43,15 @@ def fetch_market_data(
         
         df = panel.data
         
-        # Sort by timestamp to ensure we get the latest
         if 'timestamp' in df.columns:
             df = df.sort_values('timestamp')
-            
-        # Group by symbol and take the last 'limit' rows
+        
         if 'symbol' in df.columns:
             latest_df = df.groupby('symbol').tail(limit)
         else:
             latest_df = df.tail(limit)
-            
-        # Convert to list of dicts (records) for clean JSON output
-        records = latest_df.to_dict(orient='records')
         
-        # Format timestamp to string if needed (to_dict might handle it, but let's be safe for JSON)
+        records = latest_df.to_dict(orient='records')
         for record in records:
             for k, v in record.items():
                 if isinstance(v, pd.Timestamp):
@@ -164,7 +158,6 @@ def execute_factor_backtest(
         - error: Error message if status is 'error'
     
     Examples:
-        # 20-day Momentum Factor (Inverse Volatility with Volume Neutralization)
         factor_code = '''
         log_returns = log(close) - ts_delay(log(close), 20)
         momentum = log_returns.rank()

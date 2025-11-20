@@ -173,15 +173,17 @@ def _fetch_ohlcv_data(
                 if not batch:
                     break
                 
+                original_batch_len = len(batch)
                 if until:
                     batch = [c for c in batch if c[0] <= until]
                     all_candles.extend(batch)
-                    if len(batch) < FETCH_BATCH_SIZE:
+                    if original_batch_len < FETCH_BATCH_SIZE:
                         break
                 else:
                     all_candles.extend(batch)
                 
-                cursor = batch[-1][0] + 1
+                if batch:
+                    cursor = batch[-1][0] + 1
                 time.sleep(exchange.rateLimit / 1000)
             
             if not all_candles:
@@ -369,7 +371,7 @@ def fetch_calendar(
                 'day': date.day,
                 'dayofweek': date.dayofweek + 1,
                 'dayofmonth_position': 1 + (date.day - 1) // 10,
-                'is_week_end': int(date.dayofweek >= 4),
+                'is_week_end': int(date.dayofweek >= 5),
             }
             for sym in symbols
             for date in dates
