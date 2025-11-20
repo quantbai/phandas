@@ -24,11 +24,12 @@ Phandas is a quantitative analysis framework designed for systematic portfolio c
 
 ### Key Features
 
-- **Data management**: Automated OHLCV data fetching with validation and quality checks
-- **Factor operations**: Extensive library of time-series and cross-sectional operators
-- **Neutralization**: Vector projection and regression-based factor neutralization
-- **Backtesting**: Dollar-neutral portfolio construction with dynamic rebalancing
-- **Performance Analytics**: Total Return, Annual Return, Sharpe Ratio, Max Drawdown, Turnover
+- **Data Fetching**: Multi-source OHLCV data
+- **Factor Engine**: 50+ time-series and cross-sectional operators
+- **Neutralization**: Vector projection & regression-based orthogonalization
+- **Backtesting**: Dollar-neutral strategies with dynamic rebalancing
+- **Performance Metrics**: Sharpe, Sortino, Calmar, Max Drawdown, VaR
+- **MCP Integration**: AI agents (Claude) can directly access Phandas via JSON config
 
 ### Installation
 
@@ -58,38 +59,27 @@ open = panel['open']
 momentum_20 = (close / close.ts_delay(20)) - 1
 
 # Neutralize against volume
-neutralized_factor = vector_neut(rank(momentum_20), rank(-volume))
+factor = vector_neut(rank(momentum_20), rank(-volume))
 
 # Backtest strategy
 result = backtest(
-    price_factor=open, 
-    strategy_factor=neutralized_factor,
+    entry_price_factor=open, 
+    strategy_factor=factor,
     transaction_cost=(0.0003, 0.0003)
 )
 
 result.plot_equity()
 ```
 
-### MCP Support (Model Context Protocol)
+### AI Integration via MCP
 
-Phandas provides a built-in MCP server, allowing AI agents (like Claude) to directly use Phandas tools to fetch data and analyze markets.
+Use Phandas with AI IDEs (Cursor, Claude Desktop) directly—no coding required.
 
-#### Configuration for Claude Desktop
+**Setup for Cursor (Recommended)**
 
-Add the following to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "phandas": {
-      "command": "uvx",
-      "args": ["phandas", "phandas-mcp"]
-    }
-  }
-}
-```
-
-Or if you have installed it in your local environment (requires `pip install phandas`):
+1. `pip install phandas`
+2. Open Cursor → Settings → Tools & MCP → **New MCP Server**
+3. Paste the JSON config below, save and restart
 
 ```json
 {
@@ -101,6 +91,13 @@ Or if you have installed it in your local environment (requires `pip install pha
   }
 }
 ```
+
+**Available Tools (4 Functions)**
+
+- `fetch_market_data`: Get OHLCV data for symbols
+- `list_operators`: Browse all 50+ factor operators
+- `read_source`: View source code of any function
+- `execute_factor_backtest`: Backtest custom factor expressions
 
 ---
 
@@ -118,11 +115,12 @@ Phandas 是一個為系統化投資組合構建與風險管理而設計的量化
 
 ### 核心功能
 
-- **資料管理**：自動化 OHLCV 資料獲取，包含驗證與品質檢查
-- **因子運算**：豐富的時間序列與橫截面運算子庫
-- **中性化**：基於向量投影與迴歸的因子中性化
-- **回測**：美元中性投組構建、動態調倉
-- **績效分析**：年化收益、夏普比率、最大回撤、換手率
+- **資料獲取**：多源 OHLCV 資料
+- **因子引擎**：50+ 時間序列與橫截面運算子
+- **因子中性化**：向量投影與迴歸正交化
+- **回測引擎**：美元中性策略、動態調倉
+- **績效指標**：夏普比、Sortino、Calmar、最大回撤、VaR
+- **MCP 集成**：AI 代理（Claude）可直接調用 Phandas
 
 ### 安裝
 
@@ -152,38 +150,27 @@ open = panel['open']
 momentum_20 = (close / close.ts_delay(20)) - 1
 
 # 對成交量進行中性化
-neutralized_factor = vector_neut(rank(momentum_20), rank(-volume))
+factor = vector_neut(rank(momentum_20), rank(-volume))
 
 # 回測策略
 result = backtest(
-    price_factor=open, 
-    strategy_factor=neutralized_factor,
+    entry_price_factor=open, 
+    strategy_factor=factor,
     transaction_cost=(0.0003, 0.0003)
 )
 
 result.plot_equity()
 ```
 
-### MCP 支援 (Model Context Protocol)
+### AI 集成（MCP 支援）
 
-Phandas 內建 MCP 伺服器，允許 AI 代理（如 Claude）直接使用 Phandas 工具來獲取資料與分析市場。
+在 AI IDE（Cursor、Claude Desktop）中直接使用 Phandas—無需編碼。
 
-#### Claude Desktop 設定
+**Cursor 設定（推薦）**
 
-請將以下內容加入您的 `claude_desktop_config.json`：
-
-```json
-{
-  "mcpServers": {
-    "phandas": {
-      "command": "uvx",
-      "args": ["phandas", "phandas-mcp"]
-    }
-  }
-}
-```
-
-或者，如果您已在本地環境安裝（需先執行 `pip install phandas`）：
+1. `pip install phandas`
+2. 開啟 Cursor → Settings → Tools & MCP → **New MCP Server**
+3. 貼上下方 JSON 配置，儲存並重啟
 
 ```json
 {
@@ -195,6 +182,13 @@ Phandas 內建 MCP 伺服器，允許 AI 代理（如 Claude）直接使用 Phan
   }
 }
 ```
+
+**可用工具（4 個函數）**
+
+- `fetch_market_data`: 獲取代幣 OHLCV 資料
+- `list_operators`: 瀏覽 50+ 因子運算子
+- `read_source`: 查看任何函數的源代碼
+- `execute_factor_backtest`: 回測自訂因子表達式
 
 ---
 

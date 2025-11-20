@@ -51,7 +51,7 @@ def _identify_drawdown_periods(equity_series: pd.Series) -> List[Dict]:
     return sorted(periods, key=lambda x: x['depth'])
 
 
-def _calculate_performance_metrics(returns: pd.Series, risk_free_rate: float = 0.0, 
+def _calculate_performance_metrics(returns: pd.Series, risk_free_rate: float = 0.03, 
                                    annualization_factor: float = 365.0) -> Dict:
     """Calculate Sharpe, Sortino, Calmar, linearity, and risk metrics."""
     if returns.empty or len(returns) < 2:
@@ -171,7 +171,7 @@ class Backtester:
     
     def __init__(
         self,
-        price_factor: 'Factor',
+        entry_price_factor: 'Factor',
         strategy_factor: 'Factor',
         transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
         initial_capital: float = 1000,
@@ -179,7 +179,7 @@ class Backtester:
         neutralization: str = "market"
     ):
         """Initialize backtester."""
-        self.price_factor = price_factor
+        self.entry_price_factor = entry_price_factor
         self.strategy_factor = strategy_factor
         self.full_rebalance = full_rebalance
         self.neutralization = neutralization.lower()
@@ -192,12 +192,12 @@ class Backtester:
         self.portfolio = Portfolio(initial_capital)
         self.metrics = {}
         
-        self._price_cache = self._build_date_cache(price_factor)
+        self._price_cache = self._build_date_cache(entry_price_factor)
         self._strategy_cache = self._build_date_cache(strategy_factor)
     
     def run(self) -> 'Backtester':
         """Execute backtest and return self for method chaining."""
-        price_dates = set(self.price_factor.data['timestamp'].unique())
+        price_dates = set(self.entry_price_factor.data['timestamp'].unique())
         strategy_dates = set(self.strategy_factor.data['timestamp'].unique())
         common_dates = sorted(price_dates & strategy_dates)
         
@@ -219,7 +219,7 @@ class Backtester:
             prev_date = common_dates[i - 1] if i > 0 else None
             
             try:
-                current_prices = self._get_factor_data(self.price_factor, current_date)
+                current_prices = self._get_factor_data(self.entry_price_factor, current_date)
                 if current_prices.empty:
                     continue
                 
@@ -249,7 +249,7 @@ class Backtester:
         
         return self
     
-    def calculate_metrics(self, risk_free_rate: float = 0.0) -> 'Backtester':
+    def calculate_metrics(self, risk_free_rate: float = 0.03) -> 'Backtester':
         """Calculate performance metrics and return self for chaining."""
         history = self.portfolio.get_history_df()
         if history.empty or len(history) < 2:
@@ -259,7 +259,7 @@ class Backtester:
         equity_curve = history['total_value']
         daily_returns = equity_curve.pct_change(fill_method=None).dropna()
         
-        self.metrics = _calculate_performance_metrics(daily_returns, risk_free_rate, annualization_factor=365.0)
+        self.metrics = _calculate_performance_metrics(daily_returns, risk_free_rate, annualization_factor=365)
         psr = self._calculate_psr(daily_returns) if not daily_returns.empty else 0
         self.metrics['psr'] = psr
         
@@ -295,7 +295,7 @@ class Backtester:
         if date is None:
             return pd.Series(dtype=float)
         
-        if factor is self.price_factor:
+        if factor is self.entry_price_factor:
             return self._price_cache.get(date, pd.Series(dtype=float))
         else:
             return self._strategy_cache.get(date, pd.Series(dtype=float))
@@ -308,7 +308,7 @@ class Backtester:
             prev_date = dates[i - 1]
             
             strategy_data = self._get_factor_data(self.strategy_factor, prev_date)
-            price_data = self._get_factor_data(self.price_factor, date)
+            price_data = self._get_factor_data(self.entry_price_factor, date)
             
             if not strategy_data.empty and not price_data.empty:
                 return i
@@ -480,7 +480,7 @@ class Backtester:
                    f"period={start_date} to {end_date}, days={days})")
         else:
             return (f"Backtester(strategy={self.strategy_factor.name}, "
-                   f"price={self.price_factor.name}, cost={self.transaction_cost_rates[0]:.3%})")
+                   f"entry_price={self.entry_price_factor.name}, cost={self.transaction_cost_rates[0]:.3%})")
 
     def __add__(self, other: 'Backtester') -> 'CombinedBacktester':
         """Combine two strategies with equal 50-50 weights."""
@@ -508,10 +508,10 @@ class CombinedBacktester:
         self.metrics = {}
         self.calculate_metrics()
 
-    def calculate_metrics(self, risk_free_rate: float = 0.0) -> 'CombinedBacktester':
+    def calculate_metrics(self, risk_free_rate: float = 0.03) -> 'CombinedBacktester':
         """Calculate combined portfolio metrics."""
         port_returns = self.get_portfolio_returns()
-        self.metrics = _calculate_performance_metrics(port_returns, risk_free_rate, annualization_factor=252.0)
+        self.metrics = _calculate_performance_metrics(port_returns, risk_free_rate, annualization_factor=365)
         return self
 
     def _get_aligned_returns(self) -> pd.DataFrame:
@@ -663,7 +663,7 @@ class CombinedBacktester:
 
 
 def backtest(
-    price_factor: 'Factor',
+    entry_price_factor: 'Factor',
     strategy_factor: 'Factor',
     transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
     initial_capital: float = 1000,
@@ -672,7 +672,7 @@ def backtest(
     auto_run: bool = True
 ) -> Backtester:
     """Quick backtesting convenience function."""
-    bt = Backtester(price_factor, strategy_factor, transaction_cost, initial_capital, 
+    bt = Backtester(entry_price_factor, strategy_factor, transaction_cost, initial_capital, 
                    full_rebalance, neutralization)
     
     if auto_run:
