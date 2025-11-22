@@ -82,6 +82,10 @@ def ts_corr(factor1: 'Factor', factor2: 'Factor', window: int) -> 'Factor':
     """Rolling Pearson correlation over window."""
     return factor1.ts_corr(factor2, window)
 
+def ts_step(factor: 'Factor', start: int = 1) -> 'Factor':
+    """Time step counter: 1, 2, 3, ... per symbol."""
+    return factor.ts_step(start)
+
 def ts_delay(factor: 'Factor', window: int) -> 'Factor':
     """Lag factor by window periods."""
     return factor.ts_delay(window)
