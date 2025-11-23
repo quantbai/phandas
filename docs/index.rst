@@ -20,6 +20,15 @@ Phandas 是量化金融的多因子回測框架。支持加密貨幣市場的 Al
    installation
    quickstart
 
+核心指南
+---------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: 核心指南
+
+   guide/operators_guide
+
 教學與範例
 -----------
 

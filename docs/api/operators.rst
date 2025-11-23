@@ -1,7 +1,9 @@
-操作符 API
-==========
+操作符 API 參考
+===============
 
-時間序列操作符和計算函數。
+所有可用操作符的完整列表和簽名。
+
+詳細講解見 :doc:`../guide/operators_guide`。
 
 .. automodule:: phandas.operators
    :members:
