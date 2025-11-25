@@ -3,7 +3,7 @@ A multi-factor quantitative trading framework for cryptocurrency markets.
 """
 
 __author__ = "Phantom Management"
-__version__ = "0.14.1"
+__version__ = "0.15.0"
 
 from .core import Factor
 from .panel import Panel

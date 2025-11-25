@@ -7,6 +7,56 @@ Phandas 提供 **50+ 算子** 用於因子構建。分為四大類：橫截面�
    :local:
    :depth: 2
 
+核心概念
+--------
+
+Factor 物件與面板數據結構
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Phandas 的核心是 **Factor 物件**，代表一個因子的完整時間序列面板數據。
+
+**數據結構**：每個 Factor 包含三列：
+
+- ``timestamp``: 時間戳（日期或時刻）
+- ``symbol``: 資產代碼（如 'BTC', 'ETH'）
+- ``factor``: 因子值（浮點數）
+
+這種結構稱為 **長格式面板數據**（long-format panel data），是量化金融的標準格式::
+
+    timestamp    symbol    factor
+    2024-01-01   BTC       45000.0
+    2024-01-01   ETH       2500.0
+    2024-01-02   BTC       46000.0
+    2024-01-02   ETH       2550.0
+
+算子：Alpha 因子的特徵工程
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**算子（Operators）** 是對 Factor 物件進行變換的函數，本質上是 **量化金融的特徵工程**。
+
+**目的**：將原始市場數據（價格、成交量）轉換為具有預測能力的 **Alpha 因子**。
+
+**工作流程**::
+
+    原始數據 (OHLCV) 
+      → 算子變換 (特徵工程)
+      → Alpha 因子
+      → 回測驗證
+      → 實盤交易
+
+**算子分類**：
+
+1. **橫截面算子**：每個時間點獨立計算（如排序、標準化）
+2. **時序算子**：在時間維度上計算（如移動平均、動量）
+3. **中性化算子**：移除不需要的因子暴露（如成交量偏差）
+4. **數學算子**：基礎數學運算（如對數、冪次）
+
+**設計哲學**：
+
+- **可組合性**：算子可以鏈式調用，構建複雜因子
+- **向量化**：所有計算自動並行處理多資產
+- **NaN 安全**：妥善處理缺失值，避免數據洩漏
+
 橫截面算子
 -----------
 
@@ -456,49 +506,91 @@ Phandas 提供 **50+ 算子** 用於因子構建。分為四大類：橫截面�
 
 ::
 
-    # 簡單動量
+    # 簡單動量（20 日收益率）
     momentum = (close / ts_delay(close, 20)) - 1
     factor = rank(momentum)
 
-    # 多周期動量
-    mom_short = rank((close / ts_delay(close, 5)) - 1)
-    mom_long = rank((close / ts_delay(close, 20)) - 1)
-    momentum = 0.7 * mom_short + 0.3 * mom_long
-    factor = vector_neut(momentum, rank(-volume))
+    # 多周期動量組合
+    mom_short = rank((close / ts_delay(close, 5)) - 1)   # 短期動量
+    mom_long = rank((close / ts_delay(close, 20)) - 1)   # 長期動量
+    
+    # 等權組合（降低參數敏感性）
+    momentum = 0.5 * mom_short + 0.5 * mom_long
+    
+    # 對高成交量中性化（避免流動性衝擊）
+    factor = vector_neut(momentum, rank(volume))
 
 均值回歸因子
 ~~~~~~~~~~~~
 
 ::
 
-    # 相對位置
-    relative_position = (close - ts_min(low, 30)) / (ts_max(high, 30) - ts_min(low, 30))
-    reversion = rank(1 - relative_position)
-    factor = zscore(reversion)
+    # 隨機震盪指標（Stochastic Oscillator）
+    stoch_osc = (close - ts_min(low, 30)) / (ts_max(high, 30) - ts_min(low, 30))
+    
+    # 反轉信號：低位做多，高位做空
+    factor = rank(1 - stoch_osc)  # rank 已標準化，無需 zscore
 
 波動率因子
 ~~~~~~~~~~
 
 ::
 
-    # 波動率反轉
-    volatility = ts_std_dev(returns, 20)
-    vol_factor = rank(1 / volatility)
-    factor = scale(vol_factor)
+    # 低波動率因子（Low Volatility Anomaly）
+    returns = close / ts_delay(close, 1) - 1  # 計算收益率
+    volatility = ts_std_dev(returns, 20)      # 20 日波動率
+    factor = rank(-volatility)                # 低波動率排序
 
 組合因子
 ~~~~~~~~
 
 ::
 
-    # 多因子組合
+    # 多因子組合（等權配置）
     momentum = rank((close / ts_delay(close, 20)) - 1)
     reversion = rank(1 / ts_rank(close, 30))
-    volume_factor = rank(volume)
-
-    factor = (momentum * 0.5 + reversion * 0.3 + volume_factor * 0.2)
+    
+    # 等權組合（避免過度優化）
+    factor = 0.5 * momentum + 0.5 * reversion
     factor = normalize(factor)
-    factor = vector_neut(factor, rank(-volume))
+    
+    # 對成交量中性化（移除流動性偏差）
+    factor = vector_neut(factor, rank(volume))
+
+實戰建議
+--------
+
+因子構建原則
+~~~~~~~~~~~~
+
+1. **從簡單開始**
+   - 先驗證單一算子的效果
+   - 再組合多個因子
+   - 避免過度複雜化
+
+2. **參數選擇**
+   - 使用常見窗口期（5, 10, 20, 60）
+   - 避免過度優化參數
+   - 考慮交易成本和延遲
+
+3. **中性化策略**
+   - 對成交量中性化：避免流動性偏差
+   - 對市值中性化：避免規模效應
+   - 對行業中性化：獲取純 alpha
+
+4. **驗證流程**
+   - 檢查因子分佈（避免極端值）
+   - 計算 IC（信息係數）
+   - 回測夏普比率
+   - 分析換手率
+
+常見陷阱
+~~~~~~~~
+
+1. ❌ **前視偏差**：使用未來數據
+2. ❌ **過度擬合**：參數優化過度
+3. ❌ **倖存者偏差**：只用存活資產
+4. ❌ **交易成本**：忽略滑點和手續費
 
 最佳實踐
 --------

@@ -28,9 +28,12 @@
 
 - Python 3.8+
 - numpy >= 2.0.0
-- pandas >= 2.0.0
+- pandas >= 2.0.0, < 3.0.0
+- matplotlib >= 3.7.0
 - ccxt >= 4.0.0
 - scipy >= 1.9.0
+- python-okx >= 0.4.0
+- requests >= 2.25.0
 
 驗證安裝
 --------

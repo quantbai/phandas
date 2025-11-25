@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "phandas"))
 project = 'phandas'
 copyright = '2025, Phantom Management'
 author = 'Phantom Management'
-release = '0.14.1'
+release = '0.15.0'
 
 # -- General configuration ---------------------------------------------------
 extensions = [

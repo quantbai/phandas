@@ -1,114 +1,131 @@
 快速開始
 ========
 
-3 分鐘上手 Phandas。
+5 分鐘上手 Phandas - 從數據下載到策略回測。
 
 完整工作流
 ---------
 
-1. 獲取市場數據
-~~~~~~~~~~~~~~
+第一步：下載數據與存檔
+~~~~~~~~~~~~~~~~~~~~
 
-::
+下載加密貨幣歷史數據並保存到本地::
 
     from phandas import *
 
-    # 獲取加密貨幣 OHLCV 數據
+    # 下載數據
     panel = fetch_data(
-        symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'],
-        timeframe='1d',
-        start_date='2023-01-01',
-        sources=['binance', 'benchmark', 'calendar'],
+        symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'], 
+        start_date='2022-01-01',
+        sources=['binance']
     )
 
-2. 提取基礎數據
-~~~~~~~~~~~~~~~
+    # 保存到 CSV（避免重複下載）
+    panel.to_csv('crypto_1d.csv')
 
-::
+.. note::
+   使用 ``to_csv()`` 保存數據後，下次可以直接用 ``from_csv()`` 讀取，不需要重複下載。
 
-    # OHLCV 數據自動解析為 Factor 對象
+第二步：載入數據
+~~~~~~~~~~~~~~
+
+從本地 CSV 文件讀取數據::
+
+    # 載入數據
+    panel = Panel.from_csv('crypto_1d.csv')
+
+第三步：提取數據
+~~~~~~~~~~~~~~
+
+提取 OHLCV 數據，使用 ``.show()`` 查看因子值::
+
     close = panel['close']
+    close.show()  # 查看收盤價數據
+
+.. tip::
+   使用 ``.show()`` 可以查看任何因子的具體數值，方便調試和驗證。
+
+第四步：計算因子
+~~~~~~~~~~~~~~
+
+使用算子構建 Alpha 因子::
+
+    # 提取數據
+    high = panel['high']
+    low = panel['low']
+    volume = panel['volume']
+    
+    # 計算反轉因子
+    n = 30
+    relative_low = (close - ts_min(high, n)) / (ts_max(low, n) - ts_min(high, n))
+    vol_ma = ts_mean(volume, n)
+    vol_deviation = volume / vol_ma
+    factor = relative_low * (1 + 0.5*(1 - vol_deviation))
+    
+    # 設置因子名稱
+    factor.name = "Reversion Alpha"
+
+第五步：回測策略
+~~~~~~~~~~~~~~
+
+將因子放入 ``strategy_factor`` 進行回測::
+
+    bt_results = backtest(
+        entry_price_factor=open, # 進場價格
+        strategy_factor=factor, # 策略因子
+        transaction_cost=(0.0003, 0.0003),  # 進出場手續費 0.03%
+        full_rebalance=False,  # 是否每天全倉模式（預設關閉）
+    )
+
+.. important::
+   - ``transaction_cost=(0.0003, 0.0003)`` 是最常見設定，代表進出場各 0.03% 手續費
+   - ``full_rebalance=False`` 是預設值，設為 ``True`` 則每天全倉重新平衡
+
+第六步：查看結果
+~~~~~~~~~~~~~~
+
+繪製權益曲線::
+
+    bt_results.plot_equity()
+
+完整代碼示例
+~~~~~~~~~~~~
+
+以下是完整的可執行代碼，整合上述所有步驟::
+
+    from phandas import *
+
+    # 1. 下載數據
+    panel = fetch_data(
+        symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'], 
+        start_date='2022-01-01',
+        sources=['binance']
+    )
+
+    # 2. 提取數據
     open = panel['open']
+    close = panel['close']
     high = panel['high']
     low = panel['low']
     volume = panel['volume']
 
-3. 使用算子構建 Alpha 因子
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # 3. 計算因子
+    n = 30
+    relative_low = (close - ts_min(high, n)) / (ts_max(low, n) - ts_min(high, n))
+    vol_ma = ts_mean(volume, n)
+    vol_deviation = volume / vol_ma
+    factor = relative_low * (1 + 0.5*(1 - vol_deviation))
 
-**時序算子** — 計算滾動統計量::
-
-    # 20 日動量
-    momentum = (close / ts_delay(close, 20)) - 1
-
-**橫截面算子** — 每日標準化::
-
-    # 排序：轉換為 0-1 排序分
-    factor = rank(momentum)
-
-**組合算子** — 多層加工::
-
-    # 正規化並對成交量中性化
-    factor = normalize(rank(momentum))
-    factor = vector_neut(factor, rank(-volume))
-
-4. 回測策略
-~~~~~~~~~~~
-
-::
-
-    result = backtest(
-        entry_price_factor=open, 
-        strategy_factor=factor,
-        transaction_cost=(0.0003, 0.0003)
-    )
-
-    result.plot_equity()
-
-輸出示例::
-
-    Total Return:    125.3%
-    Annual Return:   35.2%
-    Sharpe Ratio:    1.45
-    Max Drawdown:    -18.2%
-
-完整例子
---------
-
-完整示例 - 動量 + 均值回歸::
-
-    from phandas import *
-
-    # 獲取數據
-    panel = fetch_data(
-        symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'],
-        timeframe='1d',
-        start_date='2023-01-01',
-    )
-
-    close = panel['close']
-    volume = panel['volume']
-    open = panel['open']
-
-    # 構建因子：20 日動量 + 均值回歸組合
-    momentum = (close / ts_delay(close, 20)) - 1
-    reversion = 1 / ts_rank(close, 30)
-    
-    factor = rank(momentum) + 0.5 * rank(reversion)
-    factor = vector_neut(factor, rank(-volume))
-
-    # 回測
-    result = backtest(
+    # 4. 回測
+    bt_results = backtest(
         entry_price_factor=open,
         strategy_factor=factor,
-        transaction_cost=(0.0003, 0.0003)
+        transaction_cost=(0.0003, 0.0003),
     )
+    bt_results.plot_equity()
 
-    result.print_summary()
 
 下一步
 -----
 
 - 了解更多算子：參考 :doc:`guide/operators_guide`
-- 實踐範例：參考 :doc:`examples/01_basic_factor` 和 :doc:`examples/02_combine_factors`
-
