@@ -99,7 +99,8 @@ class Panel:
     
     def to_csv(self, path: str) -> str:
         """Save to CSV."""
-        self.data.reset_index().to_csv(path, index=False)
+        df = self.data.reset_index()
+        df.to_csv(path, index=False)
         return path
     
     def info(self) -> None:

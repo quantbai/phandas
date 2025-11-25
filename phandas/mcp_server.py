@@ -186,7 +186,7 @@ def execute_factor_backtest(
             return json.dumps({
                 'status': 'error',
                 'summary': {},
-                'drawdown_periods': [],
+                'factor_expression': None,
                 'error': "Factor code must assign result to variable named 'factor'"
             })
         
@@ -222,7 +222,7 @@ def execute_factor_backtest(
         return json.dumps({
             'status': 'error',
             'summary': {},
-            'drawdown_periods': [],
+            'factor_expression': None,
             'error': str(e)
         })
 

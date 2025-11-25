@@ -705,6 +705,12 @@ class Factor:
         
         return Factor(result, f"ts_decay_linear({self.name},{window},dense={dense})")
     
+    def ts_step(self, start: int = 1) -> 'Factor':
+        """Time step counter: 1, 2, 3, ... per symbol (independent of values)."""
+        result = self.data.copy()
+        result['factor'] = result.groupby('symbol').cumcount() + start
+        return Factor(result, f"ts_step({start})")
+    
     def ts_delay(self, window: int) -> 'Factor':
         """Lag by window periods (shift backwards in time)."""
         result = self.data.copy()

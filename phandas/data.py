@@ -29,11 +29,10 @@ def fetch_data(
 ) -> 'Panel':
     """Fetch, merge, and align multi-source data.
     
-    Defaults to Daily resolution ('1d') and all available sources: 
-    ['binance', 'vwap', 'benchmark', 'calendar'].
+    Defaults to Daily resolution ('1d') and Binance OHLCV data.
     """
     if sources is None:
-        sources = ['binance', 'vwap', 'benchmark', 'calendar']
+        sources = ['binance']
         
     return fetch_panel_core(
         symbols=symbols,
@@ -109,6 +108,9 @@ def fetch_panel_core(
     logger.info(f"Combined columns: {list(combined.columns)}")
     
     combined_reset = combined.reset_index()
+    if 'index' in combined_reset.columns:
+        logger.warning("Unexpected 'index' column found, removing it")
+        combined_reset = combined_reset.drop(columns=['index'])
     logger.info(f"After reset_index columns: {list(combined_reset.columns)}")
     
     processed = _process_data(combined_reset, timeframe, symbols)
@@ -319,6 +321,7 @@ def fetch_benchmark(
             df = _fetch_ohlcv_data(exchange, [factor], timeframe, since, until, extract_close)
             if df is not None:
                 df = df.rename(columns={'close': f'{factor}_close'})
+                df = df.set_index('timestamp')
                 factor_data[factor] = df
         
         if not factor_data:
@@ -328,6 +331,8 @@ def fetch_benchmark(
         combined = pd.concat(factor_data.values(), axis=1)
         combined = combined.loc[:, ~combined.columns.duplicated(keep='first')]
         
+        combined = combined.reset_index()
+        
         rows = [
             {
                 'timestamp': ts,
@@ -335,7 +340,7 @@ def fetch_benchmark(
                 **row.to_dict()
             }
             for sym in symbols
-            for ts, row in combined.reset_index().iterrows()
+            for ts, row in combined.iterrows()
         ]
         
         return pd.DataFrame(rows) if rows else None

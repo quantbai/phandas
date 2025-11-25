@@ -793,8 +793,9 @@ class Rebalancer:
             logger.info(f"  {symbol:6} {weight:+.4f}")
         
         logger.info("每幣種持倉 → 目標 → 差值:")
-        logger.info(f"{'幣種':6} {'當前':>12} {'目標':>12} {'差值':>12} {'操作':>10}")
-        logger.info("-" * 58)
+        header = f"{'幣種':<6} ${'當前':>11} ${'目標':>11} ${'差值':>11} {'操作':>10}"
+        logger.info(header)
+        logger.info("-" * len(header))
         
         for trade in self.plan_data:
             symbol = trade['symbol']
@@ -803,7 +804,14 @@ class Rebalancer:
             diff_usd = trade['diff_usd']
             action = trade['action']
             
-            logger.info(f"{symbol:6} ${current_usd:>11.2f} ${target_usd:>11.2f} ${diff_usd:>+11.2f} {action:>10}")
+            logger.info(f"{symbol:<6} ${current_usd:>11.2f} ${target_usd:>11.2f} ${diff_usd:>+11.2f} {action:>10}")
+        
+        current_abs_sum = sum(abs(trade['current_usd']) for trade in self.plan_data)
+        target_abs_sum = sum(abs(trade['target_usd']) for trade in self.plan_data)
+        diff_abs_sum = sum(abs(trade['diff_usd']) for trade in self.plan_data)
+        
+        logger.info("-" * len(header))
+        logger.info(f"{'合計':<6} ${current_abs_sum:>11.2f} ${target_abs_sum:>11.2f} ${diff_abs_sum:>11.2f} {'':>10}")
         
         return self
     
