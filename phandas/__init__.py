@@ -16,6 +16,7 @@ from .operators import (
     ts_arg_max, ts_arg_min, ts_av_diff, ts_backfill, ts_decay_exp_window, ts_decay_linear,
     ts_count_nans, ts_covariance, ts_quantile, ts_scale, ts_zscore, ts_min, ts_max,
     ts_regression, ts_kurtosis, ts_skewness, ts_step,
+    ts_cv, ts_jumpiness, ts_trend_strength, ts_vr, ts_autocorr, ts_reversal_count,
     
     rank, normalize, quantile, scale, zscore, spread, signal, mean, median,
     
@@ -40,6 +41,7 @@ __all__ = [
     'ts_arg_max', 'ts_arg_min', 'ts_av_diff', 'ts_backfill', 'ts_decay_exp_window', 'ts_decay_linear',
     'ts_count_nans', 'ts_covariance', 'ts_quantile', 'ts_scale', 'ts_zscore', 'ts_min', 'ts_max', 'ts_regression',
     'ts_kurtosis', 'ts_skewness', 'ts_step',
+    'ts_cv', 'ts_jumpiness', 'ts_trend_strength', 'ts_vr', 'ts_autocorr', 'ts_reversal_count',
     
     'rank', 'normalize', 'quantile', 'scale', 'zscore', 'spread', 'signal', 'mean', 'median',
     

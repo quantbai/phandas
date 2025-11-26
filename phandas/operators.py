@@ -158,6 +158,30 @@ def ts_regression(y: 'Factor', x: 'Factor', window: int, lag: int = 0, rettype: 
     """Rolling OLS regression (rettype: 0=residual, 1=α, 2=β, 3=pred, 4=SSE, 5=SST, 6=R², 7=MSE, 8=SEβ, 9=SEα)."""
     return y.ts_regression(x, window, lag, rettype)
 
+def ts_cv(factor: 'Factor', window: int) -> 'Factor':
+    """Rolling coefficient of variation: std / abs(mean)."""
+    return factor.ts_cv(window)
+
+def ts_jumpiness(factor: 'Factor', window: int) -> 'Factor':
+    """Rolling jumpiness: sum(|diff|) / (max - min)."""
+    return factor.ts_jumpiness(window)
+
+def ts_trend_strength(factor: 'Factor', window: int) -> 'Factor':
+    """Rolling trend strength: R² of linear regression on time step."""
+    return factor.ts_trend_strength(window)
+
+def ts_vr(factor: 'Factor', window: int, k: int = 2) -> 'Factor':
+    """Rolling variance ratio: Var(k-period) / (k * Var(1-period))."""
+    return factor.ts_vr(window, k)
+
+def ts_autocorr(factor: 'Factor', window: int, lag: int = 1) -> 'Factor':
+    """Rolling autocorrelation at specified lag."""
+    return factor.ts_autocorr(window, lag)
+
+def ts_reversal_count(factor: 'Factor', window: int) -> 'Factor':
+    """Rolling reversal count: direction changes / window."""
+    return factor.ts_reversal_count(window)
+
 def log(factor: 'Factor', base: Optional[float] = None) -> 'Factor':
     """Logarithm (base=None → natural)."""
     return factor.log(base)

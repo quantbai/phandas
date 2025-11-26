@@ -896,6 +896,78 @@ class Factor:
         x_name = ','.join([f.name for f in x_factors]) if is_multi else x_factors[0].name
         return Factor(result, name=f"ts_regression({self.name},{x_name},{window},lag={lag},rettype={rettype})")
 
+    def ts_cv(self, window: int) -> 'Factor':
+        """Rolling coefficient of variation: std / abs(mean) over window."""
+        self._validate_window(window)
+        mean = self.ts_mean(window)
+        std = self.ts_std_dev(window)
+        result = std / (mean.abs() + 1e-10)
+        result.data['factor'] = self._replace_inf(result.data['factor'])
+        return Factor(result.data, f"ts_cv({self.name},{window})")
+
+    def ts_jumpiness(self, window: int) -> 'Factor':
+        """Rolling jumpiness: sum(|diff|) / (max - min) over window."""
+        self._validate_window(window)
+        diff = self.ts_delta(1).abs()
+        total_jump = diff.ts_sum(window)
+        range_val = self.ts_max(window) - self.ts_min(window)
+        result = total_jump / (range_val + 1e-10)
+        result.data['factor'] = self._replace_inf(result.data['factor'])
+        return Factor(result.data, f"ts_jumpiness({self.name},{window})")
+
+    def ts_trend_strength(self, window: int) -> 'Factor':
+        """Rolling trend strength: R-squared of linear regression on time step."""
+        self._validate_window(window)
+        time_step = self.ts_step()
+        result = self.ts_regression(time_step, window, rettype=6)
+        return Factor(result.data, f"ts_trend_strength({self.name},{window})")
+
+    def ts_vr(self, window: int, k: int = 2) -> 'Factor':
+        """Rolling variance ratio: Var(k-period diff) / (k * Var(1-period diff))."""
+        self._validate_window(window)
+        if k <= 0:
+            raise ValueError("k must be positive")
+        k_diff = self.ts_delta(k)
+        one_diff = self.ts_delta(1)
+        var_k = k_diff.ts_std_dev(window) ** 2
+        var_1 = one_diff.ts_std_dev(window) ** 2
+        result = var_k / (k * var_1 + 1e-10)
+        result.data['factor'] = self._replace_inf(result.data['factor'])
+        return Factor(result.data, f"ts_vr({self.name},{window},{k})")
+
+    def ts_autocorr(self, window: int, lag: int = 1) -> 'Factor':
+        """Rolling autocorrelation at specified lag."""
+        self._validate_window(window)
+        if lag <= 0:
+            raise ValueError("lag must be positive")
+        lagged = self.ts_delay(lag)
+        result = self.ts_corr(lagged, window)
+        return Factor(result.data, f"ts_autocorr({self.name},{window},{lag})")
+
+    def ts_reversal_count(self, window: int) -> 'Factor':
+        """Rolling reversal count: number of direction changes / window."""
+        self._validate_window(window)
+        
+        def count_reversals(s):
+            if len(s) < 3:
+                return np.nan
+            diff = np.diff(s)
+            if len(diff) < 2:
+                return np.nan
+            valid_diff = diff[~np.isnan(diff)]
+            if len(valid_diff) < 2:
+                return np.nan
+            sign_changes = ((valid_diff[1:] * valid_diff[:-1]) < 0).sum()
+            return sign_changes / (len(valid_diff) - 1)
+        
+        result = self.data.copy()
+        result['factor'] = (result.groupby('symbol')['factor']
+                           .rolling(window, min_periods=3)
+                           .apply(count_reversals, raw=True)
+                           .reset_index(level=0, drop=True))
+        
+        return Factor(result, f"ts_reversal_count({self.name},{window})")
+
     def abs(self) -> 'Factor':
         """Absolute value: |x|."""
         result = self.data.copy()

@@ -435,10 +435,10 @@ class Backtester:
         
         return pd.Series(values, index=pd.DatetimeIndex(dates))
     
-    def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True, show_benchmark: bool = True) -> 'Backtester':
+    def plot_equity(self, figsize: tuple = (14, 8), show_summary: bool = True, show_benchmark: bool = True, language: str = 'en') -> 'Backtester':
         """Plot equity, drawdown, turnover, summary, and benchmark."""
         plotter = BacktestPlotter(self)
-        plotter.plot_equity(figsize, show_summary, show_benchmark)
+        plotter.plot_equity(figsize, show_summary, show_benchmark, language=language)
         return self
     
     def get_equity_curve(self) -> List[float]:
@@ -626,10 +626,10 @@ class CombinedBacktester:
         
         return self
     
-    def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> 'CombinedBacktester':
+    def plot_equity(self, figsize: tuple = (14, 8), show_summary: bool = True, language: str = 'en') -> 'CombinedBacktester':
         """Plot portfolio equity, drawdown, and summary."""
         plotter = CombinedBacktestPlotter(self)
-        plotter.plot_equity(figsize, show_summary)
+        plotter.plot_equity(figsize, show_summary, language=language)
         return self
 
     def __add__(self, other: Union[Backtester, 'CombinedBacktester']) -> 'CombinedBacktester':

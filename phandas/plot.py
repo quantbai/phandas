@@ -20,46 +20,112 @@ _PLOT_COLORS = {
     'benchmark_line': '#f97316',
     'drawdown_fill': '#ef4444',
     'drawdown_line': '#991b1b',
-    'background': '#fcfcfc',
+    'background': '#ffffff',
     'white': '#ffffff',
-    'text': '#1f2937',
-    'text_light': '#6b7280',
+    'text': '#111827',
+    'text_light': '#4b5563',
     'text_muted': '#9ca3af',
     'text_info': '#374151',
-    'grid': '#e5e7eb',
-    'turnover_line': '#10b981',
+    'grid': '#f3f4f6',
+    'turnover_line': '#059669',
+    'zero_line': '#6b7280',
 }
 
 _PLOT_STYLES = {
-    'title_size': 12.5,
-    'ylabel_size': 10.5,
-    'xlabel_size': 10.5,
-    'label_size': 9.5,
-    'small_label_size': 9.0,
-    'grid_alpha': 0.15,
-    'grid_width': 0.4,
-    'grid_alpha_secondary': 0.12,
-    'spine_width': 0.5,
-    'tick_length': 3,
-    'linewidth': 1.05,
-    'benchmark_linewidth': 1.2,
-    'benchmark_alpha': 0.8,
-    'thin_linewidth': 0.8,
-    'line_alpha': 0.95,
-    'box_alpha': 0.96,
-    'fill_alpha': 0.35,
+    'title_size': 14,
+    'ylabel_size': 11,
+    'xlabel_size': 11,
+    'label_size': 10,
+    'small_label_size': 9,
+    'grid_alpha': 0.5,
+    'grid_width': 0.8,
+    'grid_alpha_secondary': 0.4,
+    'spine_width': 0.8,
+    'tick_length': 4,
+    'linewidth': 1.5,
+    'benchmark_linewidth': 1.5,
+    'benchmark_alpha': 0.7,
+    'thin_linewidth': 1.0,
+    'line_alpha': 1.0,
+    'box_alpha': 0.9,
+    'fill_alpha': 0.3,
+}
+
+_TRANSLATIONS = {
+    'en': {
+        'equity_title': 'Equity Curve',
+        'equity_ylabel': 'Equity Value',
+        'drawdown_ylabel': 'Drawdown',
+        'turnover_ylabel': 'Turnover',
+        'date_xlabel': 'Date',
+        'no_turnover': 'No Turnover Data',
+        'benchmark_label': 'Benchmark',
+        'equity_label': 'Equity',
+        'strategy': 'Strategy',
+        'period': 'Period',
+        'total_return': 'Total Return',
+        'annual_return': 'Annual Return',
+        'sharpe': 'Sharpe Ratio',
+        'psr': 'PSR',
+        'sortino': 'Sortino Ratio',
+        'calmar': 'Calmar Ratio',
+        'linearity': 'Linearity',
+        'max_dd': 'Max Drawdown',
+        'var_95': 'VaR 95%',
+        'cvar': 'CVaR',
+        'turnover': 'Avg. Annual Turnover',
+        'corr_matrix': 'Correlation Matrix',
+        'weights': 'Strategy Weights',
+        'to': 'to',
+    },
+    'zh': {
+        'equity_title': '權益曲線',
+        'equity_ylabel': '權益淨值',
+        'drawdown_ylabel': '回撤幅度',
+        'turnover_ylabel': '換手率',
+        'date_xlabel': '日期',
+        'no_turnover': '無換手率數據',
+        'benchmark_label': '基準',
+        'equity_label': '策略淨值',
+        'strategy': '策略名稱',
+        'period': '回測期間',
+        'total_return': '總回報率',
+        'annual_return': '年化回報率',
+        'sharpe': '夏普比率',
+        'psr': 'PSR (概率夏普)',
+        'sortino': '索提諾比率',
+        'calmar': '卡瑪比率',
+        'linearity': '線性度',
+        'max_dd': '最大回撤',
+        'var_95': '風險價值 (95%)',
+        'cvar': '條件風險價值',
+        'turnover': '平均年化換手率',
+        'corr_matrix': '相關係數矩陣',
+        'weights': '策略權重',
+        'to': '至',
+    }
 }
 
 plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 
 
-def _plot_equity_line(ax, equity_series: pd.Series, y_min: float) -> None:
+def _apply_plot_style():
+    """Apply default style and re-set custom fonts."""
+    plt.style.use('default')
+    plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans', 'sans-serif']
+    plt.rcParams['axes.unicode_minus'] = False
+
+
+def _plot_equity_line(ax, equity_series: pd.Series, y_min: float, label: str = 'Equity') -> None:
     """Layered equity curve visualization."""
+    # Gradient Fill
     for alpha, color in _PLOT_COLORS['equity_fill']:
         ax.fill_between(equity_series.index, y_min, equity_series, alpha=alpha, color=color, interpolate=True)
+    
+    # Main Equity Line
     ax.plot(equity_series.index, equity_series, color=_PLOT_COLORS['equity_line'], 
-           linewidth=_PLOT_STYLES['linewidth'], alpha=_PLOT_STYLES['line_alpha'])
+           linewidth=_PLOT_STYLES['linewidth'], alpha=_PLOT_STYLES['line_alpha'], label=label)
 
 
 def _plot_drawdown(ax, drawdown_series: pd.Series) -> None:
@@ -68,6 +134,8 @@ def _plot_drawdown(ax, drawdown_series: pd.Series) -> None:
                    color=_PLOT_COLORS['drawdown_fill'], alpha=_PLOT_STYLES['fill_alpha'], step='pre')
     ax.plot(drawdown_series.index, drawdown_series, color=_PLOT_COLORS['drawdown_line'], 
            linewidth=_PLOT_STYLES['thin_linewidth'])
+    # Add zero line
+    ax.axhline(0, color=_PLOT_COLORS['zero_line'], linewidth=0.8, linestyle='-', alpha=0.5)
 
 
 class BacktestPlotter:
@@ -77,9 +145,11 @@ class BacktestPlotter:
         """Initialize with a Backtester instance."""
         self.bt = backtester
     
-    def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True, 
-                   show_benchmark: bool = True) -> None:
+    def plot_equity(self, figsize: tuple = (14, 8), show_summary: bool = True, 
+                   show_benchmark: bool = True, language: str = 'en') -> None:
         """Plot equity, drawdown, turnover, summary, and benchmark."""
+        texts = _TRANSLATIONS.get(language, _TRANSLATIONS['en'])
+        
         history = self.bt.portfolio.get_history_df()
         if history.empty:
             return
@@ -98,26 +168,38 @@ class BacktestPlotter:
         
         turnover_df = self.bt.get_daily_turnover_df()
         
-        plt.style.use('default')
+        _apply_plot_style()
         fig = plt.figure(figsize=figsize, constrained_layout=True)
-        gs = fig.add_gridspec(3, 1, height_ratios=[3, 1, 1])
+        
+        # Create GridSpec with 2 columns: Main plots (left) and Summary (right)
+        gs = fig.add_gridspec(3, 2, height_ratios=[3, 1, 1], width_ratios=[5, 1])
+        
         ax = fig.add_subplot(gs[0, 0])
         ax_dd = fig.add_subplot(gs[1, 0], sharex=ax)
         ax_to = fig.add_subplot(gs[2, 0], sharex=ax)
         
+        # Summary subplot (spans all rows in the right column)
+        ax_summary = fig.add_subplot(gs[:, 1])
+        ax_summary.axis('off')
+        
         ax.set_facecolor(_PLOT_COLORS['background'])
         y_min = equity_curve.min()
-        _plot_equity_line(ax, equity_curve, y_min)
+        _plot_equity_line(ax, equity_curve, y_min, label=texts['equity_label'])
         
         if benchmark_norm is not None and len(benchmark_norm) > 0:
             benchmark_abs = benchmark_norm * self.bt.portfolio.initial_capital
             y_min = min(y_min, benchmark_abs.min())
             ax.plot(benchmark_norm.index, benchmark_abs, color=_PLOT_COLORS['benchmark_line'], 
-                   linewidth=_PLOT_STYLES['benchmark_linewidth'], alpha=_PLOT_STYLES['benchmark_alpha'], linestyle='--')
+                   linewidth=_PLOT_STYLES['benchmark_linewidth'], alpha=_PLOT_STYLES['benchmark_alpha'], 
+                   linestyle='--', label=texts['benchmark_label'])
         
-        ax.set_title(f'Equity Curve ({self.bt.strategy_factor.name})', 
+        # Add legend
+        ax.legend(loc='upper left', frameon=True, framealpha=_PLOT_STYLES['box_alpha'], 
+                  fontsize=_PLOT_STYLES['small_label_size'])
+        
+        ax.set_title(f"{texts['equity_title']} ({self.bt.strategy_factor.name})", 
                     fontsize=_PLOT_STYLES['title_size'], fontweight='400', color=_PLOT_COLORS['text'], pad=14)
-        ax.set_ylabel('Equity Value', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
+        ax.set_ylabel(texts['equity_ylabel'], fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
         ax.grid(True, alpha=_PLOT_STYLES['grid_alpha'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
         ax.spines['top'].set_visible(False)
@@ -126,15 +208,40 @@ class BacktestPlotter:
                       width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
         
         if show_summary:
-            summary_text = self.bt.summary()
-            ax.text(0.015, 0.98, summary_text, transform=ax.transAxes, fontsize=_PLOT_STYLES['label_size'], 
-                    verticalalignment='top', horizontalalignment='left', color=_PLOT_COLORS['text_info'],
-                    bbox=dict(boxstyle='round,pad=0.75', facecolor=_PLOT_COLORS['white'], 
-                             edgecolor=_PLOT_COLORS['grid'], alpha=_PLOT_STYLES['box_alpha'], linewidth=1))
+            summary_lines = [f"{texts['strategy']}: {self.bt.strategy_factor.name}"]
+            if not equity_curve.empty:
+                start = equity_curve.index[0].strftime(_DATE_FORMAT)
+                end = equity_curve.index[-1].strftime(_DATE_FORMAT)
+                summary_lines.append(f"{texts['period']}: {start} {texts['to']} {end}")
+                
+                metrics = self.bt.metrics
+                if metrics:
+                    summary_lines.extend([
+                        f"{texts['total_return']}: {metrics.get('total_return', 0):.2%}",
+                        f"{texts['annual_return']}: {metrics.get('annual_return', 0):.2%}",
+                        f"{texts['sharpe']}: {metrics.get('sharpe_ratio', 0):.2f}",
+                        f"{texts['psr']}: {metrics.get('psr', 0):.1%}",
+                        f"{texts['sortino']}: {metrics.get('sortino_ratio', 0):.2f}",
+                        f"{texts['calmar']}: {metrics.get('calmar_ratio', 0):.2f}",
+                        f"{texts['linearity']}: {metrics.get('linearity', 0):.4f}",
+                        f"{texts['max_dd']}: {metrics.get('max_drawdown', 0):.2%}",
+                        f"{texts['var_95']}: {metrics.get('var_95', 0):.2%}",
+                        f"{texts['cvar']}: {metrics.get('cvar', 0):.2%}",
+                    ])
+                
+                if not turnover_df.empty:
+                    avg_turnover = turnover_df['turnover'].mean() * 365
+                    summary_lines.append(f"{texts['turnover']}: {avg_turnover:.2%}")
+            
+            summary_text = "\n".join(summary_lines)
+            ax_summary.text(0.0, 0.98, summary_text, transform=ax_summary.transAxes, 
+                            fontsize=_PLOT_STYLES['label_size'], 
+                            verticalalignment='top', horizontalalignment='left', 
+                            color=_PLOT_COLORS['text_info'])
         
         ax_dd.set_facecolor(_PLOT_COLORS['white'])
         _plot_drawdown(ax_dd, drawdown)
-        ax_dd.set_ylabel('Drawdown', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
+        ax_dd.set_ylabel(texts['drawdown_ylabel'], fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
         ax_dd.grid(True, alpha=_PLOT_STYLES['grid_alpha_secondary'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
         ax_dd.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
         ax_dd.spines['top'].set_visible(False)
@@ -146,14 +253,14 @@ class BacktestPlotter:
         if not turnover_df.empty:
             ax_to.plot(turnover_df.index, turnover_df['turnover'], color=_PLOT_COLORS['turnover_line'], 
                       linewidth=_PLOT_STYLES['thin_linewidth'], alpha=_PLOT_STYLES['line_alpha'])
-            ax_to.set_ylabel('Turnover', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
+            ax_to.set_ylabel(texts['turnover_ylabel'], fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
             ax_to.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
             ax_to.grid(True, alpha=_PLOT_STYLES['grid_alpha_secondary'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
         else:
-            ax_to.text(0.5, 0.5, 'No Turnover Data', transform=ax_to.transAxes, 
+            ax_to.text(0.5, 0.5, texts['no_turnover'], transform=ax_to.transAxes, 
                       ha='center', va='center', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_muted'])
         
-        ax_to.set_xlabel('Date', fontsize=_PLOT_STYLES['xlabel_size'], color=_PLOT_COLORS['text_light'])
+        ax_to.set_xlabel(texts['date_xlabel'], fontsize=_PLOT_STYLES['xlabel_size'], color=_PLOT_COLORS['text_light'])
         ax_to.spines['top'].set_visible(False)
         ax_to.spines['right'].set_visible(False)
         ax_to.tick_params(axis='both', which='major', labelsize=_PLOT_STYLES['small_label_size'], colors=_PLOT_COLORS['text_light'], 
@@ -161,6 +268,9 @@ class BacktestPlotter:
         
         plt.setp(ax.get_xticklabels(), visible=False)
         plt.setp(ax_dd.get_xticklabels(), visible=False)
+        
+        # Align y-labels
+        fig.align_ylabels([ax, ax_dd, ax_to])
         
         plt.show()
 
@@ -172,8 +282,10 @@ class CombinedBacktestPlotter:
         """Initialize with a CombinedBacktester instance."""
         self.cbt = combined_bt
     
-    def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> None:
+    def plot_equity(self, figsize: tuple = (14, 8), show_summary: bool = True, language: str = 'en') -> None:
         """Plot portfolio equity, drawdown, and summary."""
+        texts = _TRANSLATIONS.get(language, _TRANSLATIONS['en'])
+        
         equity = self.cbt.get_portfolio_equity()
         if equity.empty or len(equity) < 2:
             return
@@ -182,20 +294,27 @@ class CombinedBacktestPlotter:
         rolling_max = equity_norm.cummax()
         drawdown = equity_norm / rolling_max - 1.0
         
-        plt.style.use('default')
+        _apply_plot_style()
         fig = plt.figure(figsize=figsize, constrained_layout=True)
-        gs = fig.add_gridspec(2, 1, height_ratios=[3, 1])
+        
+        # Create GridSpec with 2 columns: Main plots (left) and Summary (right)
+        gs = fig.add_gridspec(2, 2, height_ratios=[3, 1], width_ratios=[5, 1])
+        
         ax = fig.add_subplot(gs[0, 0])
         ax_dd = fig.add_subplot(gs[1, 0], sharex=ax)
         
+        # Summary subplot (spans all rows in the right column)
+        ax_summary = fig.add_subplot(gs[:, 1])
+        ax_summary.axis('off')
+        
         ax.set_facecolor(_PLOT_COLORS['background'])
         y_min = equity.min()
-        _plot_equity_line(ax, equity, y_min)
+        _plot_equity_line(ax, equity, y_min, label=texts['equity_label'])
         
         strategy_names = ", ".join([bt.strategy_factor.name for bt in self.cbt.backtests])
-        ax.set_title(f'Combined Portfolio Equity ({strategy_names})', 
+        ax.set_title(f"{texts['equity_title']} ({strategy_names})", 
                     fontsize=_PLOT_STYLES['title_size'], fontweight='400', color=_PLOT_COLORS['text'], pad=14)
-        ax.set_ylabel('Equity Value', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
+        ax.set_ylabel(texts['equity_ylabel'], fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
         ax.grid(True, alpha=_PLOT_STYLES['grid_alpha'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
         ax.spines['top'].set_visible(False)
@@ -204,16 +323,51 @@ class CombinedBacktestPlotter:
                       width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
         
         if show_summary:
-            summary_text = self.cbt.summary()
-            ax.text(0.015, 0.98, summary_text, transform=ax.transAxes, fontsize=_PLOT_STYLES['label_size'], 
-                    verticalalignment='top', horizontalalignment='left', color=_PLOT_COLORS['text_info'],
-                    bbox=dict(boxstyle='round,pad=0.75', facecolor=_PLOT_COLORS['white'], 
-                             edgecolor=_PLOT_COLORS['grid'], alpha=_PLOT_STYLES['box_alpha'], linewidth=1))
+            summary_lines = []
+            
+            summary_lines.append(f"{texts['strategy']}: {strategy_names}")
+            
+            if not equity.empty and len(equity) > 0:
+                start_date = equity.index[0].strftime(_DATE_FORMAT)
+                end_date = equity.index[-1].strftime(_DATE_FORMAT)
+                summary_lines.append(f"{texts['period']}: {start_date} {texts['to']} {end_date}")
+            
+            metrics = self.cbt.metrics
+            if metrics:
+                summary_lines.extend([
+                    f"{texts['total_return']}: {metrics.get('total_return', 0):.2%}",
+                    f"{texts['annual_return']}: {metrics.get('annual_return', 0):.2%}",
+                    f"{texts['sharpe']}: {metrics.get('sharpe_ratio', 0):.2f}",
+                    f"{texts['sortino']}: {metrics.get('sortino_ratio', 0):.2f}",
+                    f"{texts['calmar']}: {metrics.get('calmar_ratio', 0):.2f}",
+                    f"{texts['linearity']}: {metrics.get('linearity', 0):.4f}",
+                    f"{texts['max_dd']}: {metrics.get('max_drawdown', 0):.2%}",
+                    f"{texts['var_95']}: {metrics.get('var_95', 0):.2%}",
+                    f"{texts['cvar']}: {metrics.get('cvar', 0):.2%}",
+                ])
+            
+            summary_lines.append("")
+            summary_lines.append(f"{texts['weights']}:")
+            for bt, w in zip(self.cbt.backtests, self.cbt.weights):
+                summary_lines.append(f"  {bt.strategy_factor.name}: {w*100:.1f}%")
+            
+            corr = self.cbt.correlation_matrix()
+            if not corr.empty and len(corr) > 1:
+                summary_lines.append("")
+                summary_lines.append(f"{texts['corr_matrix']}:")
+                corr_str = corr.to_string(max_cols=None, max_rows=None, float_format=lambda x: f'{x:.4f}')
+                summary_lines.extend(corr_str.split('\n'))
+            
+            summary_text = "\n".join(summary_lines)
+            ax_summary.text(0.0, 0.98, summary_text, transform=ax_summary.transAxes, 
+                            fontsize=_PLOT_STYLES['label_size'], 
+                            verticalalignment='top', horizontalalignment='left', 
+                            color=_PLOT_COLORS['text_info'])
         
         ax_dd.set_facecolor(_PLOT_COLORS['white'])
         _plot_drawdown(ax_dd, drawdown)
-        ax_dd.set_ylabel('Drawdown', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
-        ax_dd.set_xlabel('Date', fontsize=_PLOT_STYLES['xlabel_size'], color=_PLOT_COLORS['text_light'])
+        ax_dd.set_ylabel(texts['drawdown_ylabel'], fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
+        ax_dd.set_xlabel(texts['date_xlabel'], fontsize=_PLOT_STYLES['xlabel_size'], color=_PLOT_COLORS['text_light'])
         ax_dd.grid(True, alpha=_PLOT_STYLES['grid_alpha_secondary'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
         ax_dd.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
         ax_dd.spines['top'].set_visible(False)
@@ -222,6 +376,9 @@ class CombinedBacktestPlotter:
                           width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
         
         plt.setp(ax.get_xticklabels(), visible=False)
+        
+        # Align y-labels
+        fig.align_ylabels([ax, ax_dd])
         
         plt.show()
 
