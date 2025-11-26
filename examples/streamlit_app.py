@@ -119,12 +119,8 @@ warnings.filterwarnings('ignore')
 from phandas import *
 import matplotlib.pyplot as plt
 
-# Fetch market data
-panel = fetch_data(
-    symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'],
-    start_date='2022-01-01',
-    sources=['binance']
-)
+# Load market data from CSV
+panel = Panel.from_csv('crypto_1d.csv')
 
 # Extract price/volume factors
 close = panel['close']
