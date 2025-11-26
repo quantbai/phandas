@@ -121,6 +121,18 @@ warnings.filterwarnings('ignore')
 
 from phandas import *
 import matplotlib.pyplot as plt
+import signal
+
+# Timeout protection function
+def timeout_handler(signum, frame):
+    raise TimeoutError("計算超時（限制 60 秒）")
+
+# Setup timeout (Unix/Linux/Mac only, Windows will skip)
+try:
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(60)
+except:
+    pass  # Windows doesn't support SIGALRM
 
 # Load market data from CSV
 panel = Panel.from_csv(csv_path)
@@ -135,8 +147,16 @@ volume = panel['volume']
                 
                 exec(setup_code, exec_globals)
                 
-                # Execute user code
-                exec(user_code, exec_globals)
+                # Execute user code with timeout wrapper
+                try:
+                    exec(user_code, exec_globals)
+                finally:
+                    # Cancel timeout
+                    try:
+                        import signal
+                        signal.alarm(0)
+                    except:
+                        pass
                 
                 # Check if alpha is defined
                 if 'alpha' not in exec_globals:
