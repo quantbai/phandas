@@ -9,12 +9,12 @@ Phandas 是量化金融的多因子回測框架。支持加密貨幣市場的 Al
 - `GitHub 倉庫 <https://github.com/quantbai/phandas>`_
 - `PyPI 套件 <https://pypi.org/project/phandas/>`_
 
-快速開始
+入門指南
 ---------
 
 .. toctree::
    :maxdepth: 2
-   :caption: 快速開始
+   :caption: 入門指南
 
    installation
    quickstart
