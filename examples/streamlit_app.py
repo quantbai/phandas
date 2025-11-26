@@ -118,9 +118,11 @@ warnings.filterwarnings('ignore')
 
 from phandas import *
 import matplotlib.pyplot as plt
+import os
 
-# Load market data from CSV
-panel = Panel.from_csv('crypto_1d.csv')
+# Load market data from CSV (use absolute path for cloud deployment)
+csv_path = os.path.join(os.path.dirname(__file__), 'crypto_1d.csv')
+panel = Panel.from_csv(csv_path)
 
 # Extract price/volume factors
 close = panel['close']
