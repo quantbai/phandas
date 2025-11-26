@@ -8,8 +8,12 @@
 
 <div align="center">
 
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/quantbai/phandas/blob/main/examples/demo.ipynb)
+
 [![en](https://img.shields.io/badge/lang-en-yellow.svg)](#english)
 [![zh-TW](https://img.shields.io/badge/lang-繁體中文-green.svg)](#繁體中文)
+
 
 </div>
 
@@ -21,6 +25,12 @@ A multi-factor quantitative trading framework for cryptocurrency markets.
 ### Overview
 
 Phandas is a quantitative analysis framework designed for systematic portfolio construction and risk management. It provides high-performance data structures and financial analysis tools for factor investing and statistical arbitrage strategies.
+
+### Try it now
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/quantbai/phandas/blob/main/examples/demo.ipynb)
+
+Experience Phandas directly in your browser with our interactive demo. No installation required.
 
 ### Key Features
 
@@ -112,6 +122,12 @@ Developed by Phantom Management.
 ### 概述
 
 Phandas 是一個為系統化投資組合構建與風險管理而設計的量化分析框架。它為因子投資與統計套利策略提供高效能的資料結構與金融分析工具。
+
+### 立即體驗
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/quantbai/phandas/blob/main/examples/demo.ipynb)
+
+無需安裝，直接在瀏覽器中透過我們的互動式演示體驗 Phandas。
 
 ### 核心功能
 

@@ -755,15 +755,15 @@ class Rebalancer:
             elif current_usd == 0 and target_usd == 0:
                 action = "none"
             elif current_usd == 0 and target_usd != 0:
-                action = "新建"
+                action = "open"
             elif current_usd > 0 and target_usd > 0:
-                action = "加倉" if diff_usd > 0 else "減倉"
+                action = "add" if diff_usd > 0 else "reduce"
             elif current_usd < 0 and target_usd < 0:
-                action = "加倉" if diff_usd < 0 else "減倉"
+                action = "add" if diff_usd < 0 else "reduce"
             elif (current_usd > 0 and target_usd < 0) or (current_usd < 0 and target_usd > 0):
-                action = "翻倉"
+                action = "flip"
             else:
-                action = "平倉"
+                action = "close"
             
             plan_trades.append({
                 'symbol': symbol,
@@ -784,16 +784,16 @@ class Rebalancer:
         
         current_position_total = sum(abs(h['usd_value']) for h in self.current_holdings.values())
         
-        logger.info("========== 調倉計算詳情 ==========")
-        logger.info(f"帳戶總權益: ${self.budget:,.2f}")
-        logger.info(f"當前持倉總額: ${current_position_total:,.2f}")
+        logger.info("========== Rebalance Plan ==========")
+        logger.info(f"Total Equity: ${self.budget:,.2f}")
+        logger.info(f"Current Position: ${current_position_total:,.2f}")
         
-        logger.info("目標權重:")
+        logger.info("Target Weights:")
         for symbol, weight in sorted(self.target_weights.items()):
             logger.info(f"  {symbol:6} {weight:+.4f}")
         
-        logger.info("每幣種持倉 → 目標 → 差值:")
-        header = f"{'幣種':<6} ${'當前':>11} ${'目標':>11} ${'差值':>11} {'操作':>10}"
+        logger.info("Holdings: Current → Target → Delta:")
+        header = f"{'Symbol':<6} ${'Current':>11} ${'Target':>11} ${'Delta':>11} {'Action':>10}"
         logger.info(header)
         logger.info("-" * len(header))
         
@@ -811,7 +811,7 @@ class Rebalancer:
         diff_abs_sum = sum(abs(trade['diff_usd']) for trade in self.plan_data)
         
         logger.info("-" * len(header))
-        logger.info(f"{'合計':<6} ${current_abs_sum:>11.2f} ${target_abs_sum:>11.2f} ${diff_abs_sum:>11.2f} {'':>10}")
+        logger.info(f"{'Total':<6} ${current_abs_sum:>11.2f} ${target_abs_sum:>11.2f} ${diff_abs_sum:>11.2f} {'':>10}")
         
         return self
     
