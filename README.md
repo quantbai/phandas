@@ -188,6 +188,14 @@ result.plot_equity()
 
 ---
 
+## Documentation | 文檔
+
+- [Full Docs](https://phandas.readthedocs.io/) - Complete API reference
+- [Operators Guide](https://phandas.readthedocs.io/guide/operators_guide.html) - 50+ operators
+- [MCP Setup](https://phandas.readthedocs.io/mcp_setup.html) - AI IDE integration
+
+---
+
 ## Community & Support | 社群與支持
 
 - **Discord**: [Join us - Phantom Management](https://discord.gg/TcPHTSGMdH)
