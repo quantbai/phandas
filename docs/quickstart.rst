@@ -1,122 +1,122 @@
-快速開始
-========
+Quick Start
+===========
 
-5 分鐘上手 Phandas - 從數據下載到策略回測。
+Get started with Phandas in 5 minutes - from data download to strategy backtesting.
 
-完整工作流
----------
+Complete Workflow
+-----------------
 
-第一步：下載數據與存檔
-~~~~~~~~~~~~~~~~~~~~
+Step 1: Download and Save Data
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-下載加密貨幣歷史數據並保存到本地::
+Download cryptocurrency historical data and save locally::
 
     from phandas import *
 
-    # 下載數據
+    # Download data
     panel = fetch_data(
         symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'], 
         start_date='2022-01-01',
         sources=['binance']
     )
 
-    # 保存到 CSV（避免重複下載）
+    # Save to CSV (avoid repeated downloads)
     panel.to_csv('crypto_1d.csv')
 
 .. note::
-   使用 ``to_csv()`` 保存數據後，下次可以直接用 ``from_csv()`` 讀取，不需要重複下載。
+   After saving data with ``to_csv()``, you can load it directly with ``from_csv()`` next time without re-downloading.
 
-第二步：載入數據
-~~~~~~~~~~~~~~
+Step 2: Load Data
+~~~~~~~~~~~~~~~~~
 
-從本地 CSV 文件讀取數據::
+Read data from local CSV file::
 
-    # 載入數據
+    # Load data
     panel = Panel.from_csv('crypto_1d.csv')
 
-第三步：提取數據
-~~~~~~~~~~~~~~
+Step 3: Extract Data
+~~~~~~~~~~~~~~~~~~~~
 
-提取 OHLCV 數據，使用 ``.show()`` 查看因子值::
+Extract OHLCV data, use ``.show()`` to view factor values::
 
     close = panel['close']
-    close.show()  # 查看收盤價數據
+    close.show()  # View close price data
 
 .. tip::
-   使用 ``.show()`` 可以查看任何因子的具體數值，方便調試和驗證。
+   Use ``.show()`` to view any factor's actual values for debugging and verification.
 
-第四步：計算因子
-~~~~~~~~~~~~~~
+Step 4: Calculate Factor
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-使用算子構建 Alpha 因子::
+Build alpha factors using operators::
 
-    # 提取數據
+    # Extract data
     high = panel['high']
     low = panel['low']
     volume = panel['volume']
     
-    # 計算反轉因子
+    # Calculate reversion factor
     n = 30
     relative_low = (close - ts_min(high, n)) / (ts_max(low, n) - ts_min(high, n))
     vol_ma = ts_mean(volume, n)
     vol_deviation = volume / vol_ma
     factor = relative_low * (1 + 0.5*(1 - vol_deviation))
     
-    # 設置因子名稱
+    # Set factor name
     factor.name = "Reversion Alpha"
 
-第五步：回測策略
-~~~~~~~~~~~~~~
+Step 5: Backtest Strategy
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
-將因子放入 ``strategy_factor`` 進行回測::
+Pass the factor to ``backtest`` for backtesting::
 
     bt_results = backtest(
-        entry_price_factor=open, # 進場價格
-        strategy_factor=factor, # 策略因子
-        transaction_cost=(0.0003, 0.0003),  # 進出場手續費 0.03%
-        full_rebalance=False,  # 是否每天全倉模式（預設關閉）
+        entry_price_factor=open,  # Entry price
+        strategy_factor=factor,   # Strategy factor
+        transaction_cost=(0.0003, 0.0003),  # Entry/exit fee 0.03%
+        full_rebalance=False,  # Full rebalance mode (default off)
     )
 
 .. important::
-   - ``transaction_cost=(0.0003, 0.0003)`` 是最常見設定，代表進出場各 0.03% 手續費
-   - ``full_rebalance=False`` 是預設值，設為 ``True`` 則每天全倉重新平衡
+   - ``transaction_cost=(0.0003, 0.0003)`` is the most common setting, representing 0.03% fee for both entry and exit
+   - ``full_rebalance=False`` is the default; set to ``True`` for daily full portfolio rebalancing
 
-第六步：查看結果
-~~~~~~~~~~~~~~
+Step 6: View Results
+~~~~~~~~~~~~~~~~~~~~
 
-繪製權益曲線::
+Plot equity curve::
 
     bt_results.plot_equity()
 
-完整代碼示例
-~~~~~~~~~~~~
+Complete Code Example
+~~~~~~~~~~~~~~~~~~~~~
 
-以下是完整的可執行代碼，整合上述所有步驟::
+Here's the complete executable code combining all steps above::
 
     from phandas import *
 
-    # 1. 下載數據
+    # 1. Download data
     panel = fetch_data(
         symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'], 
         start_date='2022-01-01',
         sources=['binance']
     )
 
-    # 2. 提取數據
+    # 2. Extract data
     open = panel['open']
     close = panel['close']
     high = panel['high']
     low = panel['low']
     volume = panel['volume']
 
-    # 3. 計算因子
+    # 3. Calculate factor
     n = 30
     relative_low = (close - ts_min(high, n)) / (ts_max(low, n) - ts_min(high, n))
     vol_ma = ts_mean(volume, n)
     vol_deviation = volume / vol_ma
     factor = relative_low * (1 + 0.5*(1 - vol_deviation))
 
-    # 4. 回測
+    # 4. Backtest
     bt_results = backtest(
         entry_price_factor=open,
         strategy_factor=factor,
@@ -125,7 +125,7 @@
     bt_results.plot_equity()
 
 
-下一步
------
+Next Steps
+----------
 
-- 了解更多算子：參考 :doc:`guide/operators_guide`
+- Learn more operators: see :doc:`guide/operators_guide`

@@ -9,7 +9,6 @@ from io import StringIO
 
 st.set_page_config(page_title="Phandas Alpha Research", layout="wide", initial_sidebar_state="collapsed")
 
-# Custom CSS for professional look
 st.markdown("""
 <style>
     .header-container {
@@ -45,7 +44,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Header
 st.markdown("""
 <div class="header-container">
     <div class="main-header">Phandas Alpha Research</div>
@@ -53,7 +51,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Sidebar Configuration (Collapsible)
 with st.sidebar:
     st.header("設定")
     
@@ -75,19 +72,17 @@ with st.sidebar:
     with st.expander("資源"):
         st.markdown("""
 **算子手冊**:  
-[算子手冊](https://phandas.readthedocs.io/zh-tw/latest/guide/operators_guide.html)
+[算子手冊](https://phandas.readthedocs.io/en/latest/guide/operators_guide.html)
 
 **原始碼**:  
 [GitHub 專案](https://github.com/quantbai/phandas)
 """)
 
-# Default factor code template
-DEFAULT_CODE = """# 在下方編寫您的因子表達式
-# 範例：20日動量
+DEFAULT_CODE = """在下方編寫您的因子表達式
+範例：20日動量
 alpha = rank(close / ts_delay(close, 20))
 """
 
-# Main Layout: Full Width
 st.markdown('<div class="editor-label">因子表達式</div>', unsafe_allow_html=True)
 
 user_code = st.text_area(
@@ -102,15 +97,12 @@ run_button = st.button("執行回測", type="primary", use_container_width=True,
 
 st.markdown("---")
 
-# Results section
 results_container = st.container()
 
-# Execute backtest when button is clicked
 if run_button:
     with results_container:
         with st.spinner("執行回測中..."):
             try:
-                # Pre-execution setup
                 import os
                 csv_path = os.path.join(os.path.dirname(__file__), 'crypto_1d.csv')
                 
@@ -123,21 +115,17 @@ from phandas import *
 import matplotlib.pyplot as plt
 import signal
 
-# Timeout protection function
 def timeout_handler(signum, frame):
     raise TimeoutError("計算超時（限制 60 秒）")
 
-# Setup timeout (Unix/Linux/Mac only, Windows will skip)
 try:
     signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(60)
 except:
-    pass  # Windows doesn't support SIGALRM
+    pass
 
-# Load market data from CSV
 panel = Panel.from_csv(csv_path)
 
-# Extract price/volume factors
 close = panel['close']
 open = panel['open']
 high = panel['high']
@@ -147,27 +135,22 @@ volume = panel['volume']
                 
                 exec(setup_code, exec_globals)
                 
-                # Execute user code with timeout wrapper
                 try:
                     exec(user_code, exec_globals)
                 finally:
-                    # Cancel timeout
                     try:
                         import signal
                         signal.alarm(0)
                     except:
                         pass
                 
-                # Check if alpha is defined
                 if 'alpha' not in exec_globals:
                     st.error("錯誤：您的代碼必須定義名為 'alpha' 的變數")
                 else:
                     alpha = exec_globals['alpha']
                     
-                    # Set factor name
                     alpha.name = factor_name
                     
-                    # Run backtest (same as skewness.py)
                     backtest_code = f"""
 bt_results = backtest(
     entry_price_factor=open,
@@ -179,21 +162,15 @@ bt_results = backtest(
                     exec(backtest_code, exec_globals)
                     bt_results = exec_globals['bt_results']
                     
-                    # Display success
                     st.success("回測完成")
                     
-                    # Plot equity curve (full width, larger)
                     st.markdown('<div class="results-label">回測結果</div>', unsafe_allow_html=True)
                     
-                    # Use phandas built-in plot_equity() method
                     try:
-                        # Clear any existing figures
                         plt.close('all')
                         
-                        # Call plot_equity with larger figsize
                         bt_results.plot_equity(figsize=(14, 8))
                         
-                        # Get the current figure and display it full width
                         fig = plt.gcf()
                         st.pyplot(fig, use_container_width=True)
                         plt.close(fig)
@@ -205,7 +182,6 @@ bt_results = backtest(
                 st.error("執行回測時發生錯誤：")
                 st.code(traceback.format_exc(), language="python")
 
-# Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #999; padding: 1rem; font-size: 0.9rem;'>

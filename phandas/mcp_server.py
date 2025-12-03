@@ -65,9 +65,11 @@ def fetch_market_data(
 @mcp.tool()
 def list_operators() -> str:
     """
-    List all available alpha factor operators in phandas.operators.
+    List all available alpha factor operators in phandas.
     Returns a JSON list containing function names, signatures, and docstrings.
     Use this to discover what mathematical and statistical operations are available.
+    
+    All operators are imported at the top level, use: from phandas import ts_mean, rank, etc.
     """
     import inspect
     from . import operators
@@ -96,7 +98,8 @@ def read_source(object_path: str) -> str:
     Get the source code of a specific Phandas function or class.
     
     Args:
-        object_path: Dot-separated path to the object (e.g., 'phandas.operators.ts_mean', 'phandas.core.Factor.ts_mean')
+        object_path: Dot-separated path to the object (e.g., 'ts_mean', 'Factor.ts_mean', 'phandas.core.Factor')
+        All operators are top-level exports, so 'ts_mean' resolves to 'phandas.operators.ts_mean'
         
     Returns:
         The source code of the object.
@@ -159,9 +162,9 @@ def execute_factor_backtest(
     
     Examples:
         factor_code = '''
-        log_returns = log(close) - ts_delay(log(close), 20)
-        momentum = log_returns.rank()
-        factor = vector_neut(momentum, -rank(volume))
+log_returns = log(close) - ts_delay(log(close), 20)
+momentum = log_returns.rank()
+alpha = vector_neut(momentum, -rank(volume))
         '''
     """
     try:
@@ -182,17 +185,17 @@ def execute_factor_backtest(
         
         exec(factor_code, namespace)
         
-        if 'factor' not in namespace:
+        if 'alpha' not in namespace:
             return json.dumps({
                 'status': 'error',
                 'summary': {},
                 'factor_expression': None,
-                'error': "Factor code must assign result to variable named 'factor'"
+                'error': "Factor code must assign result to variable named 'alpha'"
             })
         
         bt_results = backtest(
             entry_price_factor=panel['open'],
-            strategy_factor=namespace['factor'],
+            strategy_factor=namespace['alpha'],
             transaction_cost=(transaction_cost, transaction_cost),
             full_rebalance=full_rebalance,
             auto_run=True
@@ -206,7 +209,7 @@ def execute_factor_backtest(
             'max_drawdown': summary.get('max_drawdown', 0),
         }
         
-        factor_expr = namespace['factor'].name if hasattr(namespace['factor'], 'name') else 'factor'
+        factor_expr = namespace['alpha'].name if hasattr(namespace['alpha'], 'name') else 'alpha'
         
         result = {
             'status': 'success',

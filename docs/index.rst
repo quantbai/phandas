@@ -1,38 +1,47 @@
-Phandas 文檔
-============
+Phandas Documentation
+=====================
 
-Phandas 是量化金融的多因子回測框架。支持加密貨幣市場的 Alpha 因子開發、組合優化和實盤交易。
+Phandas is a multi-factor backtesting framework for quantitative finance. Supports alpha factor development, portfolio optimization, and live trading for cryptocurrency markets.
 
-快速連結
----------
+Quick Links
+-----------
 
-- `GitHub 倉庫 <https://github.com/quantbai/phandas>`_
-- `PyPI 套件 <https://pypi.org/project/phandas/>`_
+- `GitHub Repository <https://github.com/quantbai/phandas>`_
+- `PyPI Package <https://pypi.org/project/phandas/>`_
 
-入門指南
----------
+Getting Started
+---------------
 
 .. toctree::
    :maxdepth: 2
-   :caption: 入門指南
+   :caption: Getting Started
 
    installation
    quickstart
 
-MCP 集成
----------
+MCP Integration
+---------------
 
 .. toctree::
    :maxdepth: 2
-   :caption: MCP 集成
+   :caption: MCP Integration
 
    mcp_setup
 
-核心指南
----------
+Core Guide
+----------
 
 .. toctree::
    :maxdepth: 2
-   :caption: 核心指南
+   :caption: Core Guide
 
    guide/operators_guide
+
+API Reference
+-------------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference
+
+   api/operators

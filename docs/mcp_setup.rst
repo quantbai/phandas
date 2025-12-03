@@ -1,34 +1,34 @@
-算子 MCP
-=========
+MCP Integration
+===============
 
-Phandas 提供 MCP (Model Context Protocol) 集成，讓 AI IDE（如 Cursor）可以直接調用 Phandas 的算子和回測功能。
+Phandas provides MCP (Model Context Protocol) integration, allowing AI IDEs (like Cursor) to directly call Phandas operators and backtesting functions.
 
-什麼是 MCP？
------------
+What is MCP?
+------------
 
-MCP 是一個標準協議，讓 AI 助手可以訪問外部工具和數據源。通過 MCP，Cursor 中的 AI 可以：
+MCP is a standard protocol that lets AI assistants access external tools and data sources. Through MCP, AI in Cursor can:
 
-- 直接獲取加密貨幣市場數據
-- 瀏覽所有 50+ 因子算子
-- 查看函數源代碼
-- 執行因子回測
+- Directly fetch cryptocurrency market data
+- Browse all 50+ factor operators
+- View function source code
+- Execute factor backtests
 
-安裝步驟
---------
+Installation Steps
+------------------
 
-1. 安裝 Phandas
-~~~~~~~~~~~~~~~
+1. Install Phandas
+~~~~~~~~~~~~~~~~~~
 
 ::
 
     pip install phandas
 
-2. 配置 Cursor
-~~~~~~~~~~~~~~
+2. Configure Cursor
+~~~~~~~~~~~~~~~~~~~
 
-1. 打開 Cursor
-2. 進入 **Settings** → **Tools & MCP** → **New MCP Server**
-3. 貼上以下 JSON 配置：
+1. Open Cursor
+2. Go to **Settings** → **Tools & MCP** → **New MCP Server**
+3. Paste the following JSON configuration:
 
 ::
 
@@ -41,119 +41,119 @@ MCP 是一個標準協議，讓 AI 助手可以訪問外部工具和數據源。
       }
     }
 
-4. 保存並重啟 Cursor
+4. Save and restart Cursor
 
-驗證安裝
-~~~~~~~~
+Verify Installation
+~~~~~~~~~~~~~~~~~~~
 
-重啟 Cursor 後，在聊天中詢問 AI::
+After restarting Cursor, ask the AI in chat::
 
-    列出 phandas 所有可用的算子
+    List all available phandas operators
 
-如果 AI 能夠回應並列出算子，表示 MCP 配置成功。
+If the AI responds with a list of operators, MCP configuration is successful.
 
-可用工具
---------
+Available Tools
+---------------
 
-MCP 服務器提供 4 個工具函數：
+The MCP server provides 4 tool functions:
 
 fetch_market_data
 ~~~~~~~~~~~~~~~~~
 
-獲取加密貨幣 OHLCV 數據。
+Fetch cryptocurrency OHLCV data.
 
-**參數**：
+**Parameters**:
 
-- ``symbols``: 交易對列表（例如 ['BTC', 'ETH']）
-- ``timeframe``: 時間間隔（'1d', '1h', '15m' 等）
-- ``limit``: 返回最近 N 條數據（預設：5）
-- ``start_date``: 開始日期（YYYY-MM-DD）
-- ``end_date``: 結束日期（YYYY-MM-DD）
-- ``sources``: 數據源（預設：['binance']）
+- ``symbols``: List of trading pairs (e.g., ['BTC', 'ETH'])
+- ``timeframe``: Time interval ('1d', '1h', '15m', etc.)
+- ``limit``: Return last N data points (default: 5)
+- ``start_date``: Start date (YYYY-MM-DD)
+- ``end_date``: End date (YYYY-MM-DD)
+- ``sources``: Data sources (default: ['binance'])
 
-**示例**::
+**Example**::
 
-    獲取 ETH 和 SOL 最近 10 天的日線數據
+    Fetch the last 10 days of daily data for ETH and SOL
 
 list_operators
 ~~~~~~~~~~~~~~
 
-列出所有可用的因子算子。
+List all available factor operators.
 
-返回所有算子的名稱、函數簽名和說明文檔。
+Returns names, function signatures, and documentation for all operators.
 
-**示例**::
+**Example**::
 
-    列出所有時間序列算子
+    List all time series operators
 
 read_source
 ~~~~~~~~~~~
 
-查看任何 Phandas 函數或類的源代碼。
+View source code for any Phandas function or class.
 
-**參數**：
+**Parameters**:
 
-- ``object_path``: 對象路徑（例如 'phandas.operators.ts_mean'）
+- ``object_path``: Object path (e.g., 'phandas.operators.ts_mean')
 
-**示例**::
+**Example**::
 
-    查看 ts_mean 函數的源代碼
+    Show the source code for ts_mean function
 
 execute_factor_backtest
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-執行自定義因子回測。
+Execute custom factor backtests.
 
-**參數**：
+**Parameters**:
 
-- ``factor_code``: 計算因子的 Python 代碼
-- ``symbols``: 交易代幣列表（預設：['ETH','SOL','ARB','OP','POL','SUI']）
-- ``start_date``: 開始日期（預設：'2022-01-01'）
-- ``transaction_cost``: 手續費率（預設：0.0003 = 0.03%）
-- ``full_rebalance``: 是否全倉重新平衡（預設：False）
+- ``factor_code``: Python code to calculate factor
+- ``symbols``: List of trading tokens (default: ['ETH','SOL','ARB','OP','POL','SUI'])
+- ``start_date``: Start date (default: '2022-01-01')
+- ``transaction_cost``: Transaction fee rate (default: 0.0003 = 0.03%)
+- ``full_rebalance``: Whether to fully rebalance (default: False)
 
-**預定義變量**：
+**Pre-defined variables**:
 
 - ``close``, ``open``, ``high``, ``low``, ``volume``
-- 所有 Phandas 算子（``ts_rank()``, ``ts_mean()``, ``log()``, ``rank()``, ``vector_neut()`` 等）
+- All Phandas operators (``ts_rank()``, ``ts_mean()``, ``log()``, ``rank()``, ``vector_neut()``, etc.)
 
-**注意**：代碼必須將結果賦值給變量 ``factor``
+**Note**: Code must assign result to variable named ``factor``
 
-**示例**::
+**Example**::
 
-    幫我回測一個 20 日動量因子，對成交量中性化
+    Backtest a 20-day momentum factor neutralized against volume
 
-使用示例
+Usage Examples
+--------------
+
+Common Use Cases
+~~~~~~~~~~~~~~~~
+
+**Query operators**
+    Ask AI to list all available time series operators. AI will call ``list_operators()`` and filter relevant results.
+
+**Fetch market data**
+    Request historical data for specific tokens. AI will call ``fetch_market_data()`` and return OHLCV data.
+
+**Execute factor backtest**
+    Describe strategy logic. AI will auto-generate factor code and call ``execute_factor_backtest()`` for backtesting.
+
+**View source code**
+    Ask about implementation details of specific functions. AI will use ``read_source()`` to display source code.
+
+Benefits
 --------
 
-常見使用場景
-~~~~~~~~~~~~
+Benefits of using MCP integration:
 
-**查詢算子**
-    詢問 AI 列出所有可用的時間序列算子，AI 會調用 ``list_operators()`` 並過濾相關結果。
+- **No coding required**: Describe strategies in natural language, AI auto-generates code
+- **Fast iteration**: Quickly test different factor combinations
+- **Learning tool**: View source code to learn operator implementations
+- **Data exploration**: Easily fetch and analyze market data
 
-**獲取市場數據**
-    請求獲取特定代幣的歷史數據，AI 會調用 ``fetch_market_data()`` 並返回 OHLCV 數據。
+Next Steps
+----------
 
-**執行因子回測**
-    描述策略邏輯，AI 會自動生成因子代碼並調用 ``execute_factor_backtest()`` 進行回測。
-
-**查看源代碼**
-    詢問特定函數的實現細節，AI 會使用 ``read_source()`` 顯示源代碼。
-
-優勢
-----
-
-使用 MCP 集成的優勢：
-
-- **無需編碼**：用自然語言描述策略，AI 自動生成代碼
-- **快速迭代**：快速測試不同的因子組合
-- **學習工具**：查看源代碼學習算子實現
-- **數據探索**：輕鬆獲取和分析市場數據
-
-下一步
-------
-
-- 返回 :doc:`installation` 查看基本安裝
-- 查看 :doc:`quickstart` 學習手動編寫策略
-- 參考 :doc:`guide/operators_guide` 了解所有算子
+- Return to :doc:`installation` for basic installation
+- See :doc:`quickstart` to learn writing strategies manually
+- Refer to :doc:`guide/operators_guide` for all operators

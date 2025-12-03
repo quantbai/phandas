@@ -10,6 +10,8 @@ from typing import List, Optional, TYPE_CHECKING, Callable
 if TYPE_CHECKING:
     from .panel import Panel
 
+from .constants import SYMBOL_RENAMES
+
 logger = logging.getLogger(__name__)
 
 TIMEFRAME_MAP = {
@@ -27,9 +29,32 @@ def fetch_data(
     sources: Optional[List[str]] = None,
     output_path: Optional[str] = None
 ) -> 'Panel':
-    """Fetch, merge, and align multi-source data.
+    """Fetch, merge, and align multi-source cryptocurrency data.
     
-    Defaults to Daily resolution ('1d') and Binance OHLCV data.
+    Parameters
+    ----------
+    symbols : List[str]
+        List of cryptocurrency symbols (e.g., ['BTC', 'ETH'])
+    timeframe : str, default '1d'
+        OHLCV timeframe ('1m', '5m', '15m', '1h', '4h', '1d', '1w')
+    start_date : str, optional
+        Start date in YYYY-MM-DD format
+    end_date : str, optional
+        End date in YYYY-MM-DD format
+    sources : List[str], optional
+        Data sources to fetch from. Default is ['binance']
+    output_path : str, optional
+        Path to save CSV output
+    
+    Returns
+    -------
+    Panel
+        Merged and aligned data from all sources
+    
+    Notes
+    -----
+    Defaults to daily resolution and Binance OHLCV data.
+    Multi-source data is aligned to common time range.
     """
     if sources is None:
         sources = ['binance']
@@ -52,10 +77,31 @@ def fetch_panel_core(
     sources: Optional[List[str]] = None,
     output_path: Optional[str] = None
 ) -> 'Panel':
-    """Core function to fetch, merge, and align multi-source data (Any resolution).
+    """Core function to fetch, merge, and align multi-source data at any resolution.
     
-    This function is the internal engine that supports arbitrary timeframes.
-    It orchestrates fetching from individual sources and aligning them into a Panel.
+    Parameters
+    ----------
+    symbols : List[str]
+        List of cryptocurrency symbols
+    timeframe : str, default '1d'
+        OHLCV timeframe
+    start_date : str, optional
+        Start date in YYYY-MM-DD format
+    end_date : str, optional
+        End date in YYYY-MM-DD format
+    sources : List[str], optional
+        Data sources. Default is ['binance']
+    output_path : str, optional
+        Path to save CSV output
+    
+    Returns
+    -------
+    Panel
+        Merged and aligned Panel object
+    
+    Notes
+    -----
+    Orchestrates fetching from individual sources and aligns them to common time range.
     """
     if sources is None:
         sources = ['binance']
@@ -88,8 +134,8 @@ def fetch_panel_core(
                 df = source_map[source](symbols, timeframe, start_date, source_end_date)
             
             if df is not None:
-                if not isinstance(df.index, pd.MultiIndex) and 'timestamp' in df.columns and 'symbol' in df.columns:
-                    df = df.set_index(['timestamp', 'symbol'])
+                if isinstance(df.index, pd.MultiIndex):
+                    df = df.reset_index()
                 raw_dfs.append(df)
             else:
                 logger.warning(f"  No data returned from {source}")
@@ -100,18 +146,20 @@ def fetch_panel_core(
     if not raw_dfs:
         raise ValueError("No data fetched from any source")
     
-    combined = pd.concat(raw_dfs, axis=1)
+    combined = raw_dfs[0]
+    for df in raw_dfs[1:]:
+        combined = pd.merge(combined, df, on=['timestamp', 'symbol'], how='outer')
     
     if combined.columns.duplicated().any():
         combined = combined.loc[:, ~combined.columns.duplicated(keep='first')]
     
     logger.info(f"Combined columns: {list(combined.columns)}")
     
-    combined_reset = combined.reset_index()
+    combined_reset = combined.copy()
     if 'index' in combined_reset.columns:
         logger.warning("Unexpected 'index' column found, removing it")
         combined_reset = combined_reset.drop(columns=['index'])
-    logger.info(f"After reset_index columns: {list(combined_reset.columns)}")
+    logger.info(f"After merge columns: {list(combined_reset.columns)}")
     
     processed = _process_data(combined_reset, timeframe, symbols)
     logger.info(f"After _process_data columns: {list(processed.columns)}")
@@ -133,14 +181,14 @@ def fetch_panel_core(
 
 
 def _fetch_ohlcv_data(
-    exchange, 
+    exchange,
     symbols: List[str], 
     timeframe: str, 
-    since, 
-    until=None,
-    columns_post_process: Optional[Callable] = None
+    since: Optional[int],
+    until: Optional[int] = None,
+    columns_post_process: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None
 ) -> Optional[pd.DataFrame]:
-    """Generic OHLCV fetcher with optional column post-processing.
+    """Fetch OHLCV data with optional column post-processing.
     
     Parameters
     ----------
@@ -153,12 +201,15 @@ def _fetch_ohlcv_data(
     since : int
         Milliseconds timestamp
     until : int, optional
-        Upper bound timestamp
+        Upper bound timestamp (milliseconds)
     columns_post_process : Callable, optional
         Function to select/rename columns from raw OHLCV
-    """
-    SYMBOL_RENAMES = {'MATIC': ['MATIC', 'POL'], 'POL': ['MATIC', 'POL']}
     
+    Returns
+    -------
+    pd.DataFrame or None
+        OHLCV data with columns [timestamp, open, high, low, close, volume, symbol]
+    """
     def _fetch_single(sym: str) -> Optional[pd.DataFrame]:
         try:
             market_sym = f'{sym}/USDT'
@@ -226,8 +277,27 @@ def fetch_binance(
 ) -> Optional[pd.DataFrame]:
     """Fetch OHLCV data from Binance.
     
-    Handles symbol renames (e.g., MATIC -> POL): fetches MATIC historical data
-    before 2024-09 and POL data after, then merges them.
+    Parameters
+    ----------
+    symbols : List[str]
+        List of cryptocurrency symbols
+    timeframe : str, default '1d'
+        OHLCV timeframe
+    start_date : str, optional
+        Start date in YYYY-MM-DD format
+    end_date : str, optional
+        End date in YYYY-MM-DD format
+    
+    Returns
+    -------
+    pd.DataFrame or None
+        OHLCV data with columns [timestamp, open, high, low, close, volume, symbol]
+    
+    Notes
+    -----
+    Handles symbol renames (e.g., MATIC -> POL): fetches old symbol historical data
+    before cutoff date and new symbol data after, then merges them.
+    Symbol renames are configured in constants.SYMBOL_RENAMES.
     """
     try:
         exchange = ccxt.binance()
@@ -240,53 +310,59 @@ def fetch_binance(
         
         symbols_to_fetch = list(set(symbols))
         
-        if 'POL' in symbols_to_fetch:
-            pol_since = exchange.parse8601('2024-09-01T00:00:00Z')
+        for new_sym, rename_info in SYMBOL_RENAMES.items():
+            if new_sym not in symbols_to_fetch:
+                continue
             
-            if since is None or since < pol_since:
-                matic_until = pol_since - 1
-                logger.info("Fetching MATIC historical data for POL before 2024-09")
-                matic_data = _fetch_ohlcv_data(
+            old_sym = rename_info['old_symbol']
+            cutoff_date = rename_info['cutoff_date']
+            cutoff_ts = exchange.parse8601(f'{cutoff_date}T00:00:00Z')
+            
+            if since is None or since < cutoff_ts:
+                old_until = cutoff_ts - 1
+                logger.info(f"Fetching {old_sym} historical data for {new_sym} before {cutoff_date}")
+                
+                old_data = _fetch_ohlcv_data(
                     exchange, 
-                    ['MATIC'] + [s for s in symbols_to_fetch if s != 'POL'],
+                    [old_sym] + [s for s in symbols_to_fetch if s != new_sym],
                     timeframe, 
                     since, 
-                    matic_until
+                    old_until
                 )
                 
-                pol_data = _fetch_ohlcv_data(
+                new_data = _fetch_ohlcv_data(
                     exchange,
                     symbols_to_fetch,
                     timeframe,
-                    pol_since,
+                    cutoff_ts,
                     until
                 )
                 
-                if matic_data is not None and pol_data is not None:
-                    matic_data.loc[matic_data['symbol'] == 'MATIC', 'symbol'] = 'POL'
-                    result = pd.concat([matic_data, pol_data], ignore_index=True)
+                if old_data is not None and new_data is not None:
+                    old_data.loc[old_data['symbol'] == old_sym, 'symbol'] = new_sym
+                    result = pd.concat([old_data, new_data], ignore_index=True)
                     result = result.sort_values('timestamp').reset_index(drop=True)
                     
-                    pol_rows = result[result['symbol'] == 'POL'].copy()
-                    if len(pol_rows) > 0:
-                        pol_rows = pol_rows.set_index('timestamp').sort_index()
-                        pol_rows = pol_rows.reindex(
-                            pd.date_range(pol_rows.index.min(), pol_rows.index.max(), freq='D')
+                    renamed_rows = result[result['symbol'] == new_sym].copy()
+                    if len(renamed_rows) > 0:
+                        renamed_rows = renamed_rows.set_index('timestamp').sort_index()
+                        renamed_rows = renamed_rows.reindex(
+                            pd.date_range(renamed_rows.index.min(), renamed_rows.index.max(), freq='D')
                         ).ffill()
-                        pol_rows = pol_rows.reset_index().rename(columns={'index': 'timestamp'})
-                        pol_rows['volume'] = pol_rows['volume'].fillna(0)
+                        renamed_rows = renamed_rows.reset_index().rename(columns={'index': 'timestamp'})
+                        renamed_rows['volume'] = renamed_rows['volume'].fillna(0)
                         result = pd.concat([
-                            result[result['symbol'] != 'POL'],
-                            pol_rows
+                            result[result['symbol'] != new_sym],
+                            renamed_rows
                         ], ignore_index=True)
                         result = result.sort_values('timestamp').reset_index(drop=True)
                     
                     return result
-                elif matic_data is not None:
-                    matic_data.loc[matic_data['symbol'] == 'MATIC', 'symbol'] = 'POL'
-                    return matic_data
-                elif pol_data is not None:
-                    return pol_data
+                elif old_data is not None:
+                    old_data.loc[old_data['symbol'] == old_sym, 'symbol'] = new_sym
+                    return old_data
+                elif new_data is not None:
+                    return new_data
                 else:
                     return None
         
@@ -303,7 +379,28 @@ def fetch_benchmark(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch market benchmark data (BTC, ETH) for all symbols."""
+    """Fetch benchmark market data (BTC, ETH close prices).
+    
+    Parameters
+    ----------
+    symbols : List[str]
+        List of symbols to associate benchmark data with
+    timeframe : str, default '1d'
+        OHLCV timeframe
+    start_date : str, optional
+        Start date in YYYY-MM-DD format
+    end_date : str, optional
+        End date in YYYY-MM-DD format
+    
+    Returns
+    -------
+    pd.DataFrame or None
+        Data with columns [timestamp, symbol, BTC_close, ETH_close]
+    
+    Notes
+    -----
+    Benchmark data is replicated for each symbol in symbols list.
+    """
     try:
         exchange = ccxt.binance()
         if not exchange.has['fetchOHLCV']:
@@ -356,7 +453,30 @@ def fetch_calendar(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch time-based features (year, month, day, dayofweek)."""
+    """Generate time-based calendar features.
+    
+    Parameters
+    ----------
+    symbols : List[str]
+        List of symbols to associate calendar data with
+    timeframe : str, default '1d'
+        OHLCV timeframe
+    start_date : str, optional
+        Start date in YYYY-MM-DD format
+    end_date : str, optional
+        End date in YYYY-MM-DD format
+    
+    Returns
+    -------
+    pd.DataFrame or None
+        Data with columns [timestamp, symbol, year, month, day, dayofweek, 
+        dayofmonth_position, is_week_end]
+    
+    Notes
+    -----
+    Both start_date and end_date are required.
+    dayofweek: 1-7 (Monday-Sunday), is_week_end: 1 if Saturday/Sunday else 0.
+    """
     if not start_date or not end_date:
         logger.warning("Calendar requires both start_date and end_date")
         return None
@@ -390,7 +510,22 @@ def fetch_calendar(
 
 
 def _process_data(df: pd.DataFrame, timeframe: str, user_symbols: List[str]) -> pd.DataFrame:
-    """Align multi-source data to common time range and forward fill gaps."""
+    """Align multi-source data to common time range with forward fill.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw combined data with columns [timestamp, symbol, ...]
+    timeframe : str
+        OHLCV timeframe for date range generation
+    user_symbols : List[str]
+        Symbols to filter in output
+    
+    Returns
+    -------
+    pd.DataFrame
+        Aligned data with columns [timestamp, symbol, ...]
+    """
     pivoted = df.pivot_table(index='timestamp', columns='symbol', values='close')
     common_start = pivoted.apply(lambda s: s.first_valid_index()).max()
     end_date = df['timestamp'].max()
@@ -404,10 +539,14 @@ def _process_data(df: pd.DataFrame, timeframe: str, user_symbols: List[str]) -> 
             pivot = pivot[pivot.index >= common_start].reindex(full_range).ffill()
             stacked = pivot.stack(future_stack=True).reset_index()
             stacked.columns = ['timestamp', 'symbol', col]
-            result_dfs.append(stacked.set_index(['timestamp', 'symbol']))
+            result_dfs.append(stacked)
     
-    result = pd.concat(result_dfs, axis=1).sort_index()
-    return result[result.index.get_level_values('symbol').isin(user_symbols)]
+    result = result_dfs[0]
+    for df_part in result_dfs[1:]:
+        result = pd.merge(result, df_part, on=['timestamp', 'symbol'], how='outer')
+    
+    result = result[result['symbol'].isin(user_symbols)]
+    return result.sort_values(['symbol', 'timestamp']).reset_index(drop=True)
 
 
 def fetch_vwap(
@@ -416,10 +555,29 @@ def fetch_vwap(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch and calculate Volume Weighted Average Price (VWAP).
+    """Calculate Volume Weighted Average Price (VWAP).
     
+    Parameters
+    ----------
+    symbols : List[str]
+        List of cryptocurrency symbols
+    timeframe : str, default '1d'
+        OHLCV timeframe
+    start_date : str, optional
+        Start date in YYYY-MM-DD format
+    end_date : str, optional
+        End date in YYYY-MM-DD format
+    
+    Returns
+    -------
+    pd.DataFrame or None
+        Data with columns [timestamp, symbol, vwap]
+    
+    Notes
+    -----
     For daily ('1d'): Aggregates hourly data for accurate daily VWAP.
     For intraday: Cumulative VWAP anchored to trading day start (UTC).
+    Typical price = (high + low + close) / 3.
     """
     try:
         is_daily = timeframe == '1d'

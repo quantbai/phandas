@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import logging
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
     from .backtest import Backtester, CombinedBacktester
@@ -15,140 +15,458 @@ logger = logging.getLogger(__name__)
 _DATE_FORMAT = '%Y-%m-%d'
 
 _PLOT_COLORS = {
-    'equity_fill': [(0.22, '#2563eb'), (0.12, '#3b82f6'), (0.06, '#60a5fa'), (0.03, '#93c5fd'), (0.015, '#dbeafe')],
-    'equity_line': '#1e40af',
-    'benchmark_line': '#f97316',
-    'drawdown_fill': '#ef4444',
-    'drawdown_line': '#991b1b',
+    'equity_fill': '#3b82f6',
+    'equity_line': '#1d4ed8',
+    'benchmark_line': '#ea580c',
+    'drawdown_fill': '#dc2626',
+    'drawdown_line': '#b91c1c',
     'background': '#ffffff',
+    'background_subtle': '#fafafa',
     'white': '#ffffff',
-    'text': '#111827',
-    'text_light': '#4b5563',
-    'text_muted': '#9ca3af',
-    'text_info': '#374151',
-    'grid': '#f3f4f6',
-    'turnover_line': '#059669',
-    'zero_line': '#6b7280',
+    'text': '#0f172a',
+    'text_dark': '#020617',
+    'text_light': '#1e293b',
+    'text_muted': '#475569',
+    'text_info': '#334155',
+    'grid': '#e2e8f0',
+    'grid_subtle': '#f1f5f9',
+    'turnover_line': '#475569',
+    'zero_line': '#94a3b8',
+    'table_header': '#020617',
+    'table_label': '#1e293b',
+    'table_value': '#0f172a',
+    'table_line': '#64748b',
+    'table_line_light': '#94a3b8',
+    'factor_palette': ['#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#f59e0b', '#06b6d4'],
 }
 
 _PLOT_STYLES = {
-    'title_size': 14,
+    'title_size': 16,
+    'subtitle_size': 11,
     'ylabel_size': 11,
     'xlabel_size': 11,
     'label_size': 10,
-    'small_label_size': 9,
-    'grid_alpha': 0.5,
-    'grid_width': 0.8,
-    'grid_alpha_secondary': 0.4,
+    'small_label_size': 9.5,
+    'table_fontsize': 10.5,
+    'table_header_fontsize': 10.5,
+    'legend_fontsize': 10,
+    'ylabel_labelpad': 8,
+    'xlabel_labelpad': 6,
+    'grid_alpha': 0.4,
+    'grid_width': 0.5,
+    'grid_alpha_secondary': 0.35,
     'spine_width': 0.8,
+    'spine_color': '#94a3b8',
     'tick_length': 4,
-    'linewidth': 1.5,
+    'linewidth': 1.8,
     'benchmark_linewidth': 1.5,
-    'benchmark_alpha': 0.7,
-    'thin_linewidth': 1.0,
+    'benchmark_alpha': 0.85,
+    'thin_linewidth': 1.2,
     'line_alpha': 1.0,
-    'box_alpha': 0.9,
-    'fill_alpha': 0.3,
+    'box_alpha': 0.95,
+    'fill_alpha': 0.25,
+    'drawdown_fill_alpha': 0.22,
+    'table_row_height': 0.058,
+    'table_line_width': 1.0,
+    'table_header_line_width': 0.6,
+    'factor_title_size': 12,
+    'factor_label_size': 10,
+    'factor_tick_size': 9,
+    'factor_subgrid_title_size': 10.5,
+    'factor_subgrid_label_size': 9,
+    'factor_subgrid_tick_size': 8,
+    'factor_grid_alpha': 0.15,
+    'factor_grid_alpha_subgrid': 0.12,
+    'factor_grid_width': 0.5,
+    'factor_fill_alpha': 0.18,
+    'factor_line_alpha': 0.9,
+    'factor_title_pad': 12,
 }
 
-_TRANSLATIONS = {
-    'en': {
-        'equity_title': 'Equity Curve',
-        'equity_ylabel': 'Equity Value',
-        'drawdown_ylabel': 'Drawdown',
-        'turnover_ylabel': 'Turnover',
-        'date_xlabel': 'Date',
-        'no_turnover': 'No Turnover Data',
-        'benchmark_label': 'Benchmark',
-        'equity_label': 'Equity',
-        'strategy': 'Strategy',
-        'period': 'Period',
-        'total_return': 'Total Return',
-        'annual_return': 'Annual Return',
-        'sharpe': 'Sharpe Ratio',
-        'psr': 'PSR',
-        'sortino': 'Sortino Ratio',
-        'calmar': 'Calmar Ratio',
-        'linearity': 'Linearity',
-        'max_dd': 'Max Drawdown',
-        'var_95': 'VaR 95%',
-        'cvar': 'CVaR',
-        'turnover': 'Avg. Annual Turnover',
-        'corr_matrix': 'Correlation Matrix',
-        'weights': 'Strategy Weights',
-        'to': 'to',
-    },
-    'zh': {
-        'equity_title': '權益曲線',
-        'equity_ylabel': '權益淨值',
-        'drawdown_ylabel': '回撤幅度',
-        'turnover_ylabel': '換手率',
-        'date_xlabel': '日期',
-        'no_turnover': '無換手率數據',
-        'benchmark_label': '基準',
-        'equity_label': '策略淨值',
-        'strategy': '策略名稱',
-        'period': '回測期間',
-        'total_return': '總回報率',
-        'annual_return': '年化回報率',
-        'sharpe': '夏普比率',
-        'psr': 'PSR (概率夏普)',
-        'sortino': '索提諾比率',
-        'calmar': '卡瑪比率',
-        'linearity': '線性度',
-        'max_dd': '最大回撤',
-        'var_95': '風險價值 (95%)',
-        'cvar': '條件風險價值',
-        'turnover': '平均年化換手率',
-        'corr_matrix': '相關係數矩陣',
-        'weights': '策略權重',
-        'to': '至',
-    }
+_TEXT_LABELS = {
+    'equity_ylabel': 'Equity Value',
+    'drawdown_ylabel': 'Drawdown',
+    'turnover_ylabel': 'Turnover',
+    'date_xlabel': 'Date',
+    'no_turnover': 'No Turnover Data',
+    'benchmark_label': 'Benchmark',
+    'equity_label': 'Strategy',
+    'strategy': 'Strategy',
+    'period': 'Period',
+    'total_return': 'Total Return',
+    'annual_return': 'Annual Return',
+    'sharpe': 'Sharpe Ratio',
+    'psr': 'PSR',
+    'sortino': 'Sortino Ratio',
+    'calmar': 'Calmar Ratio',
+    'linearity': 'Linearity',
+    'max_dd': 'Max Drawdown',
+    'var_95': 'VaR 95%',
+    'cvar': 'CVaR',
+    'turnover': 'Annual Turnover',
+    'corr_matrix': 'Correlation Matrix',
+    'weights': 'Strategy Weights',
+    'to': 'to',
 }
-
-plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans', 'sans-serif']
-plt.rcParams['axes.unicode_minus'] = False
 
 
 def _apply_plot_style():
-    """Apply default style and re-set custom fonts."""
+    """Apply default matplotlib plot style configuration."""
     plt.style.use('default')
-    plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans', 'sans-serif']
+    
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.sans-serif'] = ['Helvetica', 'Helvetica Neue', 'Arial', 'DejaVu Sans']
+    plt.rcParams['mathtext.fontset'] = 'stixsans'
     plt.rcParams['axes.unicode_minus'] = False
 
 
-def _plot_equity_line(ax, equity_series: pd.Series, y_min: float, label: str = 'Equity') -> None:
-    """Layered equity curve visualization."""
-    # Gradient Fill
-    for alpha, color in _PLOT_COLORS['equity_fill']:
-        ax.fill_between(equity_series.index, y_min, equity_series, alpha=alpha, color=color, interpolate=True)
+def _plot_equity_line(ax, equity_series: pd.Series, y_min: float, label: str = 'Strategy') -> None:
+    """Plot equity curve with clean single-layer fill.
     
-    # Main Equity Line
-    ax.plot(equity_series.index, equity_series, color=_PLOT_COLORS['equity_line'], 
-           linewidth=_PLOT_STYLES['linewidth'], alpha=_PLOT_STYLES['line_alpha'], label=label)
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to plot on
+    equity_series : pd.Series
+        Time series of equity values
+    y_min : float
+        Minimum y-value for fill baseline
+    label : str, default 'Strategy'
+        Legend label
+    """
+    ax.fill_between(
+        equity_series.index, y_min, equity_series, 
+        alpha=_PLOT_STYLES['fill_alpha'], 
+        color=_PLOT_COLORS['equity_fill'], 
+        linewidth=0
+    )
+    ax.plot(
+        equity_series.index, equity_series, 
+        color=_PLOT_COLORS['equity_line'], 
+        linewidth=_PLOT_STYLES['linewidth'], 
+        alpha=_PLOT_STYLES['line_alpha'], 
+        label=label
+    )
 
 
 def _plot_drawdown(ax, drawdown_series: pd.Series) -> None:
-    """Drawdown visualization."""
-    ax.fill_between(drawdown_series.index, 0, drawdown_series, 
-                   color=_PLOT_COLORS['drawdown_fill'], alpha=_PLOT_STYLES['fill_alpha'], step='pre')
-    ax.plot(drawdown_series.index, drawdown_series, color=_PLOT_COLORS['drawdown_line'], 
-           linewidth=_PLOT_STYLES['thin_linewidth'])
-    # Add zero line
-    ax.axhline(0, color=_PLOT_COLORS['zero_line'], linewidth=0.8, linestyle='-', alpha=0.5)
+    """Plot drawdown with subtle fill and zero line.
+    
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to plot on
+    drawdown_series : pd.Series
+        Time series of drawdown values
+    """
+    ax.fill_between(
+        drawdown_series.index, 0, drawdown_series, 
+        color=_PLOT_COLORS['drawdown_fill'], 
+        alpha=_PLOT_STYLES['drawdown_fill_alpha'], 
+        step='pre',
+        linewidth=0
+    )
+    ax.plot(
+        drawdown_series.index, drawdown_series, 
+        color=_PLOT_COLORS['drawdown_line'], 
+        linewidth=_PLOT_STYLES['thin_linewidth'],
+        alpha=0.9
+    )
+    ax.axhline(0, color=_PLOT_COLORS['zero_line'], linewidth=0.5, linestyle='-', alpha=0.6)
+
+
+def _style_axis(ax, ylabel: str, is_bottom: bool = False, xlabel: str = None):
+    """Apply consistent styling to axis."""
+    ax.set_facecolor(_PLOT_COLORS['white'])
+    ax.set_ylabel(
+        ylabel, 
+        fontsize=_PLOT_STYLES['ylabel_size'], 
+        color=_PLOT_COLORS['text_light'], 
+        labelpad=_PLOT_STYLES['ylabel_labelpad']
+    )
+    
+    if is_bottom and xlabel:
+        ax.set_xlabel(
+            xlabel, 
+            fontsize=_PLOT_STYLES['xlabel_size'], 
+            color=_PLOT_COLORS['text_light'], 
+            labelpad=_PLOT_STYLES['xlabel_labelpad']
+        )
+    
+    ax.grid(
+        True, 
+        alpha=_PLOT_STYLES['grid_alpha'], 
+        color=_PLOT_COLORS['grid'], 
+        linestyle='-', 
+        linewidth=_PLOT_STYLES['grid_width']
+    )
+    
+    for spine in ['top', 'right']:
+        ax.spines[spine].set_visible(False)
+    for spine in ['bottom', 'left']:
+        ax.spines[spine].set_color(_PLOT_STYLES['spine_color'])
+        ax.spines[spine].set_linewidth(_PLOT_STYLES['spine_width'])
+    
+    ax.tick_params(
+        axis='both', 
+        which='major', 
+        labelsize=_PLOT_STYLES['label_size'], 
+        colors=_PLOT_COLORS['text_muted'],
+        width=_PLOT_STYLES['spine_width'], 
+        length=_PLOT_STYLES['tick_length']
+    )
+
+
+def _render_summary_table(ax, summary_data: List[tuple]) -> None:
+    """Render summary metrics as clean table (research report style).
+    
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to render table on
+    summary_data : List[tuple]
+        List of (label, value) tuples to display (2-column)
+        OR List of (label, strategy_value, benchmark_value) tuples (3-column)
+    """
+    if not summary_data:
+        return
+    
+    has_three_columns = any(len(row) == 3 for row in summary_data)
+    
+    if has_three_columns:
+        cell_text = [[row[0], row[1], row[2] if len(row) > 2 else ''] for row in summary_data]
+        num_cols = 3
+        col_widths = [0.48, 0.26, 0.26]
+    else:
+        cell_text = [[row[0], row[1]] for row in summary_data]
+        num_cols = 2
+        col_widths = None
+    
+    num_rows = len(cell_text)
+    
+    ROW_HEIGHT = _PLOT_STYLES['table_row_height']
+    table_height = num_rows * ROW_HEIGHT
+    
+    y_bottom = (1.0 - table_height) / 2
+    
+    bbox = [0.02, y_bottom, 0.96, table_height]
+    
+    table = ax.table(
+        cellText=cell_text, 
+        cellLoc='left', 
+        loc='center',
+        bbox=bbox, 
+        edges='open'
+    )
+    
+    table.auto_set_font_size(False)
+    table.set_fontsize(_PLOT_STYLES['table_fontsize'])
+    
+    if col_widths:
+        for i, width in enumerate(col_widths):
+            for row in range(num_rows):
+                table[(row, i)].set_width(width)
+    
+    COLOR_HEADER = _PLOT_COLORS['table_header']
+    COLOR_LABEL = _PLOT_COLORS['table_label']
+    COLOR_VALUE = _PLOT_COLORS['table_value']
+    COLOR_LINE = _PLOT_COLORS['table_line']
+    COLOR_LINE_LIGHT = _PLOT_COLORS['table_line_light']
+    
+    fontsize = _PLOT_STYLES['table_fontsize']
+    header_fontsize = _PLOT_STYLES['table_header_fontsize']
+    
+    for cell_key, cell in table.get_celld().items():
+        row, col = cell_key
+        
+        cell.set_facecolor('none')
+        cell.set_linewidth(0)
+        cell.set_edgecolor('none')
+        cell.PAD = 0.02
+        
+        if has_three_columns and row == 0:
+            if col == 0:
+                cell.set_text_props(
+                    weight='medium', 
+                    color=COLOR_HEADER, 
+                    fontsize=header_fontsize, 
+                    ha='left'
+                )
+            else:
+                cell.set_text_props(
+                    weight='medium', 
+                    color=COLOR_HEADER, 
+                    fontsize=header_fontsize, 
+                    ha='right'
+                )
+        else:
+            label_text = cell_text[row][0]
+            
+            is_spacer = all(not str(cell_text[row][i]).strip() for i in range(len(cell_text[row])))
+            
+            is_section_header = (
+                label_text and len(cell_text[row]) >= 2 and 
+                not cell_text[row][1] and label_text.strip() 
+                and not label_text.startswith('  ')
+            )
+            
+            if is_spacer:
+                cell.set_text_props(fontsize=4)
+            elif is_section_header and not has_three_columns:
+                cell.set_text_props(
+                    weight='medium', 
+                    color=COLOR_HEADER, 
+                    fontsize=fontsize, 
+                    ha='left'
+                )
+            else:
+                if col == 0:
+                    cell.set_text_props(
+                        weight='normal', 
+                        color=COLOR_LABEL, 
+                        fontsize=fontsize, 
+                        ha='left'
+                    )
+                else:
+                    cell.set_text_props(
+                        weight='normal', 
+                        color=COLOR_VALUE, 
+                        fontsize=fontsize, 
+                        ha='right'
+                    )
+    
+    line_width = _PLOT_STYLES['table_line_width']
+    header_line_width = _PLOT_STYLES['table_header_line_width']
+    
+    ax.plot(
+        [0.02, 0.98], [y_bottom + table_height, y_bottom + table_height], 
+        linewidth=line_width, 
+        color=COLOR_LINE, 
+        transform=ax.transAxes, 
+        solid_capstyle='butt'
+    )
+    
+    if has_three_columns:
+        header_y = y_bottom + table_height - ROW_HEIGHT
+        ax.plot(
+            [0.02, 0.98], [header_y, header_y], 
+            linewidth=header_line_width, 
+            color=COLOR_LINE_LIGHT, 
+            transform=ax.transAxes, 
+            solid_capstyle='butt'
+        )
+    
+    ax.plot(
+        [0.02, 0.98], [y_bottom, y_bottom], 
+        linewidth=line_width, 
+        color=COLOR_LINE, 
+        transform=ax.transAxes, 
+        solid_capstyle='butt'
+    )
+    
+    ax.axis('off')
 
 
 class BacktestPlotter:
-    """Plotter for Backtester and CombinedBacktester results."""
+    """Plotter for single-strategy backtest results.
+    
+    Visualizes equity curve, drawdown, turnover, and performance metrics.
+    
+    Parameters
+    ----------
+    backtester : Backtester
+        Backtester instance to plot
+    
+    Attributes
+    ----------
+    bt : Backtester
+        Reference to backtester
+    """
     
     def __init__(self, backtester: 'Backtester'):
-        """Initialize with a Backtester instance."""
+        """Initialize plotter with Backtester.
+        
+        Parameters
+        ----------
+        backtester : Backtester
+            Backtester instance to visualize
+        """
         self.bt = backtester
     
-    def plot_equity(self, figsize: tuple = (14, 8), show_summary: bool = True, 
-                   show_benchmark: bool = True, language: str = 'en') -> None:
-        """Plot equity, drawdown, turnover, summary, and benchmark."""
-        texts = _TRANSLATIONS.get(language, _TRANSLATIONS['en'])
+    def _calculate_benchmark_metrics(self, benchmark_norm: pd.Series, strategy_returns: pd.Series) -> Dict:
+        """Calculate full benchmark metrics for equal-weight buy-and-hold.
+        
+        Parameters
+        ----------
+        benchmark_norm : pd.Series
+            Normalized benchmark equity curve
+        strategy_returns : pd.Series
+            Strategy daily returns
+        
+        Returns
+        -------
+        Dict
+            Full benchmark metrics: total_return, annual_return, sharpe, sortino, 
+            calmar, max_drawdown, var_95, cvar, linearity
+        """
+        if benchmark_norm.empty or len(benchmark_norm) < 2:
+            return {}
+        
+        benchmark_returns = benchmark_norm.pct_change(fill_method=None).dropna()
+        if benchmark_returns.empty or len(benchmark_returns) < 2:
+            return {}
+        
+        bmk_total_return = benchmark_norm.iloc[-1] / benchmark_norm.iloc[0] - 1
+        days = (benchmark_returns.index[-1] - benchmark_returns.index[0]).days
+        bmk_annual_return = (1 + bmk_total_return) ** (365 / days) - 1 if days > 0 else 0
+        
+        bmk_annual_vol = benchmark_returns.std() * np.sqrt(365)
+        risk_free_rate = 0.03
+        bmk_sharpe = (bmk_annual_return - risk_free_rate) / bmk_annual_vol if bmk_annual_vol > 0 else 0
+        
+        downside_returns = benchmark_returns[benchmark_returns < 0]
+        downside_vol = downside_returns.std() * np.sqrt(365) if len(downside_returns) > 0 else 0
+        bmk_sortino = (bmk_annual_return - risk_free_rate) / downside_vol if downside_vol > 0 else 0
+        
+        rolling_max = benchmark_norm.cummax()
+        drawdown = benchmark_norm / rolling_max - 1
+        bmk_max_dd = drawdown.min()
+        bmk_calmar = bmk_annual_return / abs(bmk_max_dd) if bmk_max_dd < 0 else 0
+        
+        from scipy.stats import linregress
+        t = np.arange(len(benchmark_norm))
+        r_value = linregress(t, benchmark_norm.values)[2]
+        bmk_linearity = r_value ** 2
+        
+        bmk_var_95 = benchmark_returns.quantile(0.05)
+        bmk_cvar = benchmark_returns[benchmark_returns <= bmk_var_95].mean() if (benchmark_returns <= bmk_var_95).any() else 0
+        
+        return {
+            'bmk_total_return': bmk_total_return,
+            'bmk_annual_return': bmk_annual_return,
+            'bmk_sharpe': bmk_sharpe,
+            'bmk_sortino': bmk_sortino,
+            'bmk_calmar': bmk_calmar,
+            'bmk_linearity': bmk_linearity,
+            'bmk_max_drawdown': bmk_max_dd,
+            'bmk_var_95': bmk_var_95,
+            'bmk_cvar': bmk_cvar,
+        }
+    
+    def plot_equity(self, figsize: tuple = (14, 7.5), show_summary: bool = True, 
+                   show_benchmark: bool = True) -> None:
+        """Plot equity, drawdown, turnover, and performance metrics.
+        
+        Parameters
+        ----------
+        figsize : tuple, default (14, 7.5)
+            Figure size (width, height)
+        show_summary : bool, default True
+            Whether to display performance summary table
+        show_benchmark : bool, default True
+            Whether to overlay benchmark if available
+        """
+        texts = _TEXT_LABELS
         
         history = self.bt.portfolio.get_history_df()
         if history.empty:
@@ -161,130 +479,198 @@ class BacktestPlotter:
         
         benchmark_series = None
         benchmark_norm = None
+        benchmark_metrics = {}
         if show_benchmark:
             benchmark_series = self.bt._calculate_benchmark_equity()
             if not benchmark_series.empty and len(benchmark_series) > 0:
                 benchmark_norm = benchmark_series / benchmark_series.iloc[0]
+                strategy_returns = self.bt.get_daily_returns()
+                if not strategy_returns.empty:
+                    benchmark_metrics = self._calculate_benchmark_metrics(benchmark_norm, strategy_returns)
         
         turnover_df = self.bt.get_daily_turnover_df()
         
         _apply_plot_style()
-        fig = plt.figure(figsize=figsize, constrained_layout=True)
+        fig = plt.figure(figsize=figsize)
         
-        # Create GridSpec with 2 columns: Main plots (left) and Summary (right)
-        gs = fig.add_gridspec(3, 2, height_ratios=[3, 1, 1], width_ratios=[5, 1])
+        fig.subplots_adjust(top=0.91, bottom=0.08, left=0.065, right=0.98, wspace=0.02, hspace=0.12)
+        
+        gs = fig.add_gridspec(3, 2, height_ratios=[3.5, 1, 1], width_ratios=[3, 1])
         
         ax = fig.add_subplot(gs[0, 0])
         ax_dd = fig.add_subplot(gs[1, 0], sharex=ax)
         ax_to = fig.add_subplot(gs[2, 0], sharex=ax)
         
-        # Summary subplot (spans all rows in the right column)
         ax_summary = fig.add_subplot(gs[:, 1])
         ax_summary.axis('off')
         
-        ax.set_facecolor(_PLOT_COLORS['background'])
         y_min = equity_curve.min()
         _plot_equity_line(ax, equity_curve, y_min, label=texts['equity_label'])
         
         if benchmark_norm is not None and len(benchmark_norm) > 0:
             benchmark_abs = benchmark_norm * self.bt.portfolio.initial_capital
             y_min = min(y_min, benchmark_abs.min())
-            ax.plot(benchmark_norm.index, benchmark_abs, color=_PLOT_COLORS['benchmark_line'], 
-                   linewidth=_PLOT_STYLES['benchmark_linewidth'], alpha=_PLOT_STYLES['benchmark_alpha'], 
-                   linestyle='--', label=texts['benchmark_label'])
+            ax.plot(
+                benchmark_norm.index, benchmark_abs, 
+                color=_PLOT_COLORS['benchmark_line'], 
+                linewidth=_PLOT_STYLES['benchmark_linewidth'], 
+                alpha=_PLOT_STYLES['benchmark_alpha'], 
+                linestyle='--', 
+                label=texts['benchmark_label']
+            )
         
-        # Add legend
-        ax.legend(loc='upper left', frameon=True, framealpha=_PLOT_STYLES['box_alpha'], 
-                  fontsize=_PLOT_STYLES['small_label_size'])
+        ax.legend(
+            loc='upper left', 
+            frameon=False,
+            fontsize=_PLOT_STYLES['legend_fontsize'],
+            labelcolor=_PLOT_COLORS['text_muted']
+        )
         
-        ax.set_title(f"{texts['equity_title']} ({self.bt.strategy_factor.name})", 
-                    fontsize=_PLOT_STYLES['title_size'], fontweight='400', color=_PLOT_COLORS['text'], pad=14)
-        ax.set_ylabel(texts['equity_ylabel'], fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
+        fig.suptitle(
+            self.bt.strategy_factor.name, 
+            fontsize=_PLOT_STYLES['title_size'], 
+            fontweight='500', 
+            color=_PLOT_COLORS['text_dark'], 
+            y=0.97
+        )
+        
+        if not equity_curve.empty:
+            start = equity_curve.index[0].strftime(_DATE_FORMAT)
+            end = equity_curve.index[-1].strftime(_DATE_FORMAT)
+            period_text = f"{start} {texts['to']} {end}"
+            fig.text(
+                0.5, 0.935, period_text, 
+                fontsize=_PLOT_STYLES['subtitle_size'], 
+                color=_PLOT_COLORS['text_muted'], 
+                ha='center', va='top'
+            )
+        
+        _style_axis(ax, texts['equity_ylabel'])
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
-        ax.grid(True, alpha=_PLOT_STYLES['grid_alpha'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.tick_params(axis='both', which='major', labelsize=_PLOT_STYLES['label_size'], colors=_PLOT_COLORS['text_light'], 
-                      width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
         
         if show_summary:
-            summary_lines = [f"{texts['strategy']}: {self.bt.strategy_factor.name}"]
-            if not equity_curve.empty:
-                start = equity_curve.index[0].strftime(_DATE_FORMAT)
-                end = equity_curve.index[-1].strftime(_DATE_FORMAT)
-                summary_lines.append(f"{texts['period']}: {start} {texts['to']} {end}")
-                
-                metrics = self.bt.metrics
-                if metrics:
-                    summary_lines.extend([
-                        f"{texts['total_return']}: {metrics.get('total_return', 0):.2%}",
-                        f"{texts['annual_return']}: {metrics.get('annual_return', 0):.2%}",
-                        f"{texts['sharpe']}: {metrics.get('sharpe_ratio', 0):.2f}",
-                        f"{texts['psr']}: {metrics.get('psr', 0):.1%}",
-                        f"{texts['sortino']}: {metrics.get('sortino_ratio', 0):.2f}",
-                        f"{texts['calmar']}: {metrics.get('calmar_ratio', 0):.2f}",
-                        f"{texts['linearity']}: {metrics.get('linearity', 0):.4f}",
-                        f"{texts['max_dd']}: {metrics.get('max_drawdown', 0):.2%}",
-                        f"{texts['var_95']}: {metrics.get('var_95', 0):.2%}",
-                        f"{texts['cvar']}: {metrics.get('cvar', 0):.2%}",
-                    ])
-                
-                if not turnover_df.empty:
-                    avg_turnover = turnover_df['turnover'].mean() * 365
-                    summary_lines.append(f"{texts['turnover']}: {avg_turnover:.2%}")
+            metrics = self.bt.metrics
             
-            summary_text = "\n".join(summary_lines)
-            ax_summary.text(0.0, 0.98, summary_text, transform=ax_summary.transAxes, 
-                            fontsize=_PLOT_STYLES['label_size'], 
-                            verticalalignment='top', horizontalalignment='left', 
-                            color=_PLOT_COLORS['text_info'])
+            if benchmark_metrics:
+                summary_data = [
+                    ('Metric', 'Strategy', 'Benchmark'),
+                ]
+                
+                if metrics:
+                    avg_turnover = turnover_df['turnover'].mean() * 365 if not turnover_df.empty else 0
+                    
+                    summary_data.extend([
+                        (texts['total_return'], f"{metrics.get('total_return', 0):.2%}", 
+                         f"{benchmark_metrics.get('bmk_total_return', 0):.2%}"),
+                        (texts['annual_return'], f"{metrics.get('annual_return', 0):.2%}", 
+                         f"{benchmark_metrics.get('bmk_annual_return', 0):.2%}"),
+                        (texts['sharpe'], f"{metrics.get('sharpe_ratio', 0):.2f}", 
+                         f"{benchmark_metrics.get('bmk_sharpe', 0):.2f}"),
+                        (texts['psr'], f"{metrics.get('psr', 0):.1%}", '-'),
+                        (texts['sortino'], f"{metrics.get('sortino_ratio', 0):.2f}", 
+                         f"{benchmark_metrics.get('bmk_sortino', 0):.2f}"),
+                        (texts['calmar'], f"{metrics.get('calmar_ratio', 0):.2f}", 
+                         f"{benchmark_metrics.get('bmk_calmar', 0):.2f}"),
+                        (texts['linearity'], f"{metrics.get('linearity', 0):.4f}", 
+                         f"{benchmark_metrics.get('bmk_linearity', 0):.4f}"),
+                        (texts['max_dd'], f"{metrics.get('max_drawdown', 0):.2%}", 
+                         f"{benchmark_metrics.get('bmk_max_drawdown', 0):.2%}"),
+                        (texts['var_95'], f"{metrics.get('var_95', 0):.2%}", 
+                         f"{benchmark_metrics.get('bmk_var_95', 0):.2%}"),
+                        (texts['cvar'], f"{metrics.get('cvar', 0):.2%}", 
+                         f"{benchmark_metrics.get('bmk_cvar', 0):.2%}"),
+                        (texts['turnover'], f"{avg_turnover:.2%}", '-'),
+                    ])
+            else:
+                summary_data = []
+                
+                if metrics:
+                    avg_turnover = turnover_df['turnover'].mean() * 365 if not turnover_df.empty else 0
+                    
+                    summary_data.extend([
+                        (texts['total_return'], f"{metrics.get('total_return', 0):.2%}"),
+                        (texts['annual_return'], f"{metrics.get('annual_return', 0):.2%}"),
+                        (texts['sharpe'], f"{metrics.get('sharpe_ratio', 0):.2f}"),
+                        (texts['psr'], f"{metrics.get('psr', 0):.1%}"),
+                        (texts['sortino'], f"{metrics.get('sortino_ratio', 0):.2f}"),
+                        (texts['calmar'], f"{metrics.get('calmar_ratio', 0):.2f}"),
+                        (texts['linearity'], f"{metrics.get('linearity', 0):.4f}"),
+                        (texts['max_dd'], f"{metrics.get('max_drawdown', 0):.2%}"),
+                        (texts['var_95'], f"{metrics.get('var_95', 0):.2%}"),
+                        (texts['cvar'], f"{metrics.get('cvar', 0):.2%}"),
+                        (texts['turnover'], f"{avg_turnover:.2%}"),
+                    ])
+            
+            _render_summary_table(ax_summary, summary_data)
         
-        ax_dd.set_facecolor(_PLOT_COLORS['white'])
         _plot_drawdown(ax_dd, drawdown)
-        ax_dd.set_ylabel(texts['drawdown_ylabel'], fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
-        ax_dd.grid(True, alpha=_PLOT_STYLES['grid_alpha_secondary'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
+        _style_axis(ax_dd, texts['drawdown_ylabel'])
         ax_dd.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
-        ax_dd.spines['top'].set_visible(False)
-        ax_dd.spines['right'].set_visible(False)
-        ax_dd.tick_params(axis='both', which='major', labelsize=_PLOT_STYLES['small_label_size'], colors=_PLOT_COLORS['text_light'], 
-                          width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
         
-        ax_to.set_facecolor(_PLOT_COLORS['white'])
         if not turnover_df.empty:
-            ax_to.plot(turnover_df.index, turnover_df['turnover'], color=_PLOT_COLORS['turnover_line'], 
-                      linewidth=_PLOT_STYLES['thin_linewidth'], alpha=_PLOT_STYLES['line_alpha'])
-            ax_to.set_ylabel(texts['turnover_ylabel'], fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
+            ax_to.plot(
+                turnover_df.index, turnover_df['turnover'], 
+                color=_PLOT_COLORS['turnover_line'], 
+                linewidth=_PLOT_STYLES['thin_linewidth'], 
+                alpha=0.9
+            )
+            _style_axis(ax_to, texts['turnover_ylabel'], is_bottom=True, xlabel=texts['date_xlabel'])
             ax_to.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
-            ax_to.grid(True, alpha=_PLOT_STYLES['grid_alpha_secondary'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
         else:
-            ax_to.text(0.5, 0.5, texts['no_turnover'], transform=ax_to.transAxes, 
-                      ha='center', va='center', fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_muted'])
-        
-        ax_to.set_xlabel(texts['date_xlabel'], fontsize=_PLOT_STYLES['xlabel_size'], color=_PLOT_COLORS['text_light'])
-        ax_to.spines['top'].set_visible(False)
-        ax_to.spines['right'].set_visible(False)
-        ax_to.tick_params(axis='both', which='major', labelsize=_PLOT_STYLES['small_label_size'], colors=_PLOT_COLORS['text_light'], 
-                          width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
+            ax_to.text(
+                0.5, 0.5, texts['no_turnover'], 
+                transform=ax_to.transAxes, 
+                ha='center', va='center', 
+                fontsize=_PLOT_STYLES['ylabel_size'], 
+                color=_PLOT_COLORS['text_muted']
+            )
+            _style_axis(ax_to, '', is_bottom=True, xlabel=texts['date_xlabel'])
         
         plt.setp(ax.get_xticklabels(), visible=False)
         plt.setp(ax_dd.get_xticklabels(), visible=False)
         
-        # Align y-labels
         fig.align_ylabels([ax, ax_dd, ax_to])
         
         plt.show()
 
 
 class CombinedBacktestPlotter:
-    """Plotter for CombinedBacktester results."""
+    """Plotter for multi-strategy portfolio backtest results.
+    
+    Visualizes combined equity, drawdown, weights, and correlations.
+    
+    Parameters
+    ----------
+    combined_bt : CombinedBacktester
+        CombinedBacktester instance to plot
+    
+    Attributes
+    ----------
+    cbt : CombinedBacktester
+        Reference to combined backtester
+    """
     
     def __init__(self, combined_bt: 'CombinedBacktester'):
-        """Initialize with a CombinedBacktester instance."""
+        """Initialize plotter with CombinedBacktester.
+        
+        Parameters
+        ----------
+        combined_bt : CombinedBacktester
+            CombinedBacktester instance to visualize
+        """
         self.cbt = combined_bt
     
-    def plot_equity(self, figsize: tuple = (14, 8), show_summary: bool = True, language: str = 'en') -> None:
-        """Plot portfolio equity, drawdown, and summary."""
-        texts = _TRANSLATIONS.get(language, _TRANSLATIONS['en'])
+    def plot_equity(self, figsize: tuple = (14, 7.5), show_summary: bool = True) -> None:
+        """Plot combined portfolio equity, drawdown, and metrics.
+        
+        Parameters
+        ----------
+        figsize : tuple, default (14, 7.5)
+            Figure size (width, height)
+        show_summary : bool, default True
+            Whether to display portfolio summary (weights, correlations, metrics)
+        """
+        texts = _TEXT_LABELS
         
         equity = self.cbt.get_portfolio_equity()
         if equity.empty or len(equity) < 2:
@@ -295,111 +681,144 @@ class CombinedBacktestPlotter:
         drawdown = equity_norm / rolling_max - 1.0
         
         _apply_plot_style()
-        fig = plt.figure(figsize=figsize, constrained_layout=True)
+        fig = plt.figure(figsize=figsize)
         
-        # Create GridSpec with 2 columns: Main plots (left) and Summary (right)
-        gs = fig.add_gridspec(2, 2, height_ratios=[3, 1], width_ratios=[5, 1])
+        fig.subplots_adjust(top=0.91, bottom=0.08, left=0.065, right=0.98, wspace=0.02, hspace=0.12)
+        
+        gs = fig.add_gridspec(2, 2, height_ratios=[3.5, 1], width_ratios=[3, 1])
         
         ax = fig.add_subplot(gs[0, 0])
         ax_dd = fig.add_subplot(gs[1, 0], sharex=ax)
         
-        # Summary subplot (spans all rows in the right column)
         ax_summary = fig.add_subplot(gs[:, 1])
         ax_summary.axis('off')
         
-        ax.set_facecolor(_PLOT_COLORS['background'])
         y_min = equity.min()
         _plot_equity_line(ax, equity, y_min, label=texts['equity_label'])
         
         strategy_names = ", ".join([bt.strategy_factor.name for bt in self.cbt.backtests])
-        ax.set_title(f"{texts['equity_title']} ({strategy_names})", 
-                    fontsize=_PLOT_STYLES['title_size'], fontweight='400', color=_PLOT_COLORS['text'], pad=14)
-        ax.set_ylabel(texts['equity_ylabel'], fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
+        
+        fig.suptitle(
+            strategy_names, 
+            fontsize=_PLOT_STYLES['title_size'], 
+            fontweight='500', 
+            color=_PLOT_COLORS['text_dark'], 
+            y=0.97
+        )
+        
+        if not equity.empty and len(equity) > 0:
+            start_date = equity.index[0].strftime(_DATE_FORMAT)
+            end_date = equity.index[-1].strftime(_DATE_FORMAT)
+            period_text = f"{start_date} {texts['to']} {end_date}"
+            fig.text(
+                0.5, 0.935, period_text, 
+                fontsize=_PLOT_STYLES['subtitle_size'], 
+                color=_PLOT_COLORS['text_muted'], 
+                ha='center', va='top'
+            )
+        
+        _style_axis(ax, texts['equity_ylabel'])
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
-        ax.grid(True, alpha=_PLOT_STYLES['grid_alpha'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.tick_params(axis='both', which='major', labelsize=_PLOT_STYLES['label_size'], colors=_PLOT_COLORS['text_light'], 
-                      width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
         
         if show_summary:
-            summary_lines = []
-            
-            summary_lines.append(f"{texts['strategy']}: {strategy_names}")
-            
-            if not equity.empty and len(equity) > 0:
-                start_date = equity.index[0].strftime(_DATE_FORMAT)
-                end_date = equity.index[-1].strftime(_DATE_FORMAT)
-                summary_lines.append(f"{texts['period']}: {start_date} {texts['to']} {end_date}")
+            summary_data = []
             
             metrics = self.cbt.metrics
             if metrics:
-                summary_lines.extend([
-                    f"{texts['total_return']}: {metrics.get('total_return', 0):.2%}",
-                    f"{texts['annual_return']}: {metrics.get('annual_return', 0):.2%}",
-                    f"{texts['sharpe']}: {metrics.get('sharpe_ratio', 0):.2f}",
-                    f"{texts['sortino']}: {metrics.get('sortino_ratio', 0):.2f}",
-                    f"{texts['calmar']}: {metrics.get('calmar_ratio', 0):.2f}",
-                    f"{texts['linearity']}: {metrics.get('linearity', 0):.4f}",
-                    f"{texts['max_dd']}: {metrics.get('max_drawdown', 0):.2%}",
-                    f"{texts['var_95']}: {metrics.get('var_95', 0):.2%}",
-                    f"{texts['cvar']}: {metrics.get('cvar', 0):.2%}",
+                summary_data.extend([
+                    (texts['total_return'], f"{metrics.get('total_return', 0):.2%}"),
+                    (texts['annual_return'], f"{metrics.get('annual_return', 0):.2%}"),
+                    (texts['sharpe'], f"{metrics.get('sharpe_ratio', 0):.2f}"),
+                    (texts['sortino'], f"{metrics.get('sortino_ratio', 0):.2f}"),
+                    (texts['calmar'], f"{metrics.get('calmar_ratio', 0):.2f}"),
+                    (texts['linearity'], f"{metrics.get('linearity', 0):.4f}"),
+                    (texts['max_dd'], f"{metrics.get('max_drawdown', 0):.2%}"),
+                    (texts['var_95'], f"{metrics.get('var_95', 0):.2%}"),
+                    (texts['cvar'], f"{metrics.get('cvar', 0):.2%}"),
                 ])
             
-            summary_lines.append("")
-            summary_lines.append(f"{texts['weights']}:")
+            summary_data.append(('', ''))
+            summary_data.append((texts['weights'], ''))
             for bt, w in zip(self.cbt.backtests, self.cbt.weights):
-                summary_lines.append(f"  {bt.strategy_factor.name}: {w*100:.1f}%")
+                summary_data.append((f"  {bt.strategy_factor.name}", f"{w*100:.1f}%"))
             
             corr = self.cbt.correlation_matrix()
             if not corr.empty and len(corr) > 1:
-                summary_lines.append("")
-                summary_lines.append(f"{texts['corr_matrix']}:")
-                corr_str = corr.to_string(max_cols=None, max_rows=None, float_format=lambda x: f'{x:.4f}')
-                summary_lines.extend(corr_str.split('\n'))
+                summary_data.append(('', ''))
+                summary_data.append((texts['corr_matrix'], ''))
+                for idx, row in enumerate(corr.index):
+                    for col in corr.columns:
+                        if col == corr.columns[0]:
+                            val = corr.loc[row, col]
+                            summary_data.append((f"  {row}", f"{val:.4f}"))
             
-            summary_text = "\n".join(summary_lines)
-            ax_summary.text(0.0, 0.98, summary_text, transform=ax_summary.transAxes, 
-                            fontsize=_PLOT_STYLES['label_size'], 
-                            verticalalignment='top', horizontalalignment='left', 
-                            color=_PLOT_COLORS['text_info'])
+            _render_summary_table(ax_summary, summary_data)
         
-        ax_dd.set_facecolor(_PLOT_COLORS['white'])
         _plot_drawdown(ax_dd, drawdown)
-        ax_dd.set_ylabel(texts['drawdown_ylabel'], fontsize=_PLOT_STYLES['ylabel_size'], color=_PLOT_COLORS['text_light'])
-        ax_dd.set_xlabel(texts['date_xlabel'], fontsize=_PLOT_STYLES['xlabel_size'], color=_PLOT_COLORS['text_light'])
-        ax_dd.grid(True, alpha=_PLOT_STYLES['grid_alpha_secondary'], color=_PLOT_COLORS['grid'], linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
+        _style_axis(ax_dd, texts['drawdown_ylabel'], is_bottom=True, xlabel=texts['date_xlabel'])
         ax_dd.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
-        ax_dd.spines['top'].set_visible(False)
-        ax_dd.spines['right'].set_visible(False)
-        ax_dd.tick_params(axis='both', which='major', labelsize=_PLOT_STYLES['small_label_size'], colors=_PLOT_COLORS['text_light'], 
-                          width=_PLOT_STYLES['spine_width'], length=_PLOT_STYLES['tick_length'])
         
         plt.setp(ax.get_xticklabels(), visible=False)
         
-        # Align y-labels
         fig.align_ylabels([ax, ax_dd])
         
         plt.show()
 
 
 class FactorPlotter:
-    """Plotter for Factor data visualization."""
+    """Plotter for Factor visualization across symbols and time.
+    
+    Parameters
+    ----------
+    factor : Factor
+        Factor instance to visualize
+    
+    Attributes
+    ----------
+    factor : Factor
+        Reference to factor
+    """
     
     def __init__(self, factor: 'Factor'):
-        """Initialize with a Factor instance."""
+        """Initialize plotter with Factor.
+        
+        Parameters
+        ----------
+        factor : Factor
+            Factor instance to visualize
+        """
         self.factor = factor
     
-    def plot(self, symbol: Optional[str] = None, figsize: tuple = (12, 6), 
+    def plot(self, symbol: Optional[str] = None, figsize: tuple = (12, 5), 
              title: Optional[str] = None) -> None:
-        """Plot factor over time. symbol=None plots all symbols in subgrid."""
+        """Plot factor values over time.
+        
+        Parameters
+        ----------
+        symbol : str, optional
+            Single symbol to plot. If None, plots all symbols in subgrid
+        figsize : tuple, default (12, 5)
+            Figure size (width, height)
+        title : str, optional
+            Plot title (defaults to factor name)
+        """
         if symbol is None:
             self._plot_all_symbols(figsize, title)
         else:
             self._plot_single_symbol(symbol, figsize, title)
     
     def _plot_single_symbol(self, symbol: str, figsize: tuple, title: Optional[str]) -> None:
-        """Plot factor values for single symbol."""
+        """Plot factor values for single symbol.
+        
+        Parameters
+        ----------
+        symbol : str
+            Symbol to plot
+        figsize : tuple
+            Figure size
+        title : str or None
+            Plot title
+        """
         data = self.factor.data[self.factor.data['symbol'] == symbol].copy()
         if data.empty:
             logger.warning(f"No data found for symbol: {symbol}")
@@ -407,27 +826,67 @@ class FactorPlotter:
         
         data = data.sort_values('timestamp')
         
+        _apply_plot_style()
         fig, ax = plt.subplots(figsize=figsize)
-        ax.set_facecolor('#fcfcfc')
+        ax.set_facecolor(_PLOT_COLORS['background_subtle'])
         
-        ax.plot(data['timestamp'], data['factor'], color='#2563eb', linewidth=1.2, alpha=0.8)
-        ax.fill_between(data['timestamp'], data['factor'], alpha=0.15, color='#2563eb')
+        line_color = _PLOT_COLORS['factor_palette'][0]
+        ax.plot(
+            data['timestamp'], data['factor'], 
+            color=line_color, 
+            linewidth=_PLOT_STYLES['thin_linewidth'], 
+            alpha=_PLOT_STYLES['factor_line_alpha']
+        )
+        ax.fill_between(
+            data['timestamp'], data['factor'], 
+            alpha=_PLOT_STYLES['factor_fill_alpha'], 
+            color=line_color
+        )
         
         plot_title = title or f'{self.factor.name} ({symbol})'
-        ax.set_title(plot_title, fontsize=12.5, fontweight='400', color='#1f2937', pad=14)
-        ax.set_xlabel('Date', fontsize=10.5, color='#6b7280')
-        ax.set_ylabel('Factor Value', fontsize=10.5, color='#6b7280')
-        ax.grid(True, alpha=0.15, color='#e5e7eb', linestyle='-', linewidth=0.4)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.tick_params(axis='both', which='major', labelsize=9.5, colors='#6b7280', 
-                      width=0.5, length=3)
+        ax.set_title(
+            plot_title, 
+            fontsize=_PLOT_STYLES['factor_title_size'], 
+            fontweight='400', 
+            color=_PLOT_COLORS['text_light'], 
+            pad=_PLOT_STYLES['factor_title_pad']
+        )
+        ax.set_xlabel('Date', fontsize=_PLOT_STYLES['factor_label_size'], color=_PLOT_COLORS['text_muted'])
+        ax.set_ylabel('Factor Value', fontsize=_PLOT_STYLES['factor_label_size'], color=_PLOT_COLORS['text_muted'])
+        ax.grid(
+            True, 
+            alpha=_PLOT_STYLES['factor_grid_alpha'], 
+            color=_PLOT_COLORS['grid_subtle'], 
+            linestyle='-', 
+            linewidth=_PLOT_STYLES['factor_grid_width']
+        )
+        
+        for spine in ['top', 'right']:
+            ax.spines[spine].set_visible(False)
+        for spine in ['bottom', 'left']:
+            ax.spines[spine].set_color(_PLOT_STYLES['spine_color'])
+            ax.spines[spine].set_linewidth(_PLOT_STYLES['spine_width'])
+        
+        ax.tick_params(
+            axis='both', which='major', 
+            labelsize=_PLOT_STYLES['factor_tick_size'], 
+            colors=_PLOT_COLORS['text_muted'], 
+            width=0.5, length=3
+        )
         
         plt.tight_layout()
         plt.show()
     
     def _plot_all_symbols(self, figsize: tuple, title: Optional[str]) -> None:
-        """Plot factor values for all symbols."""
+        """Plot factor values for all symbols in subgrid.
+        
+        Parameters
+        ----------
+        figsize : tuple
+            Figure size (width, height)
+        title : str or None
+            Optional plot title
+        """
         symbols = sorted(self.factor.data['symbol'].unique())
         n_symbols = len(symbols)
         
@@ -438,32 +897,62 @@ class FactorPlotter:
         n_cols = min(3, n_symbols)
         n_rows = (n_symbols + n_cols - 1) // n_cols
         
+        _apply_plot_style()
         fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, constrained_layout=True)
         if n_symbols == 1:
             axes = np.array([axes])
         else:
             axes = axes.flatten() if n_symbols > 1 else np.array([axes])
         
-        colors = ['#2563eb', '#059669', '#dc2626', '#7c3aed', '#f59e0b', '#06b6d4']
+        palette = _PLOT_COLORS['factor_palette']
         
         for idx, symbol in enumerate(symbols):
             ax = axes[idx]
             data = self.factor.data[self.factor.data['symbol'] == symbol].copy()
             data = data.sort_values('timestamp')
             
-            color = colors[idx % len(colors)]
-            ax.plot(data['timestamp'], data['factor'], color=color, linewidth=1.2, alpha=0.8)
-            ax.fill_between(data['timestamp'], data['factor'], alpha=0.15, color=color)
+            color = palette[idx % len(palette)]
+            ax.plot(
+                data['timestamp'], data['factor'], 
+                color=color, 
+                linewidth=_PLOT_STYLES['thin_linewidth'], 
+                alpha=_PLOT_STYLES['factor_line_alpha']
+            )
+            ax.fill_between(
+                data['timestamp'], data['factor'], 
+                alpha=_PLOT_STYLES['factor_fill_alpha'], 
+                color=color
+            )
             
-            ax.set_title(symbol, fontsize=11, fontweight='500', color='#1f2937')
-            ax.set_xlabel('Date', fontsize=9.5, color='#6b7280')
-            ax.set_ylabel('Factor Value', fontsize=9.5, color='#6b7280')
-            ax.grid(True, alpha=0.12, color='#e5e7eb', linestyle='-', linewidth=0.4)
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            ax.tick_params(axis='both', which='major', labelsize=8.5, colors='#6b7280',
-                          width=0.5, length=3)
-            ax.set_facecolor('#fcfcfc')
+            ax.set_title(
+                symbol, 
+                fontsize=_PLOT_STYLES['factor_subgrid_title_size'], 
+                fontweight='500', 
+                color=_PLOT_COLORS['text_light']
+            )
+            ax.set_xlabel('Date', fontsize=_PLOT_STYLES['factor_subgrid_label_size'], color=_PLOT_COLORS['text_muted'])
+            ax.set_ylabel('Factor Value', fontsize=_PLOT_STYLES['factor_subgrid_label_size'], color=_PLOT_COLORS['text_muted'])
+            ax.grid(
+                True, 
+                alpha=_PLOT_STYLES['factor_grid_alpha_subgrid'], 
+                color=_PLOT_COLORS['grid_subtle'], 
+                linestyle='-', 
+                linewidth=_PLOT_STYLES['factor_grid_width']
+            )
+            
+            for spine in ['top', 'right']:
+                ax.spines[spine].set_visible(False)
+            for spine in ['bottom', 'left']:
+                ax.spines[spine].set_color(_PLOT_STYLES['spine_color'])
+                ax.spines[spine].set_linewidth(_PLOT_STYLES['spine_width'])
+            
+            ax.tick_params(
+                axis='both', which='major', 
+                labelsize=_PLOT_STYLES['factor_subgrid_tick_size'], 
+                colors=_PLOT_COLORS['text_muted'], 
+                width=0.5, length=3
+            )
+            ax.set_facecolor(_PLOT_COLORS['background_subtle'])
             
             dates = data['timestamp'].values
             n_dates = len(dates)
@@ -475,4 +964,3 @@ class FactorPlotter:
             axes[idx].set_visible(False)
         
         plt.show()
-
