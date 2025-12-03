@@ -2,16 +2,9 @@
 
 <img src="https://raw.githubusercontent.com/quantbai/phandas/main/assets/PHANDAS2.png" alt="Phandas" width="500">
 
-</div>
-
-<hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
-
-<div align="center">
-
 [![en](https://img.shields.io/badge/lang-en-yellow.svg)](#english) &nbsp; [![zh-TW](https://img.shields.io/badge/lang-繁體中文-green.svg)](#繁體中文)
 
 </div>
-
 
 ## English
 
@@ -74,8 +67,6 @@ result = backtest(
 result.plot_equity()
 ```
 
-<hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
-
 ### AI Integration via MCP
 
 Use Phandas with AI IDEs (Cursor, Claude Desktop) directly—no coding required.
@@ -103,10 +94,6 @@ Use Phandas with AI IDEs (Cursor, Claude Desktop) directly—no coding required.
 - `list_operators`: Browse all 50+ factor operators
 - `read_source`: View source code of any function
 - `execute_factor_backtest`: Backtest custom factor expressions
-
-<hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
-
-Developed by Phantom Management.
 
 ---
 
@@ -201,13 +188,9 @@ result.plot_equity()
 
 ---
 
-由 Phantom Management 開發。
-
-<hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
-
 ## Community & Support | 社群與支持
 
-- **Discord**: [Join our community](https://discord.gg/TcPHTSGMdH)
+- **Discord**: [Join us - Phantom Management](https://discord.gg/TcPHTSGMdH)
 - **GitHub Issues**: [Report bugs or request features](https://github.com/quantbai/phandas/issues)
 
 ## License
