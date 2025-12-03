@@ -59,8 +59,12 @@ def _calculate_performance_metrics(returns: pd.Series, risk_free_rate: float = 0
     
     equity = (1 + returns).cumprod()
     total_return = equity.iloc[-1] - 1
-    days = len(returns)
-    annual_return = (1 + total_return) ** (annualization_factor / days) - 1 if days > 1 else 0
+    if hasattr(returns.index, 'dtype') and pd.api.types.is_datetime64_any_dtype(returns.index):
+        days = (returns.index[-1] - returns.index[0]).days
+    else:
+        days = len(returns)
+    
+    annual_return = (1 + total_return) ** (annualization_factor / days) - 1 if days > 0 else 0
     annual_vol = returns.std() * np.sqrt(annualization_factor)
     sharpe = (annual_return - risk_free_rate) / annual_vol if annual_vol > 0 else 0
     
@@ -257,7 +261,7 @@ class Backtester:
             return self
         
         equity_curve = history['total_value']
-        daily_returns = equity_curve.pct_change(fill_method=None).dropna()
+        daily_returns = equity_curve.pct_change().dropna()
         
         self.metrics = _calculate_performance_metrics(daily_returns, risk_free_rate, annualization_factor=365)
         psr = self._calculate_psr(daily_returns) if not daily_returns.empty else 0
@@ -314,9 +318,31 @@ class Backtester:
                 return i
         raise ValueError("No valid start date found with overlapping data")
     
+    def _is_already_signal(self, factors: pd.Series) -> bool:
+        """Check if factors are already dollar-neutral signal.
+        
+        Signal property: long_sum ≈ 0.5, short_sum ≈ -0.5, total_sum ≈ 0 (tolerance: 1e-2)
+        """
+        if factors.empty or factors.isna().all():
+            return False
+        
+        long_sum = factors[factors > 0].sum()
+        short_sum = factors[factors < 0].sum()
+        total_sum = long_sum + short_sum
+        
+        return (np.isclose(long_sum, 0.5, atol=1e-2) and 
+                np.isclose(short_sum, -0.5, atol=1e-2) and
+                np.isclose(total_sum, 0.0, atol=1e-2))
+    
     def _calculate_target_holdings(self, factors: pd.Series) -> pd.Series:
-        """Normalize factors to dollar-neutral target holdings."""
+        """Normalize factors to dollar-neutral target holdings.
+        
+        Skip normalization if factor is already a signal (long_sum≈0.5, short_sum≈-0.5).
+        """
         if self.neutralization == "none":
+            return factors * self.portfolio.total_value
+        
+        if self._is_already_signal(factors):
             return factors * self.portfolio.total_value
         
         demeaned = factors - factors.mean()
@@ -348,7 +374,7 @@ class Backtester:
         if history.empty or len(history) < 2:
             return pd.Series(dtype=float)
         equity = history['total_value']
-        return equity.pct_change(fill_method=None).dropna()
+        return equity.pct_change().dropna()
 
     def summary(self) -> str:
         """Performance summary string."""
@@ -435,7 +461,7 @@ class Backtester:
         
         return pd.Series(values, index=pd.DatetimeIndex(dates))
     
-    def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True, show_benchmark: bool = True) -> 'Backtester':
+    def plot_equity(self, figsize: tuple = (14, 8), show_summary: bool = True, show_benchmark: bool = True) -> 'Backtester':
         """Plot equity, drawdown, turnover, summary, and benchmark."""
         plotter = BacktestPlotter(self)
         plotter.plot_equity(figsize, show_summary, show_benchmark)
@@ -626,7 +652,7 @@ class CombinedBacktester:
         
         return self
     
-    def plot_equity(self, figsize: tuple = (12, 7), show_summary: bool = True) -> 'CombinedBacktester':
+    def plot_equity(self, figsize: tuple = (14, 8), show_summary: bool = True) -> 'CombinedBacktester':
         """Plot portfolio equity, drawdown, and summary."""
         plotter = CombinedBacktestPlotter(self)
         plotter.plot_equity(figsize, show_summary)

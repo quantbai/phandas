@@ -4,16 +4,11 @@
 
 </div>
 
----
+<hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
 
 <div align="center">
 
-
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/quantbai/phandas/blob/main/examples/demo.ipynb)
-
-[![en](https://img.shields.io/badge/lang-en-yellow.svg)](#english)
-[![zh-TW](https://img.shields.io/badge/lang-繁體中文-green.svg)](#繁體中文)
-
+[![en](https://img.shields.io/badge/lang-en-yellow.svg)](#english) &nbsp; [![zh-TW](https://img.shields.io/badge/lang-繁體中文-green.svg)](#繁體中文)
 
 </div>
 
@@ -28,9 +23,7 @@ Phandas is a quantitative analysis framework designed for systematic portfolio c
 
 ### Try it now
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/quantbai/phandas/blob/main/examples/demo.ipynb)
-
-Experience Phandas directly in your browser with our interactive demo. No installation required.
+[**Web Demo**](https://phandas.streamlit.app/) - Experience Phandas directly in your browser. No installation required.
 
 ### Key Features
 
@@ -57,7 +50,7 @@ panel = fetch_data(
     symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'],
     timeframe='1d',
     start_date='2023-01-01',
-    sources=['binance', 'benchmark', 'calendar'],
+    sources=['binance'],
 )
 
 # Extract factors
@@ -80,6 +73,8 @@ result = backtest(
 
 result.plot_equity()
 ```
+
+<hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
 
 ### AI Integration via MCP
 
@@ -109,7 +104,7 @@ Use Phandas with AI IDEs (Cursor, Claude Desktop) directly—no coding required.
 - `read_source`: View source code of any function
 - `execute_factor_backtest`: Backtest custom factor expressions
 
----
+<hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
 
 Developed by Phantom Management.
 
@@ -125,9 +120,7 @@ Phandas 是一個為系統化投資組合構建與風險管理而設計的量化
 
 ### 立即體驗
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/quantbai/phandas/blob/main/examples/demo.ipynb)
-
-無需安裝，直接在瀏覽器中透過我們的互動式演示體驗 Phandas。
+[**網頁演示**](https://phandas.streamlit.app/) - 直接在瀏覽器中體驗 Phandas，無需安裝。
 
 ### 核心功能
 
@@ -154,7 +147,7 @@ panel = fetch_data(
     symbols=['ETH', 'SOL', 'ARB', 'OP', 'POL', 'SUI'],
     timeframe='1d',
     start_date='2023-01-01',
-    sources=['binance', 'benchmark', 'calendar'],
+    sources=['binance'],
 )
 
 # 提取因子
@@ -209,6 +202,8 @@ result.plot_equity()
 ---
 
 由 Phantom Management 開發。
+
+<hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
 
 ## Community & Support | 社群與支持
 

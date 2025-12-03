@@ -66,7 +66,7 @@ class OKXTrader:
                 'status': 'ok' if acct_lv_code in ['2', '3'] else 'error'
             },
             'position_mode': {
-                'value': '買賣模式 (單向持倉)' if pos_mode == 'net_mode' else '開平倉模式 (雙向持倉)',
+                'value': 'net_mode (one-way)' if pos_mode == 'net_mode' else 'long_short_mode (hedge)',
                 'required': 'net_mode',
                 'status': 'ok' if pos_mode == 'net_mode' else 'error'
             }
@@ -74,9 +74,9 @@ class OKXTrader:
         
         errors = []
         if checks['account_mode']['status'] == 'error':
-            errors.append(f"帳戶模式必須為 合約模式(2) 或 跨幣種保證金模式(3)，目前為 {checks['account_mode']['value']}")
+            errors.append(f"Account mode must be FUTURES(2) or CROSS_MARGIN(3), current: {checks['account_mode']['value']}")
         if checks['position_mode']['status'] == 'error':
-            errors.append(f"必須使用 買賣模式(單向持倉)，目前為 {checks['position_mode']['value']}")
+            errors.append(f"Position mode must be net_mode (one-way), current: {checks['position_mode']['value']}")
         
         self.acct_lv = acct_lv_code
         self.pos_mode = pos_mode
@@ -684,12 +684,13 @@ class Rebalancer:
     
     def __init__(self, target_weights: Dict[str, float], trader: OKXTrader,
                  budget: Optional[float] = None, symbol_suffix: str = '-USDT-SWAP',
-                 leverage: int = 5):
+                 leverage: int = 5, preview: bool = False):
         self.target_weights = target_weights
         self.trader = trader
         self.budget = budget
         self.symbol_suffix = symbol_suffix
         self.leverage = leverage
+        self.preview_mode = preview
         self.result = None
         
         self.plan_data = None
@@ -777,7 +778,7 @@ class Rebalancer:
         self.plan_data = plan_trades
         return self
     
-    def preview(self) -> 'Rebalancer':
+    def print_preview(self) -> 'Rebalancer':
         """Print rebalancing preview table."""
         if not self.plan_data:
             raise ValueError('Plan not generated. Call plan() first.')
@@ -816,7 +817,17 @@ class Rebalancer:
         return self
     
     def run(self) -> 'Rebalancer':
-        """Execute rebalancing."""
+        """Execute rebalancing with optional preview and confirmation."""
+        if self.preview_mode:
+            self.plan()
+            self.print_preview()
+            
+            try:
+                input("\nPress Enter to execute, Ctrl+C to cancel: ")
+            except KeyboardInterrupt:
+                logger.info("Rebalancing cancelled by user")
+                return self
+        
         self.result = self.trader.rebalance_portfolio(
             target_weights=self.target_weights,
             budget=self.budget,
@@ -892,11 +903,49 @@ class Rebalancer:
                f"failed={self.result['summary']['failed_orders']})")
 
 
-def rebalance(target_weights: Dict[str, float], trader: OKXTrader,
-             budget: Optional[float] = None, symbol_suffix: str = '-USDT-SWAP',
-             leverage: int = 5, auto_run: bool = True) -> Rebalancer:
-    """Convenient rebalancing function. Supports chaining: plan() → preview() → run()."""
-    rb = Rebalancer(target_weights, trader, budget, symbol_suffix, leverage)
+def rebalance(target_weights: Dict[str, float], trader: OKXTrader, budget: float,
+             symbol_suffix: str = '-USDT-SWAP', leverage: int = 5, preview: bool = True, 
+             auto_run: bool = True) -> Rebalancer:
+    """
+    Convenient rebalancing function.
+    
+    Parameters
+    ----------
+    target_weights : Dict[str, float]
+        Target weight for each symbol
+    trader : OKXTrader
+        OKXTrader instance
+    budget : float
+        Total budget for rebalancing (required)
+    symbol_suffix : str
+        Symbol suffix (default: '-USDT-SWAP')
+    leverage : int
+        Leverage multiplier (default: 5)
+    preview : bool
+        Show rebalancing plan and wait for confirmation (default: True)
+    auto_run : bool
+        Automatically execute and return result (default: True).
+        If False, returns Rebalancer instance for manual control.
+    
+    Returns
+    -------
+    Rebalancer
+        Rebalancer instance with result (if auto_run=True, result is available immediately)
+    
+    Examples
+    --------
+    rb = rebalance(weights, trader, budget=10000)
+    rb.print_summary()
+    
+    rb = rebalance(weights, trader, budget=10000, preview=False)
+    rb.print_summary()
+    
+    rb = rebalance(weights, trader, budget=10000, auto_run=False)
+    rb.plan().print_preview()
+    rb.run()
+    rb.print_summary()
+    """
+    rb = Rebalancer(target_weights, trader, budget, symbol_suffix, leverage, preview=preview)
     if auto_run:
         rb.run()
     return rb

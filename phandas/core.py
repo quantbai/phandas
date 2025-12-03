@@ -10,10 +10,24 @@ logger = logging.getLogger(__name__)
 
 
 class Factor:
-    """Factor matrix for quantitative analysis."""
+    """Factor matrix for quantitative analysis.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame or str
+        DataFrame with columns (timestamp, symbol, factor) or path to CSV
+    name : str, optional
+        Factor name for tracking in transformations
+    
+    Attributes
+    ----------
+    data : pd.DataFrame
+        Sorted factor data (timestamp, symbol, factor)
+    name : str
+        Factor identifier
+    """
     
     def __init__(self, data: Union[pd.DataFrame, str], name: Optional[str] = None):
-        """Initialize Factor from DataFrame or CSV file (columns: timestamp, symbol, factor)."""
         if isinstance(data, str):
             df = pd.read_csv(data, parse_dates=['timestamp'])
         else:
@@ -38,7 +52,7 @@ class Factor:
         self.name = name or 'factor'
 
     def _validate_window(self, window: int) -> None:
-        """Validate window > 0."""
+        """Validate window parameter."""
         if window <= 0:
             raise ValueError("Window must be positive")
     
@@ -49,12 +63,27 @@ class Factor:
     
     @staticmethod
     def _replace_inf(series: pd.Series) -> pd.Series:
-        """Replace ±inf with NaN."""
+        """Replace infinite values with NaN."""
         return series.replace([np.inf, -np.inf], np.nan)
     
     def _apply_cs_operation(self, operation: Callable, name_suffix: str, 
                            require_no_nan: bool = False) -> 'Factor':
-        """Apply cross-sectional operation per timestamp."""
+        """Apply cross-sectional operation grouped by timestamp.
+        
+        Parameters
+        ----------
+        operation : callable
+            Function to apply per timestamp group
+        name_suffix : str
+            Name suffix for output Factor
+        require_no_nan : bool
+            Raise if all values are NaN
+        
+        Returns
+        -------
+        Factor
+            Transformed factor
+        """
         result = self.data.copy()
         result['factor'] = pd.to_numeric(result['factor'], errors='coerce')
         
@@ -74,7 +103,24 @@ class Factor:
 
     def _binary_op(self, other: Union['Factor', float], op_func: Callable, 
                    op_name: str, scalar_suffix: Optional[str] = None) -> 'Factor':
-        """Execute binary operation with another Factor or scalar."""
+        """Execute binary operation with another Factor or scalar.
+        
+        Parameters
+        ----------
+        other : Factor or float
+            Right operand
+        op_func : callable
+            Binary operation (x, y) -> result
+        op_name : str
+            Operator symbol for naming
+        scalar_suffix : str, optional
+            Custom suffix for scalar operations
+        
+        Returns
+        -------
+        Factor
+            Result factor
+        """
         if isinstance(other, Factor):
             merged = pd.merge(self.data, other.data,
                             on=['timestamp', 'symbol'],
@@ -90,7 +136,22 @@ class Factor:
 
     def _comparison_op(self, other: Union['Factor', float], comp_func: Callable, 
                        op_name: str) -> 'Factor':
-        """Execute comparison operation (returns 0/1)."""
+        """Execute comparison operation returning 0/1.
+        
+        Parameters
+        ----------
+        other : Factor or float
+            Right operand
+        comp_func : callable
+            Comparison function
+        op_name : str
+            Operator symbol for naming
+        
+        Returns
+        -------
+        Factor
+            Binary result factor (0 or 1)
+        """
         if isinstance(other, Factor):
             merged = pd.merge(self.data, other.data,
                             on=['timestamp', 'symbol'],
@@ -103,7 +164,20 @@ class Factor:
         return Factor(result, f"({self.name}{op_name}{getattr(other, 'name', other)})")
 
     def _apply_rolling(self, func: Union[str, Callable], window: int) -> pd.DataFrame:
-        """Apply rolling function by symbol."""
+        """Apply rolling function by symbol.
+        
+        Parameters
+        ----------
+        func : str or callable
+            Aggregation function or callable
+        window : int
+            Rolling window size
+        
+        Returns
+        -------
+        pd.DataFrame
+            Data with rolling results
+        """
         result = self.data.copy()
         
         if isinstance(func, str):
@@ -120,7 +194,7 @@ class Factor:
         return result
 
     def rank(self) -> 'Factor':
-        """Cross-sectional rank (0-1 percentile rank, NaN if values identical)."""
+        """Cross-sectional percentile rank (0-1)."""
         def rank_op(group):
             if group.nunique() == 1:
                 return pd.Series(np.nan, index=group.index)
@@ -137,7 +211,7 @@ class Factor:
         return self._apply_cs_operation(lambda g: g.median(), 'median', require_no_nan=True)
 
     def quantile(self, driver: str = "gaussian", sigma: float = 1.0) -> 'Factor':
-        """Quantile transform: rank → normal/uniform/Cauchy percentiles, scaled by sigma."""
+        """Cross-sectional quantile transform (normal/uniform/Cauchy)."""
         valid_drivers = {
             "gaussian": norm.ppf,
             "uniform": uniform.ppf,
@@ -182,7 +256,7 @@ class Factor:
         return Factor(result, f"quantile({self.name},driver={driver},sigma={sigma})")
 
     def scale(self, scale: float = 1.0, long_scale: float = -1.0, short_scale: float = -1.0) -> 'Factor':
-        """Scale to sum(|factor|)=scale; separate long/short scaling if long_scale/short_scale > 0."""
+        """Scale to sum(|factor|)=scale with optional long/short sizing."""
         result = self.data.copy()
 
         def apply_scale(group: pd.Series):
@@ -213,7 +287,7 @@ class Factor:
         return Factor(result, f"scale({self.name},scale={scale},long_scale={long_scale},short_scale={short_scale})")
 
     def normalize(self, use_std: bool = False, limit: float = 0.0) -> 'Factor':
-        """Cross-sectional demean; divide by std if use_std; clip to [-limit, limit] if limit>0."""
+        """Cross-sectional demean with optional std normalization and clipping."""
         result = self.data.copy()
 
         def apply_normalize(group: pd.Series):
@@ -237,11 +311,11 @@ class Factor:
         return Factor(result, f"normalize({self.name},use_std={use_std},limit={limit})")
 
     def zscore(self) -> 'Factor':
-        """Cross-sectional standardization (mean=0, std=1)."""
+        """Cross-sectional Z-score (mean=0, std=1)."""
         return self.normalize(use_std=True)
 
     def spread(self, pct: float = 0.5) -> 'Factor':
-        """Long-short binary signal: top pct% → +0.5, bottom pct% → -0.5, else 0."""
+        """Long-short binary signal (top/bottom pct% → ±0.5)."""
         if not 0 < pct < 1:
             raise ValueError("pct must be between 0 and 1")
         
@@ -250,10 +324,7 @@ class Factor:
         def create_spread(group: pd.Series) -> pd.Series:
             values = group.values
             n_assets = len(values)
-            n_long = int(n_assets * pct)
-            
-            if n_long == 0:
-                n_long = 1
+            n_long = int(n_assets * pct) or 1
             
             spread_values = np.zeros(n_assets)
             valid_mask = ~np.isnan(values)
@@ -274,7 +345,7 @@ class Factor:
         return Factor(result, f"spread({self.name},{pct})")
 
     def signal(self) -> 'Factor':
-        """Dollar-neutral signal: demean, scale by sum(|·|) → long sum=0.5, short sum=-0.5."""
+        """Dollar-neutral signal (long sum=0.5, short=-0.5)."""
         result = self.data.copy()
         
         def to_dn_signal(group):
@@ -291,7 +362,7 @@ class Factor:
         return Factor(result, f"signal({self.name})")
 
     def vector_neut(self, other: 'Factor') -> 'Factor':
-        """Remove linear projection of other from self (orthogonalization via dot product)."""
+        """Remove other's linear projection via orthogonalization."""
         self._validate_factor(other, "vector_neut")
 
         merged = pd.merge(self.data, other.data,
@@ -341,7 +412,7 @@ class Factor:
         return Factor(result_data, name=f"vector_neut({self.name},{other.name})")
 
     def regression_neut(self, neut_factors: Union['Factor', List['Factor']]) -> 'Factor':
-        """Orthogonalize via OLS residuals w.r.t. one or more neut_factors."""
+        """Orthogonalize via OLS residuals against factor(s)."""
         if isinstance(neut_factors, Factor):
             neut_factors = [neut_factors]
         if not all(isinstance(f, Factor) for f in neut_factors):
@@ -384,7 +455,7 @@ class Factor:
                 result = np.full(len(Y), np.nan)
                 result[valid_mask] = residuals
                 return pd.Series(result, index=group.index, name='factor')
-            except:
+            except (np.linalg.LinAlgError, ValueError):
                 return pd.Series(np.nan, index=group.index, name='factor')
 
         result = merged.groupby('timestamp', group_keys=False).apply(
@@ -398,7 +469,7 @@ class Factor:
         return Factor(result_data, name=f"regression_neut({self.name},[{neut_factors_str}])")
 
     def ts_rank(self, window: int) -> 'Factor':
-        """Rolling time-series rank (0-1 percentile within window)."""
+        """Rolling percentile rank (0-1 within window)."""
         self._validate_window(window)
         
         result = self.data.copy()
@@ -418,7 +489,7 @@ class Factor:
         return Factor(result, f"ts_rank({self.name},{window})")
     
     def ts_sum(self, window: int) -> 'Factor':
-        """Rolling sum over window (requires full window, else NaN)."""
+        """Rolling sum over window."""
         self._validate_window(window)
         
         def safe_sum(x: pd.Series) -> float:
@@ -428,7 +499,7 @@ class Factor:
         return Factor(result, f"ts_sum({self.name},{window})")
 
     def ts_product(self, window: int) -> 'Factor':
-        """Rolling product over window (requires full window, else NaN)."""
+        """Rolling product over window."""
         self._validate_window(window)
         
         def safe_prod(x: pd.Series) -> float:
@@ -438,7 +509,7 @@ class Factor:
         return Factor(result, f"ts_product({self.name},{window})")
 
     def ts_mean(self, window: int) -> 'Factor':
-        """Rolling mean over window (requires full window, else NaN)."""
+        """Rolling mean over window."""
         self._validate_window(window)
         
         def safe_mean(x: pd.Series) -> float:
@@ -448,13 +519,13 @@ class Factor:
         return Factor(result, f"ts_mean({self.name},{window})")
         
     def ts_median(self, window: int) -> 'Factor':
-        """Rolling median over window (requires full window, else NaN)."""
+        """Rolling median over window."""
         self._validate_window(window)
         result = self._apply_rolling(lambda x: x.median() if not x.isna().all() else np.nan, window)
         return Factor(result, f"ts_median({self.name},{window})")
     
     def ts_std_dev(self, window: int) -> 'Factor':
-        """Rolling standard deviation over window (requires full window, else NaN)."""
+        """Rolling standard deviation over window."""
         self._validate_window(window)
         
         def safe_std(x: pd.Series) -> float:
@@ -464,7 +535,7 @@ class Factor:
         return Factor(result, f"ts_std_dev({self.name},{window})")
     
     def ts_min(self, window: int) -> 'Factor':
-        """Rolling minimum over window (requires full window, else NaN)."""
+        """Rolling minimum over window."""
         self._validate_window(window)
         
         def safe_min(x: pd.Series) -> float:
@@ -474,7 +545,7 @@ class Factor:
         return Factor(result, f"ts_min({self.name},{window})")
     
     def ts_max(self, window: int) -> 'Factor':
-        """Rolling maximum over window (requires full window, else NaN)."""
+        """Rolling maximum over window."""
         self._validate_window(window)
         
         def safe_max(x: pd.Series) -> float:
@@ -484,7 +555,7 @@ class Factor:
         return Factor(result, f"ts_max({self.name},{window})")
     
     def ts_arg_max(self, window: int) -> 'Factor':
-        """Relative index of maximum in window (0=oldest, window-1=newest)."""
+        """Relative index of maximum in window (0=oldest)."""
         self._validate_window(window)
         
         def safe_arg_max(s):
@@ -494,7 +565,7 @@ class Factor:
         return Factor(result, f"ts_arg_max({self.name},{window})")
         
     def ts_arg_min(self, window: int) -> 'Factor':
-        """Relative index of minimum in window (0=oldest, window-1=newest)."""
+        """Relative index of minimum in window (0=oldest)."""
         self._validate_window(window)
         
         def safe_arg_min(s):
@@ -516,14 +587,14 @@ class Factor:
         return Factor(result, f"ts_count_nans({self.name},{window})")
     
     def ts_av_diff(self, window: int) -> 'Factor':
-        """Deviation from rolling mean: x - ts_mean(x, window)."""
+        """Deviation from rolling mean (x - mean)."""
         self._validate_window(window)
         mean_factor = self.ts_mean(window)
         result = self.subtract(mean_factor)
         return Factor(result.data, f"ts_av_diff({self.name},{window})")
 
     def ts_scale(self, window: int, constant: float = 0) -> 'Factor':
-        """Min-max scale over window: (x-min)/(max-min) + constant."""
+        """Min-max scale over window: (x - min) / (max - min) + constant."""
         self._validate_window(window)
 
         min_factor = self.ts_min(window)
@@ -536,7 +607,7 @@ class Factor:
         return Factor(result.data, f"ts_scale({self.name},{window},{constant})")
     
     def ts_zscore(self, window: int) -> 'Factor':
-        """Rolling Z-score: (x - mean) / std over window."""
+        """Rolling Z-score over window."""
         self._validate_window(window)
         
         mean = self.ts_mean(window)
@@ -548,7 +619,7 @@ class Factor:
         return Factor(result.data, f"ts_zscore({self.name},{window})")
 
     def ts_quantile(self, window: int, driver: str = "gaussian") -> 'Factor':
-        """Rolling quantile transform: rank within window → normal/uniform/Cauchy PPF."""
+        """Rolling quantile transform (normal/uniform/Cauchy)."""
         self._validate_window(window)
 
         valid_drivers = {
@@ -570,7 +641,7 @@ class Factor:
         return Factor(result_data, f"ts_quantile({self.name},{window},{driver})")
 
     def ts_kurtosis(self, window: int) -> 'Factor':
-        """Rolling excess kurtosis: E[(x-mean)^4]/std^4 - 3."""
+        """Rolling excess kurtosis over window."""
         self._validate_window(window)
         
         result = self.data.copy()
@@ -608,7 +679,7 @@ class Factor:
         return Factor(result, f"ts_kurtosis({self.name},{window})")
 
     def ts_skewness(self, window: int) -> 'Factor':
-        """Rolling sample skewness (Fisher-Pearson standard formula)."""
+        """Rolling sample skewness over window."""
         self._validate_window(window)
         
         n = window
@@ -627,7 +698,7 @@ class Factor:
         return skew
 
     def ts_backfill(self, window: int, k: int = 1) -> 'Factor':
-        """Backfill NaN with k-th most recent non-NaN value in window."""
+        """Backfill NaN with k-th most recent non-NaN in window."""
         self._validate_window(window)
         if k <= 0:
             raise ValueError("k must be a positive integer")
@@ -649,7 +720,7 @@ class Factor:
         return Factor(result, f"ts_backfill({self.name},{window},{k})")
     
     def ts_decay_exp_window(self, window: int, factor: float = 1.0, nan: bool = True) -> 'Factor':
-        """Exponential decay weighted average over window (recent data weighted more)."""
+        """Exponentially weighted rolling average (recent data heavier)."""
         self._validate_window(window)
         if not (0 < factor < 1):
             raise ValueError("Factor must be between 0 and 1 (exclusive)")
@@ -675,7 +746,7 @@ class Factor:
         return Factor(result, f"ts_decay_exp_window({self.name},{window},{factor},{nan})")
     
     def ts_decay_linear(self, window: int, dense: bool = False) -> 'Factor':
-        """Linear decay weighted average over window (recent data weighted more)."""
+        """Linearly weighted rolling average (recent data heavier)."""
         self._validate_window(window)
             
         def linear_decay_func(s):
@@ -706,25 +777,25 @@ class Factor:
         return Factor(result, f"ts_decay_linear({self.name},{window},dense={dense})")
     
     def ts_step(self, start: int = 1) -> 'Factor':
-        """Time step counter: 1, 2, 3, ... per symbol (independent of values)."""
+        """Time step counter per symbol."""
         result = self.data.copy()
         result['factor'] = result.groupby('symbol').cumcount() + start
         return Factor(result, f"ts_step({start})")
     
     def ts_delay(self, window: int) -> 'Factor':
-        """Lag by window periods (shift backwards in time)."""
+        """Lag by window periods."""
         result = self.data.copy()
         result['factor'] = result.groupby('symbol')['factor'].shift(window)
         return Factor(result, f"ts_delay({self.name},{window})")
         
     def ts_delta(self, window: int) -> 'Factor':
-        """Change: x - x_lag(window)."""
+        """Change from window periods ago."""
         result = self.data.copy()
         result['factor'] = result.groupby('symbol')['factor'].diff(window)
         return Factor(result, f"ts_delta({self.name},{window})")
 
     def ts_corr(self, other: 'Factor', window: int) -> 'Factor':
-        """Rolling Pearson correlation with other factor over window."""
+        """Rolling Pearson correlation with other factor."""
         self._validate_window(window)
         self._validate_factor(other, "ts_corr")
         
@@ -761,7 +832,7 @@ class Factor:
         return Factor(result, f"ts_corr({self.name},{other.name},{window})")
     
     def ts_covariance(self, other: 'Factor', window: int) -> 'Factor':
-        """Rolling covariance with other factor over window."""
+        """Rolling covariance with other factor."""
         self._validate_window(window)
         self._validate_factor(other, "ts_covariance")
         
@@ -795,8 +866,7 @@ class Factor:
         return Factor(result, f"ts_covariance({self.name},{other.name},{window})")
 
     def ts_regression(self, x_factor, window: int, lag: int = 0, rettype: int = 0) -> 'Factor':
-        """Rolling OLS regression. Y=α+β*X (univariate) or Y=α+Σβi*Xi (multivariate list).
-        rettype: 0=residual, 1=α, 2=β[0], 3=pred, 4=SSE, 5=SST, 6=R², 7=MSE, 8=stderr_β[0], 9=stderr_α, 100+i=β[i]."""
+        """Rolling OLS regression with multiple return types."""
         self._validate_window(window)
         if lag < 0:
             raise ValueError("Lag must be non-negative")
@@ -883,7 +953,7 @@ class Factor:
                         idx = rettype - 100 + 1
                         if idx < len(params):
                             results[i] = params[idx]
-                except:
+                except (np.linalg.LinAlgError, ValueError, FloatingPointError):
                     continue
             
             return pd.Series(results, index=group.index)
@@ -896,20 +966,92 @@ class Factor:
         x_name = ','.join([f.name for f in x_factors]) if is_multi else x_factors[0].name
         return Factor(result, name=f"ts_regression({self.name},{x_name},{window},lag={lag},rettype={rettype})")
 
+    def ts_cv(self, window: int) -> 'Factor':
+        """Rolling coefficient of variation (std / |mean|)."""
+        self._validate_window(window)
+        mean = self.ts_mean(window)
+        std = self.ts_std_dev(window)
+        result = std / (mean.abs() + 1e-10)
+        result.data['factor'] = self._replace_inf(result.data['factor'])
+        return Factor(result.data, f"ts_cv({self.name},{window})")
+
+    def ts_jumpiness(self, window: int) -> 'Factor':
+        """Rolling jumpiness: sum(|diff|) / (max - min)."""
+        self._validate_window(window)
+        diff = self.ts_delta(1).abs()
+        total_jump = diff.ts_sum(window)
+        range_val = self.ts_max(window) - self.ts_min(window)
+        result = total_jump / (range_val + 1e-10)
+        result.data['factor'] = self._replace_inf(result.data['factor'])
+        return Factor(result.data, f"ts_jumpiness({self.name},{window})")
+
+    def ts_trend_strength(self, window: int) -> 'Factor':
+        """Rolling trend strength (R² of linear regression on time)."""
+        self._validate_window(window)
+        time_step = self.ts_step()
+        result = self.ts_regression(time_step, window, rettype=6)
+        return Factor(result.data, f"ts_trend_strength({self.name},{window})")
+
+    def ts_vr(self, window: int, k: int = 2) -> 'Factor':
+        """Rolling variance ratio: Var(k-period) / (k * Var(1-period))."""
+        self._validate_window(window)
+        if k <= 0:
+            raise ValueError("k must be positive")
+        k_diff = self.ts_delta(k)
+        one_diff = self.ts_delta(1)
+        var_k = k_diff.ts_std_dev(window) ** 2
+        var_1 = one_diff.ts_std_dev(window) ** 2
+        result = var_k / (k * var_1 + 1e-10)
+        result.data['factor'] = self._replace_inf(result.data['factor'])
+        return Factor(result.data, f"ts_vr({self.name},{window},{k})")
+
+    def ts_autocorr(self, window: int, lag: int = 1) -> 'Factor':
+        """Rolling autocorrelation at specified lag."""
+        self._validate_window(window)
+        if lag <= 0:
+            raise ValueError("lag must be positive")
+        lagged = self.ts_delay(lag)
+        result = self.ts_corr(lagged, window)
+        return Factor(result.data, f"ts_autocorr({self.name},{window},{lag})")
+
+    def ts_reversal_count(self, window: int) -> 'Factor':
+        """Rolling reversal count (direction change fraction)."""
+        self._validate_window(window)
+        
+        def count_reversals(s):
+            if len(s) < 3:
+                return np.nan
+            diff = np.diff(s)
+            if len(diff) < 2:
+                return np.nan
+            valid_diff = diff[~np.isnan(diff)]
+            if len(valid_diff) < 2:
+                return np.nan
+            sign_changes = ((valid_diff[1:] * valid_diff[:-1]) < 0).sum()
+            return sign_changes / (len(valid_diff) - 1)
+        
+        result = self.data.copy()
+        result['factor'] = (result.groupby('symbol')['factor']
+                           .rolling(window, min_periods=3)
+                           .apply(count_reversals, raw=True)
+                           .reset_index(level=0, drop=True))
+        
+        return Factor(result, f"ts_reversal_count({self.name},{window})")
+
     def abs(self) -> 'Factor':
-        """Absolute value: |x|."""
+        """Absolute value."""
         result = self.data.copy()
         result['factor'] = np.abs(result['factor'])
         return Factor(result, f"abs({self.name})")
 
     def sign(self) -> 'Factor':
-        """Sign function: -1/0/+1."""
+        """Sign function (-1, 0, +1)."""
         result = self.data.copy()
         result['factor'] = np.sign(result['factor'])
         return Factor(result, f"sign({self.name})")
 
     def inverse(self) -> 'Factor':
-        """Reciprocal: 1/x (x=0 → NaN)."""
+        """Reciprocal (1/x)."""
         result = self.data.copy()
         result['factor'] = np.where(
             result['factor'] != 0,
@@ -919,7 +1061,7 @@ class Factor:
         return Factor(result, f"inverse({self.name})")
 
     def log(self, base: Optional[float] = None) -> 'Factor':
-        """Logarithm (natural log if base=None, x≤0 → NaN)."""
+        """Logarithm with optional base."""
         result = self.data.copy()
         
         if base is None:
@@ -941,11 +1083,11 @@ class Factor:
             return Factor(result, f"log({self.name},base={base})")
     
     def ln(self) -> 'Factor':
-        """Natural logarithm: ln(x), x≤0 → NaN."""
+        """Natural logarithm."""
         return self.log()
 
     def sqrt(self) -> 'Factor':
-        """Square root: √x (x<0 → NaN)."""
+        """Square root."""
         result = self.data.copy()
         result['factor'] = np.where(
             result['factor'] >= 0,
@@ -991,7 +1133,7 @@ class Factor:
             return Factor(result, f"signed_power({self.name},{exponent})")
 
     def power(self, exponent: Union['Factor', float]) -> 'Factor':
-        """Power: x^exponent (invalid → NaN)."""
+        """Power operation: x^exponent."""
         if isinstance(exponent, Factor):
             merged = pd.merge(self.data, exponent.data,
                              on=['timestamp', 'symbol'],
@@ -1015,23 +1157,23 @@ class Factor:
             return Factor(result, f"({self.name}**{exponent})")
 
     def add(self, other: Union['Factor', float]) -> 'Factor':
-        """Addition: self + other."""
+        """Addition (self + other)."""
         return self.__add__(other)
     
     def subtract(self, other: Union['Factor', float]) -> 'Factor':
-        """Subtraction: self - other."""
+        """Subtraction (self - other)."""
         return self.__sub__(other)
     
     def multiply(self, other: Union['Factor', float]) -> 'Factor':
-        """Multiplication: self * other."""
+        """Multiplication (self * other)."""
         return self.__mul__(other)
     
     def divide(self, other: Union['Factor', float]) -> 'Factor':
-        """Division: self / other (div by 0 → NaN)."""
+        """Division (self / other, div by 0 → NaN)."""
         return self.__truediv__(other)
 
     def where(self, cond: 'Factor', other: Union['Factor', float] = np.nan) -> 'Factor':
-        """Conditional: self where cond, else other."""
+        """Conditional selection (self where cond else other)."""
         if not isinstance(cond, Factor):
             raise TypeError("cond must be a Factor object.")
 
@@ -1052,7 +1194,7 @@ class Factor:
         return Factor(result, name=f"where({self.name})")
 
     def maximum(self, other: Union['Factor', float]) -> 'Factor':
-        """Element-wise max(self, other)."""
+        """Element-wise maximum."""
         if isinstance(other, Factor):
             merged = pd.merge(self.data, other.data,
                              on=['timestamp', 'symbol'],
@@ -1066,7 +1208,7 @@ class Factor:
             return Factor(result, f"max({self.name},{other})")
     
     def minimum(self, other: Union['Factor', float]) -> 'Factor':
-        """Element-wise min(self, other)."""
+        """Element-wise minimum."""
         if isinstance(other, Factor):
             merged = pd.merge(self.data, other.data,
                              on=['timestamp', 'symbol'],
@@ -1080,27 +1222,27 @@ class Factor:
             return Factor(result, f"min({self.name},{other})")
 
     def reverse(self) -> 'Factor':
-        """Negate: -self."""
+        """Negate (-self)."""
         return self.__neg__()
 
     def __neg__(self) -> 'Factor':
-        """Unary negation: -self."""
+        """Unary negation."""
         return self.multiply(-1)
     
     def __add__(self, other: Union['Factor', float]) -> 'Factor':
-        """Addition: self + other."""
+        """Addition."""
         return self._binary_op(other, lambda x, y: x + y, '+')
     
     def __radd__(self, other: Union['Factor', float]) -> 'Factor':
-        """Right addition: other + self."""
+        """Right addition."""
         return self.__add__(other)
     
     def __sub__(self, other: Union['Factor', float]) -> 'Factor':
-        """Subtraction: self - other."""
+        """Subtraction."""
         return self._binary_op(other, lambda x, y: x - y, '-')
     
     def __rsub__(self, other: Union['Factor', float]) -> 'Factor':
-        """Right subtraction: other - self."""
+        """Right subtraction."""
         if isinstance(other, Factor):
             return other.subtract(self)
         else:
@@ -1109,23 +1251,23 @@ class Factor:
             return Factor(result, f"({other}-{self.name})")
     
     def __mul__(self, other: Union['Factor', float]) -> 'Factor':
-        """Multiplication: self * other."""
+        """Multiplication."""
         return self._binary_op(other, lambda x, y: x * y, '*')
     
     def __rmul__(self, other: Union['Factor', float]) -> 'Factor':
-        """Right multiplication: other * self."""
+        """Right multiplication."""
         return self.__mul__(other)
 
     def __abs__(self) -> 'Factor':
-        """Absolute value: |self|."""
+        """Absolute value."""
         return self.abs()
 
     def __pow__(self, other: Union['Factor', float]) -> 'Factor':
-        """Power: self ** other."""
+        """Power."""
         return self.power(other)
     
     def __rpow__(self, other: Union['Factor', float]) -> 'Factor':
-        """Right power: other ** self."""
+        """Right power."""
         if isinstance(other, Factor):
             return other.power(self)
         else:
@@ -1139,7 +1281,7 @@ class Factor:
             return Factor(result, f"({other}**{self.name})")
 
     def __truediv__(self, other: Union['Factor', float]) -> 'Factor':
-        """Division: self / other (div by 0 → NaN)."""
+        """Division (divide by 0 → NaN)."""
         def safe_div(x, y):
             if isinstance(y, (int, float)):
                 if y == 0:
@@ -1151,7 +1293,7 @@ class Factor:
         return self._binary_op(other, safe_div, '/')
 
     def __rtruediv__(self, other: Union['Factor', float]) -> 'Factor':
-        """Right division: other / self (div by 0 → NaN)."""
+        """Right division (divide by 0 → NaN)."""
         if isinstance(other, Factor):
             return other.__truediv__(self)
         else:
@@ -1166,31 +1308,31 @@ class Factor:
             return Factor(result, f"({other}/{self.name})")
 
     def __lt__(self, other: Union['Factor', float]) -> 'Factor':
-        """Less than: self < other (returns 0/1)."""
+        """Less than (returns 0/1)."""
         return self._comparison_op(other, lambda x, y: x < y, '<')
 
     def __le__(self, other: Union['Factor', float]) -> 'Factor':
-        """Less than or equal: self <= other (returns 0/1)."""
+        """Less than or equal (returns 0/1)."""
         return self._comparison_op(other, lambda x, y: x <= y, '<=')
 
     def __gt__(self, other: Union['Factor', float]) -> 'Factor':
-        """Greater than: self > other (returns 0/1)."""
+        """Greater than (returns 0/1)."""
         return self._comparison_op(other, lambda x, y: x > y, '>')
 
     def __ge__(self, other: Union['Factor', float]) -> 'Factor':
-        """Greater than or equal: self >= other (returns 0/1)."""
+        """Greater than or equal (returns 0/1)."""
         return self._comparison_op(other, lambda x, y: x >= y, '>=')
 
     def __eq__(self, other: Union['Factor', float]) -> 'Factor':
-        """Equal: self == other (returns 0/1)."""
+        """Equal (returns 0/1)."""
         return self._comparison_op(other, lambda x, y: x == y, '==')
 
     def __ne__(self, other: Union['Factor', float]) -> 'Factor':
-        """Not equal: self != other (returns 0/1)."""
+        """Not equal (returns 0/1)."""
         return self._comparison_op(other, lambda x, y: x != y, '!=')
 
     def to_weights(self, date: Optional[Union[str, pd.Timestamp]] = None) -> dict:
-        """Convert to dollar-neutral portfolio weights dict (symbol→weight)."""
+        """Convert factor to dollar-neutral portfolio weights."""
         if date is None:
             target_date = self.data['timestamp'].max()
         else:
@@ -1204,22 +1346,33 @@ class Factor:
         if factors.empty:
             return {}
         
-        demeaned = factors - factors.mean()
-        abs_sum = np.abs(demeaned).sum()
+        long_sum = factors[factors > 0].sum()
+        short_sum = factors[factors < 0].sum()
+        total_sum = long_sum + short_sum
+        is_already_signal = (np.isclose(long_sum, 0.5, atol=1e-2) and 
+                            np.isclose(short_sum, -0.5, atol=1e-2) and
+                            np.isclose(total_sum, 0.0, atol=1e-2))
         
-        if abs_sum < 1e-10:
-            return {}
+        if is_already_signal:
+            weights = factors
+        else:
+            demeaned = factors - factors.mean()
+            abs_sum = np.abs(demeaned).sum()
+            
+            if abs_sum < 1e-10:
+                return {}
+            
+            weights = demeaned / abs_sum
         
-        weights = demeaned / abs_sum
         return weights.to_dict()
 
     def to_csv(self, path: str) -> str:
-        """Save factor to CSV file, return file path."""
+        """Save factor to CSV."""
         self.data.to_csv(path, index=False)
         return path
     
     def info(self) -> None:
-        """Print summary: name, obs, symbols, NaN stats, date range."""
+        """Print factor metadata."""
         n_obs = len(self.data)
         n_symbols = self.data['symbol'].nunique()
         n_nan = self.data['factor'].isna().sum()
@@ -1231,7 +1384,7 @@ class Factor:
         logger.info(f"  NaN: {n_nan} ({nan_ratio:.1%})")
     
     def __repr__(self):
-        """Detailed representation with metadata."""
+        """Detailed representation."""
         n_obs = len(self.data)
         n_symbols = self.data['symbol'].nunique()
         valid_ratio = self.data['factor'].notna().mean()
@@ -1240,13 +1393,13 @@ class Factor:
                f"valid={valid_ratio:.1%}, period={time_range})")
     
     def __str__(self):
-        """Short string: name, obs, symbols."""
+        """String representation."""
         n_symbols = self.data['symbol'].nunique()
         return f"Factor({self.name}): {len(self.data)} obs, {n_symbols} symbols"
 
     def show(self, symbol: Optional[str] = None, figsize: tuple = (12, 6), 
              title: Optional[str] = None) -> None:
-        """Display factor time series plot. symbol=None shows all symbols in subgrid."""
+        """Display factor time series plot."""
         from .plot import FactorPlotter
         plotter = FactorPlotter(self)
         plotter.plot(symbol, figsize, title)
