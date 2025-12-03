@@ -72,14 +72,14 @@ with st.sidebar:
     with st.expander("資源"):
         st.markdown("""
 **算子手冊**:  
-[算子手冊](https://phandas.readthedocs.io/en/latest/guide/operators_guide.html)
+[算子手冊](https://phandas.readthedocs.io/guide/operators_guide.html)
 
 **原始碼**:  
 [GitHub 專案](https://github.com/quantbai/phandas)
 """)
 
-DEFAULT_CODE = """在下方編寫您的因子表達式
-範例：20日動量
+DEFAULT_CODE = """# 在下方編寫您的因子表達式
+# 範例: 20日動量
 alpha = rank(close / ts_delay(close, 20))
 """
 
