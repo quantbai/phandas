@@ -119,6 +119,25 @@ Neutralization Operators
 
 .. autofunction:: phandas.regression_neut
 
+Group Operators
+---------------
+
+.. autofunction:: phandas.group
+
+.. autofunction:: phandas.group_neutralize
+
+.. autofunction:: phandas.group_mean
+
+.. autofunction:: phandas.group_median
+
+.. autofunction:: phandas.group_rank
+
+.. autofunction:: phandas.group_scale
+
+.. autofunction:: phandas.group_zscore
+
+.. autofunction:: phandas.group_normalize
+
 Math Operators
 --------------
 

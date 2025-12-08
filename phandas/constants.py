@@ -20,3 +20,14 @@ SYMBOL_RENAMES = {
     }
 }
 
+GROUP_DEFINITIONS = {
+    'SECTOR_L1_L2': {
+        'ETH': 1, 'SOL': 1, 'SUI': 1,  # Group 1: L1
+        'ARB': 2, 'OP': 2,  'POL': 2   # Group 2: L2
+
+    },
+    'DAPP_ACTIVITY': {
+        'POL': 1, 'ETH': 1, 'ARB': 1, 'OP': 1, # Group 1: High TVL/Dapps
+        'SUI': 2, 'SOL': 2                     # Group 2: Growth/Alt
+    }
+}

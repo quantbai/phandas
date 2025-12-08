@@ -21,6 +21,144 @@ def vector_neut(x: 'Factor', y: 'Factor') -> 'Factor':
     """
     return x.vector_neut(y)
 
+def group_neutralize(x: 'Factor', group: 'Factor') -> 'Factor':
+    """Neutralize factor against groups (demean within group).
+    
+    Parameters
+    ----------
+    x : Factor
+        Factor to neutralize
+    group : Factor
+        Factor defining the group for each asset
+    
+    Returns
+    -------
+    Factor
+        Neutralized factor (x - group_mean)
+    """
+    return x.group_neutralize(group)
+
+def group(factor: 'Factor', mapping: Union[str, dict]) -> 'Factor':
+    """Map symbol to group ID using predefined definition or custom dict.
+    
+    Parameters
+    ----------
+    factor : Factor
+        Base factor providing timestamp/symbol index
+    mapping : str or dict
+        Mapping name (in constants.GROUP_DEFINITIONS) or dict
+    
+    Returns
+    -------
+    Factor
+        Group ID factor
+    """
+    return factor.group(mapping)
+
+def group_mean(x: 'Factor', group: 'Factor') -> 'Factor':
+    """Calculate group mean for each asset.
+    
+    Parameters
+    ----------
+    x : Factor
+        Factor to calculate mean for
+    group : Factor
+        Factor defining the group for each asset
+    
+    Returns
+    -------
+    Factor
+        Mean value of the group the asset belongs to
+    """
+    return x.group_mean(group)
+
+def group_median(x: 'Factor', group: 'Factor') -> 'Factor':
+    """Calculate group median for each asset.
+    
+    Parameters
+    ----------
+    x : Factor
+        Factor to calculate median for
+    group : Factor
+        Factor defining the group for each asset
+    
+    Returns
+    -------
+    Factor
+        Median value of the group the asset belongs to
+    """
+    return x.group_median(group)
+
+def group_rank(x: 'Factor', group: 'Factor') -> 'Factor':
+    """Calculate percentile rank within each group.
+    
+    Parameters
+    ----------
+    x : Factor
+        Factor to rank
+    group : Factor
+        Factor defining the group for each asset
+    
+    Returns
+    -------
+    Factor
+        Percentile rank (0-1) within the group
+    """
+    return x.group_rank(group)
+
+def group_scale(x: 'Factor', group: 'Factor') -> 'Factor':
+    """Scale values within each group to 0-1 range.
+    
+    Parameters
+    ----------
+    x : Factor
+        Factor to scale
+    group : Factor
+        Factor defining the group for each asset
+    
+    Returns
+    -------
+    Factor
+        Scaled values: (x - min) / (max - min)
+    """
+    return x.group_scale(group)
+
+def group_zscore(x: 'Factor', group: 'Factor') -> 'Factor':
+    """Calculate Z-score within each group.
+    
+    Parameters
+    ----------
+    x : Factor
+        Factor to calculate zscore for
+    group : Factor
+        Factor defining the group for each asset
+    
+    Returns
+    -------
+    Factor
+        Z-score: (x - mean) / std
+    """
+    return x.group_zscore(group)
+
+def group_normalize(x: 'Factor', group: 'Factor', scale: float = 1.0) -> 'Factor':
+    """Normalize such that each group's absolute sum equals scale.
+    
+    Parameters
+    ----------
+    x : Factor
+        Factor to normalize
+    group : Factor
+        Factor defining the group for each asset
+    scale : float, default 1.0
+        Target sum of absolute values for each group
+    
+    Returns
+    -------
+    Factor
+        Normalized values: x / sum(|x|_group) * scale
+    """
+    return x.group_normalize(group, scale)
+
 def regression_neut(y: 'Factor', x: 'Factor') -> 'Factor':
     """Orthogonalize y relative to x via OLS residuals.
     

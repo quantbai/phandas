@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 project = 'phandas'
 copyright = '2025, Phantom Management'
 author = 'Phantom Management'
-release = '0.16.0'
+release = '0.17.0'
 
 extensions = [
     'sphinx.ext.autodoc',
