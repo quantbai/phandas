@@ -1,5 +1,4 @@
-phandas==0.16.0
+phandas==0.17.0
 streamlit>=1.28.0
-pandas>=2.0.0
-matplotlib>=3.7.0
+
 
