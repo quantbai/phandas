@@ -3,7 +3,7 @@ A multi-factor quantitative trading framework for cryptocurrency markets.
 """
 
 __author__ = "Phantom Management"
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 from .core import Factor
 from .panel import Panel
@@ -23,7 +23,10 @@ from .operators import (
     log, ln, s_log_1p, sign, sqrt, maximum, minimum, multiply, power, reverse, 
     signed_power, subtract, divide, inverse, add, where,
     
-    vector_neut, regression_neut
+    vector_neut, regression_neut,
+
+    group, group_neutralize, group_mean, group_median,
+    group_rank, group_scale, group_zscore, group_normalize,
 )
 
 __all__ = [
@@ -47,6 +50,9 @@ __all__ = [
     'signed_power', 'subtract', 'divide', 'inverse', 'add', 'where',
     
     'vector_neut', 'regression_neut',
+    
+    'group', 'group_neutralize', 'group_mean', 'group_median',
+    'group_rank', 'group_scale', 'group_zscore', 'group_normalize',
     
     'get_logger', 'configure_logging',
 ]

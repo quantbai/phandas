@@ -7,7 +7,9 @@ from phandas import (
     Factor, Panel,
     ts_rank, ts_mean, ts_std_dev, ts_delay, ts_delta, ts_skewness, ts_corr,
     rank, zscore, signal, vector_neut,
-    log, sqrt, sign, reverse, add, subtract, multiply, divide
+    log, sqrt, sign, reverse, add, subtract, multiply, divide,
+    group, group_neutralize, group_mean, group_median,
+    group_rank, group_scale, group_zscore, group_normalize
 )
 
 
@@ -140,6 +142,197 @@ class TestArithmeticOperators:
         
         valid = result.data['factor'].dropna()
         assert (abs(valid - 1) < 1e-10).all()
+
+
+class TestGroupOperators:
+    """Tests for group-related operator functions."""
+    
+    def test_group_mapping_constants(self, close_factor):
+        """Test mapping using predefined constant name."""
+        g_factor = group(close_factor, 'SECTOR_L1_L2')
+        
+        assert isinstance(g_factor, Factor)
+        
+        df = g_factor.data
+        eth_val = df[df['symbol'] == 'ETH']['factor'].iloc[0]
+        arb_val = df[df['symbol'] == 'ARB']['factor'].iloc[0]
+        
+        assert eth_val == 1
+        assert arb_val == 2
+
+    def test_group_mapping_dict(self, close_factor):
+        """Test mapping using custom dictionary."""
+        mapping = {'BTC': 10, 'ETH': 20}
+        g_factor = group(close_factor, mapping)
+        
+        df = g_factor.data
+        btc_val = df[df['symbol'] == 'BTC']['factor'].iloc[0]
+        eth_val = df[df['symbol'] == 'ETH']['factor'].iloc[0]
+        sol_val = df[df['symbol'] == 'SOL']['factor'].iloc[0]
+        
+        assert btc_val == 10
+        assert eth_val == 20
+        assert np.isnan(sol_val)
+
+    def test_group_neutralize_logic(self):
+        """Verify mathematical correctness of group neutralization."""
+        data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [10.0, 20.0, 30.0]
+        })
+        x = Factor(data, 'x')
+        
+        group_data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [1, 1, 2]
+        })
+        g = Factor(group_data, 'g')
+        
+        neut = group_neutralize(x, g)
+        res = neut.data.set_index('symbol')['factor']
+        
+        np.testing.assert_almost_equal(res['SymA'], -5.0)
+        np.testing.assert_almost_equal(res['SymB'], 5.0)
+        np.testing.assert_almost_equal(res['SymC'], 0.0)
+
+    def test_group_mean_logic(self):
+        """Verify group_mean calculation."""
+        data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [10.0, 20.0, 30.0]
+        })
+        x = Factor(data, 'x')
+        
+        group_data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [1, 1, 2]
+        })
+        g = Factor(group_data, 'g')
+        
+        gm = group_mean(x, g)
+        res = gm.data.set_index('symbol')['factor']
+        
+        np.testing.assert_almost_equal(res['SymA'], 15.0)
+        np.testing.assert_almost_equal(res['SymB'], 15.0)
+        np.testing.assert_almost_equal(res['SymC'], 30.0)
+        
+    def test_group_median_logic(self):
+        """Verify group_median calculation."""
+        data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [10.0, 20.0, 500.0]
+        })
+        x = Factor(data, 'x')
+        
+        group_data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [1, 1, 1]
+        })
+        g = Factor(group_data, 'g')
+        
+        gmed = group_median(x, g)
+        res = gmed.data.iloc[0]['factor']
+        
+        np.testing.assert_almost_equal(res, 20.0)
+
+    def test_group_rank_logic(self):
+        """Verify group_rank calculation."""
+        data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [10.0, 20.0, 50.0]
+        })
+        x = Factor(data, 'x')
+        
+        group_data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [1, 1, 1]
+        })
+        g = Factor(group_data, 'g')
+        
+        gr = group_rank(x, g)
+        res = gr.data.set_index('symbol')['factor']
+        
+        np.testing.assert_almost_equal(res['SymA'], 1/3)
+        np.testing.assert_almost_equal(res['SymB'], 2/3)
+        np.testing.assert_almost_equal(res['SymC'], 1.0)
+
+    def test_group_scale_logic(self):
+        """Verify group_scale calculation."""
+        data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [10.0, 20.0, 50.0]
+        })
+        x = Factor(data, 'x')
+        
+        group_data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [1, 1, 1]
+        })
+        g = Factor(group_data, 'g')
+        
+        gs = group_scale(x, g)
+        res = gs.data.set_index('symbol')['factor']
+        
+        np.testing.assert_almost_equal(res['SymA'], 0.0)
+        np.testing.assert_almost_equal(res['SymB'], 0.25)
+        np.testing.assert_almost_equal(res['SymC'], 1.0)
+
+    def test_group_zscore_logic(self):
+        """Verify group_zscore calculation."""
+        data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [10.0, 20.0, 30.0]
+        })
+        x = Factor(data, 'x')
+        
+        group_data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [1, 1, 1]
+        })
+        g = Factor(group_data, 'g')
+        
+        gz = group_zscore(x, g)
+        res = gz.data.set_index('symbol')['factor']
+        
+        np.testing.assert_almost_equal(res['SymA'], -1.0)
+        np.testing.assert_almost_equal(res['SymB'], 0.0)
+        np.testing.assert_almost_equal(res['SymC'], 1.0)
+
+    def test_group_normalize_logic(self):
+        """Verify group_normalize calculation."""
+        data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [10.0, -20.0, 20.0]
+        })
+        x = Factor(data, 'x')
+        
+        group_data = pd.DataFrame({
+            'timestamp': [pd.Timestamp('2024-01-01')] * 3,
+            'symbol': ['SymA', 'SymB', 'SymC'],
+            'factor': [1, 1, 1]
+        })
+        g = Factor(group_data, 'g')
+        
+        gn = group_normalize(x, g, scale=1.0)
+        res = gn.data.set_index('symbol')['factor']
+        
+        np.testing.assert_almost_equal(res['SymA'], 0.2)
+        np.testing.assert_almost_equal(res['SymB'], -0.4)
+        np.testing.assert_almost_equal(res['SymC'], 0.4)
+        np.testing.assert_almost_equal(res.abs().sum(), 1.0)
 
 
 class TestNeutralizationOperators:
