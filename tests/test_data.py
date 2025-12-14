@@ -1,4 +1,4 @@
-"""Unit tests for phandas.data module."""
+"""Unit tests for phandas data module."""
 
 import pytest
 import pandas as pd

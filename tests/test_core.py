@@ -1,4 +1,4 @@
-"""Unit tests for phandas.core.Factor class."""
+"""Unit tests for phandas Factor class."""
 
 import pytest
 import pandas as pd

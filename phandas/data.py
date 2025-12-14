@@ -1,18 +1,16 @@
 """Data acquisition and management for cryptocurrency markets via CCXT."""
 
+import warnings
 import pandas as pd
 import ccxt
 import time
 import os
-import logging
 from typing import List, Optional, TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from .panel import Panel
 
 from .constants import SYMBOL_RENAMES
-
-logger = logging.getLogger(__name__)
 
 TIMEFRAME_MAP = {
     '1m': 'min', '5m': '5min', '15m': '15min', '30m': '30min',
@@ -77,32 +75,6 @@ def fetch_panel_core(
     sources: Optional[List[str]] = None,
     output_path: Optional[str] = None
 ) -> 'Panel':
-    """Core function to fetch, merge, and align multi-source data at any resolution.
-    
-    Parameters
-    ----------
-    symbols : List[str]
-        List of cryptocurrency symbols
-    timeframe : str, default '1d'
-        OHLCV timeframe
-    start_date : str, optional
-        Start date in YYYY-MM-DD format
-    end_date : str, optional
-        End date in YYYY-MM-DD format
-    sources : List[str], optional
-        Data sources. Default is ['binance']
-    output_path : str, optional
-        Path to save CSV output
-    
-    Returns
-    -------
-    Panel
-        Merged and aligned Panel object
-    
-    Notes
-    -----
-    Orchestrates fetching from individual sources and aligns them to common time range.
-    """
     if sources is None:
         sources = ['binance']
     
@@ -118,17 +90,14 @@ def fetch_panel_core(
     
     for source in sources:
         if source not in source_map:
-            logger.warning(f"Unknown source: {source}. Available: {list(source_map.keys())}")
+            warnings.warn(f"Unknown source: {source}. Available: {list(source_map.keys())}")
             continue
-        
-        logger.info(f"Fetching from {source}...")
         
         try:
             if source == 'binance':
                 df = source_map[source](symbols, timeframe, start_date, end_date)
                 if df is not None and 'timestamp' in df.columns:
                     binance_end_date = df['timestamp'].max().strftime('%Y-%m-%d')
-                    logger.info(f"  Binance data ends at: {binance_end_date}")
             else:
                 source_end_date = binance_end_date or end_date
                 df = source_map[source](symbols, timeframe, start_date, source_end_date)
@@ -138,10 +107,10 @@ def fetch_panel_core(
                     df = df.reset_index()
                 raw_dfs.append(df)
             else:
-                logger.warning(f"  No data returned from {source}")
+                warnings.warn(f"No data returned from {source}")
         
         except Exception as e:
-            logger.error(f"  Failed to fetch from {source}: {e}")
+            raise RuntimeError(f"Failed to fetch from {source}: {e}")
     
     if not raw_dfs:
         raise ValueError("No data fetched from any source")
@@ -153,16 +122,11 @@ def fetch_panel_core(
     if combined.columns.duplicated().any():
         combined = combined.loc[:, ~combined.columns.duplicated(keep='first')]
     
-    logger.info(f"Combined columns: {list(combined.columns)}")
-    
     combined_reset = combined.copy()
     if 'index' in combined_reset.columns:
-        logger.warning("Unexpected 'index' column found, removing it")
         combined_reset = combined_reset.drop(columns=['index'])
-    logger.info(f"After merge columns: {list(combined_reset.columns)}")
     
     processed = _process_data(combined_reset, timeframe, symbols)
-    logger.info(f"After _process_data columns: {list(processed.columns)}")
     
     int_cols = ['year', 'month', 'day']
     for col in int_cols:
@@ -175,7 +139,6 @@ def fetch_panel_core(
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         result.to_csv(output_path)
-        logger.info(f"Data saved to {output_path}")
     
     return result
 
@@ -188,34 +151,12 @@ def _fetch_ohlcv_data(
     until: Optional[int] = None,
     columns_post_process: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch OHLCV data with optional column post-processing.
-    
-    Parameters
-    ----------
-    exchange : ccxt.Exchange
-        Exchange instance with fetchOHLCV support
-    symbols : List[str]
-        Symbols to fetch
-    timeframe : str
-        Timeframe (e.g., '1d', '1h')
-    since : int
-        Milliseconds timestamp
-    until : int, optional
-        Upper bound timestamp (milliseconds)
-    columns_post_process : Callable, optional
-        Function to select/rename columns from raw OHLCV
-    
-    Returns
-    -------
-    pd.DataFrame or None
-        OHLCV data with columns [timestamp, open, high, low, close, volume, symbol]
-    """
     def _fetch_single(sym: str) -> Optional[pd.DataFrame]:
         try:
             market_sym = f'{sym}/USDT'
             exchange.load_markets()
             if market_sym not in exchange.symbols:
-                logger.warning(f"{market_sym} not available")
+                warnings.warn(f"{market_sym} not available")
                 return None
             
             all_candles = []
@@ -249,7 +190,7 @@ def _fetch_ohlcv_data(
             return df
             
         except Exception as e:
-            logger.warning(f"Failed to fetch {sym}: {e}")
+            warnings.warn(f"Failed to fetch {sym}: {e}")
             return None
     
     dfs = []
@@ -275,35 +216,10 @@ def fetch_binance(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch OHLCV data from Binance.
-    
-    Parameters
-    ----------
-    symbols : List[str]
-        List of cryptocurrency symbols
-    timeframe : str, default '1d'
-        OHLCV timeframe
-    start_date : str, optional
-        Start date in YYYY-MM-DD format
-    end_date : str, optional
-        End date in YYYY-MM-DD format
-    
-    Returns
-    -------
-    pd.DataFrame or None
-        OHLCV data with columns [timestamp, open, high, low, close, volume, symbol]
-    
-    Notes
-    -----
-    Handles symbol renames (e.g., MATIC -> POL): fetches old symbol historical data
-    before cutoff date and new symbol data after, then merges them.
-    Symbol renames are configured in constants.SYMBOL_RENAMES.
-    """
     try:
         exchange = ccxt.binance()
         if not exchange.has['fetchOHLCV']:
-            logger.error("Binance does not support OHLCV")
-            return None
+            raise RuntimeError("Binance does not support OHLCV")
         
         since = exchange.parse8601(f'{start_date}T00:00:00Z') if start_date else None
         until = exchange.parse8601(f'{end_date}T00:00:00Z') if end_date else None
@@ -320,7 +236,6 @@ def fetch_binance(
             
             if since is None or since < cutoff_ts:
                 old_until = cutoff_ts - 1
-                logger.info(f"Fetching {old_sym} historical data for {new_sym} before {cutoff_date}")
                 
                 old_data = _fetch_ohlcv_data(
                     exchange, 
@@ -369,8 +284,7 @@ def fetch_binance(
         return _fetch_ohlcv_data(exchange, symbols_to_fetch, timeframe, since, until)
         
     except Exception as e:
-        logger.error(f"Failed to initialize Binance: {e}")
-        return None
+        raise RuntimeError(f"Failed to initialize Binance: {e}")
 
 
 def fetch_benchmark(
@@ -379,33 +293,10 @@ def fetch_benchmark(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Fetch benchmark market data (BTC, ETH close prices).
-    
-    Parameters
-    ----------
-    symbols : List[str]
-        List of symbols to associate benchmark data with
-    timeframe : str, default '1d'
-        OHLCV timeframe
-    start_date : str, optional
-        Start date in YYYY-MM-DD format
-    end_date : str, optional
-        End date in YYYY-MM-DD format
-    
-    Returns
-    -------
-    pd.DataFrame or None
-        Data with columns [timestamp, symbol, BTC_close, ETH_close]
-    
-    Notes
-    -----
-    Benchmark data is replicated for each symbol in symbols list.
-    """
     try:
         exchange = ccxt.binance()
         if not exchange.has['fetchOHLCV']:
-            logger.error("Binance does not support OHLCV")
-            return None
+            raise RuntimeError("Binance does not support OHLCV")
         
         since = exchange.parse8601(f'{start_date}T00:00:00Z') if start_date else None
         until = exchange.parse8601(f'{end_date}T00:00:00Z') if end_date else None
@@ -422,7 +313,7 @@ def fetch_benchmark(
                 factor_data[factor] = df
         
         if not factor_data:
-            logger.warning("No factor data fetched")
+            warnings.warn("No factor data fetched")
             return None
         
         combined = pd.concat(factor_data.values(), axis=1)
@@ -443,8 +334,7 @@ def fetch_benchmark(
         return pd.DataFrame(rows) if rows else None
         
     except Exception as e:
-        logger.error(f"Failed to fetch benchmark: {e}")
-        return None
+        raise RuntimeError(f"Failed to fetch benchmark: {e}")
 
 
 def fetch_calendar(
@@ -453,33 +343,8 @@ def fetch_calendar(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Generate time-based calendar features.
-    
-    Parameters
-    ----------
-    symbols : List[str]
-        List of symbols to associate calendar data with
-    timeframe : str, default '1d'
-        OHLCV timeframe
-    start_date : str, optional
-        Start date in YYYY-MM-DD format
-    end_date : str, optional
-        End date in YYYY-MM-DD format
-    
-    Returns
-    -------
-    pd.DataFrame or None
-        Data with columns [timestamp, symbol, year, month, day, dayofweek, 
-        dayofmonth_position, is_week_end]
-    
-    Notes
-    -----
-    Both start_date and end_date are required.
-    dayofweek: 1-7 (Monday-Sunday), is_week_end: 1 if Saturday/Sunday else 0.
-    """
     if not start_date or not end_date:
-        logger.warning("Calendar requires both start_date and end_date")
-        return None
+        raise ValueError("Calendar requires both start_date and end_date")
     
     try:
         start = pd.to_datetime(start_date)
@@ -505,27 +370,10 @@ def fetch_calendar(
         return pd.DataFrame(rows) if rows else None
         
     except Exception as e:
-        logger.error(f"Failed to generate calendar: {e}")
-        return None
+        raise RuntimeError(f"Failed to generate calendar: {e}")
 
 
 def _process_data(df: pd.DataFrame, timeframe: str, user_symbols: List[str]) -> pd.DataFrame:
-    """Align multi-source data to common time range with forward fill.
-    
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Raw combined data with columns [timestamp, symbol, ...]
-    timeframe : str
-        OHLCV timeframe for date range generation
-    user_symbols : List[str]
-        Symbols to filter in output
-    
-    Returns
-    -------
-    pd.DataFrame
-        Aligned data with columns [timestamp, symbol, ...]
-    """
     pivoted = df.pivot_table(index='timestamp', columns='symbol', values='close')
     common_start = pivoted.apply(lambda s: s.first_valid_index()).max()
     end_date = df['timestamp'].max()
@@ -555,30 +403,6 @@ def fetch_vwap(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Optional[pd.DataFrame]:
-    """Calculate Volume Weighted Average Price (VWAP).
-    
-    Parameters
-    ----------
-    symbols : List[str]
-        List of cryptocurrency symbols
-    timeframe : str, default '1d'
-        OHLCV timeframe
-    start_date : str, optional
-        Start date in YYYY-MM-DD format
-    end_date : str, optional
-        End date in YYYY-MM-DD format
-    
-    Returns
-    -------
-    pd.DataFrame or None
-        Data with columns [timestamp, symbol, vwap]
-    
-    Notes
-    -----
-    For daily ('1d'): Aggregates hourly data for accurate daily VWAP.
-    For intraday: Cumulative VWAP anchored to trading day start (UTC).
-    Typical price = (high + low + close) / 3.
-    """
     try:
         is_daily = timeframe == '1d'
         fetch_tf = '1h' if is_daily else timeframe
@@ -617,5 +441,4 @@ def fetch_vwap(
         return result_df
 
     except Exception as e:
-        logger.error(f"Failed to calculate VWAP: {e}")
-        return None
+        raise RuntimeError(f"Failed to calculate VWAP: {e}")

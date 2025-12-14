@@ -1,4 +1,4 @@
-"""Unit tests for phandas.operators functional API."""
+"""Unit tests for phandas operators functional API."""
 
 import pytest
 import pandas as pd

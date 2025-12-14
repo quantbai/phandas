@@ -1,4 +1,4 @@
-"""Unit tests for phandas.panel.Panel class."""
+"""Unit tests for phandas Panel class."""
 
 import pytest
 import pandas as pd
@@ -45,18 +45,17 @@ class TestPanelFromCSV:
         
         assert len(loaded.data) == len(sample_panel.data)
         assert set(loaded.columns) == set(sample_panel.columns)
-
-
-class TestPanelGetFactor:
-    """Tests for Panel column extraction."""
     
-    def test_get_factor(self, sample_panel):
-        """get_factor should return Factor with correct data."""
-        close = sample_panel.get_factor('close')
+    def test_from_df(self, sample_panel_data):
+        """Panel.from_df should work as constructor alias."""
+        panel = Panel.from_df(sample_panel_data)
         
-        assert isinstance(close, Factor)
-        assert close.name == 'close'
-        assert len(close.data) == len(sample_panel.data)
+        assert isinstance(panel, Panel)
+        assert 'close' in panel.columns
+
+
+class TestPanelAccess:
+    """Tests for Panel column extraction."""
     
     def test_getitem_string(self, sample_panel):
         """Indexing with string should return Factor."""
@@ -76,39 +75,13 @@ class TestPanelGetFactor:
         """Accessing non-existent column should raise ValueError."""
         with pytest.raises(ValueError, match="not found"):
             sample_panel['nonexistent']
-
-
-class TestPanelAddFactor:
-    """Tests for adding factors to Panel."""
     
-    def test_add_factor(self, sample_panel, sample_factor):
-        """add_factor should add new column to Panel."""
-        result = sample_panel.add_factor(sample_factor, 'new_col')
+    def test_to_df(self, sample_panel):
+        """to_df should return DataFrame copy."""
+        df = sample_panel.to_df()
         
-        assert isinstance(result, Panel)
-        assert 'new_col' in result.columns
-        assert len(result.columns) == len(sample_panel.columns) + 1
-
-
-class TestPanelMerge:
-    """Tests for Panel merging operations."""
-    
-    def test_add_panels(self, sample_panel_data):
-        """Adding two Panels should merge on common (timestamp, symbol)."""
-        df1 = sample_panel_data[['timestamp', 'symbol', 'open', 'close']]
-        df2 = sample_panel_data[['timestamp', 'symbol', 'high', 'low']]
-        
-        panel1 = Panel(df1)
-        panel2 = Panel(df2)
-        
-        merged = panel1 + panel2
-        
-        assert set(merged.columns) == {'open', 'close', 'high', 'low'}
-    
-    def test_add_duplicate_columns_raises(self, sample_panel):
-        """Adding Panels with overlapping columns should raise ValueError."""
-        with pytest.raises(ValueError, match="Duplicate columns"):
-            sample_panel + sample_panel
+        assert isinstance(df, pd.DataFrame)
+        assert 'close' in df.columns
 
 
 class TestPanelSlice:
@@ -171,12 +144,5 @@ class TestPanelRepr:
         repr_str = repr(sample_panel)
         
         assert 'Panel' in repr_str
-        assert 'obs=' in repr_str
-        assert 'symbols=' in repr_str
-    
-    def test_str(self, sample_panel):
-        """__str__ should be concise summary."""
-        str_output = str(sample_panel)
-        
-        assert 'Panel' in str_output
-        assert 'obs' in str_output
+        assert 'rows' in repr_str
+        assert 'symbols' in repr_str

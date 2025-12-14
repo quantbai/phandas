@@ -12,7 +12,7 @@ A multi-factor quantitative trading framework for cryptocurrency markets.
 
 ### Overview
 
-Phandas is a quantitative analysis framework designed for systematic portfolio construction and risk management. It provides high-performance data structures and financial analysis tools for factor investing and statistical arbitrage strategies.
+Phandas is a streamlined toolkit for alpha factor research and backtesting in cryptocurrency markets. Design factors with 60+ operators, test with dollar-neutral backtesting, and analyze with professional metrics.
 
 ### Try it now
 
@@ -20,12 +20,13 @@ Phandas is a quantitative analysis framework designed for systematic portfolio c
 
 ### Key Features
 
-- **Data Fetching**: Multi-source OHLCV data
-- **Factor Engine**: 50+ time-series and cross-sectional operators
+- **Data Fetching**: Multi-source OHLCV data (Binance, OKX)
+- **Factor Engine**: 60+ time-series and cross-sectional operators
 - **Neutralization**: Vector projection & regression-based orthogonalization
-- **Backtesting**: Dollar-neutral strategies with dynamic rebalancing
-- **Performance Metrics**: Sharpe, Sortino, Calmar, Max Drawdown, VaR
-- **MCP Integration**: AI agents (Claude) can directly access Phandas via JSON config
+- **Backtesting**: Dollar-neutral strategies with full/partial rebalancing
+- **Performance Metrics**: Sharpe, Sortino, Calmar, Max Drawdown, VaR, PSR
+- **Factor Analysis**: IC, IR, correlation, coverage, turnover
+- **MCP Integration**: AI agents (Claude) can directly access Phandas
 
 ### Installation
 
@@ -103,7 +104,7 @@ Use Phandas with AI IDEs (Cursor, Claude Desktop) directly—no coding required.
 
 ### 概述
 
-Phandas 是一個為系統化投資組合構建與風險管理而設計的量化分析框架。它為因子投資與統計套利策略提供高效能的資料結構與金融分析工具。
+Phandas 是一個精簡的加密貨幣因子研究與回測工具。提供 60+ 運算子設計因子、美元中性回測、專業績效指標分析。
 
 ### 立即體驗
 
@@ -111,11 +112,12 @@ Phandas 是一個為系統化投資組合構建與風險管理而設計的量化
 
 ### 核心功能
 
-- **資料獲取**：多源 OHLCV 資料
-- **因子引擎**：50+ 時間序列與橫截面運算子
+- **資料獲取**：多源 OHLCV 資料（Binance、OKX）
+- **因子引擎**：60+ 時間序列與橫截面運算子
 - **因子中性化**：向量投影與迴歸正交化
-- **回測引擎**：美元中性策略、動態調倉
-- **績效指標**：夏普比、Sortino、Calmar、最大回撤、VaR
+- **回測引擎**：美元中性策略、全/部分調倉
+- **績效指標**：夏普比、Sortino、Calmar、最大回撤、VaR、PSR
+- **因子分析**：IC、IR、相關性、覆蓋率、換手率
 - **MCP 集成**：AI 代理（Claude）可直接調用 Phandas
 
 ### 安裝

@@ -3,21 +3,20 @@
 import time
 import string
 import random
-import logging
+import pandas as pd
 from typing import Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from rich.box import SIMPLE
+from .console import print, console, Table
 
 
 def _generate_client_order_id() -> str:
-    """Generate unique client order ID."""
     timestamp = str(int(time.time() * 1000))
     random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
     return f"t{timestamp}{random_suffix}"[:32]
 
 
-def _safe_float(val) -> float:
-    """Safe float conversion with error handling."""
+def _safe_float(val: object) -> float:
     try:
         return float(val) if val and val != '' else 0.0
     except (ValueError, TypeError):
@@ -778,6 +777,12 @@ class Rebalancer:
         self.plan_data = plan_trades
         return self
     
+    @property
+    def plan_df(self) -> pd.DataFrame:
+        if not self.plan_data:
+            return pd.DataFrame()
+        return pd.DataFrame(self.plan_data)
+    
     def print_preview(self) -> 'Rebalancer':
         """Print rebalancing preview table."""
         if not self.plan_data:
@@ -785,34 +790,69 @@ class Rebalancer:
         
         current_position_total = sum(abs(h['usd_value']) for h in self.current_holdings.values())
         
-        logger.info("========== Rebalance Plan ==========")
-        logger.info(f"Total Equity: ${self.budget:,.2f}")
-        logger.info(f"Current Position: ${current_position_total:,.2f}")
+        console.print(f"\n[bold]Rebalancer[/bold]  equity=[bright_green]${self.budget:,.2f}[/bright_green]  position=[bright_yellow]${current_position_total:,.2f}[/bright_yellow]\n")
         
-        logger.info("Target Weights:")
+        weights_table = Table(title="[bold]Target Weights[/bold]", box=SIMPLE, show_header=True, header_style="bold")
+        weights_table.add_column("Symbol", style="bright_cyan")
+        weights_table.add_column("Weight", justify="right")
         for symbol, weight in sorted(self.target_weights.items()):
-            logger.info(f"  {symbol:6} {weight:+.4f}")
+            style = "bright_green" if weight > 0 else "bright_red"
+            weights_table.add_row(symbol, f"[{style}]{weight:+.4f}[/{style}]")
+        console.print(weights_table)
+        console.print()
         
-        logger.info("Holdings: Current → Target → Delta:")
-        header = f"{'Symbol':<6} ${'Current':>11} ${'Target':>11} ${'Delta':>11} {'Action':>10}"
-        logger.info(header)
-        logger.info("-" * len(header))
+        holdings_table = Table(title="[bold]Holdings[/bold]", box=SIMPLE, show_header=True, header_style="bold")
+        holdings_table.add_column("Symbol", style="bright_cyan")
+        holdings_table.add_column("Current", justify="right")
+        holdings_table.add_column("Target", justify="right")
+        holdings_table.add_column("Delta", justify="right")
+        holdings_table.add_column("Action", justify="center")
+        
+        def fmt_usd(val):
+            if val >= 0:
+                return f"${val:,.2f}"
+            else:
+                return f"-${abs(val):,.2f}"
         
         for trade in self.plan_data:
-            symbol = trade['symbol']
-            current_usd = trade['current_usd']
-            target_usd = trade['target_usd']
-            diff_usd = trade['diff_usd']
-            action = trade['action']
+            delta = trade['diff_usd']
+            if delta > 0.01:
+                delta_style = "bright_cyan"
+            elif delta < -0.01:
+                delta_style = "bright_magenta"
+            else:
+                delta_style = "dim"
+            delta_str = f"+${delta:,.2f}" if delta >= 0 else f"-${abs(delta):,.2f}"
             
-            logger.info(f"{symbol:<6} ${current_usd:>11.2f} ${target_usd:>11.2f} ${diff_usd:>+11.2f} {action:>10}")
+            action = trade['action']
+            if action == 'skip':
+                action_str = "[dim]skip[/dim]"
+            elif action == 'long':
+                action_str = "[bold bright_green]LONG[/bold bright_green]"
+            else:
+                action_str = "[bold bright_red]SHORT[/bold bright_red]"
+            
+            holdings_table.add_row(
+                trade['symbol'],
+                fmt_usd(trade['current_usd']),
+                fmt_usd(trade['target_usd']),
+                f"[{delta_style}]{delta_str}[/{delta_style}]",
+                action_str,
+            )
         
         current_abs_sum = sum(abs(trade['current_usd']) for trade in self.plan_data)
         target_abs_sum = sum(abs(trade['target_usd']) for trade in self.plan_data)
         diff_abs_sum = sum(abs(trade['diff_usd']) for trade in self.plan_data)
+        holdings_table.add_section()
+        holdings_table.add_row(
+            "[bold]Total[/bold]",
+            f"[bold]{fmt_usd(current_abs_sum)}[/bold]",
+            f"[bold]{fmt_usd(target_abs_sum)}[/bold]",
+            f"[bold]{fmt_usd(diff_abs_sum)}[/bold]",
+            "",
+        )
         
-        logger.info("-" * len(header))
-        logger.info(f"{'Total':<6} ${current_abs_sum:>11.2f} ${target_abs_sum:>11.2f} ${diff_abs_sum:>11.2f} {'':>10}")
+        console.print(holdings_table)
         
         return self
     
@@ -825,7 +865,7 @@ class Rebalancer:
             try:
                 input("\nPress Enter to execute, Ctrl+C to cancel: ")
             except KeyboardInterrupt:
-                logger.info("Rebalancing cancelled by user")
+                print("Rebalancing cancelled by user")
                 return self
         
         self.result = self.trader.rebalance_portfolio(
@@ -837,61 +877,43 @@ class Rebalancer:
         return self
     
     def summary(self) -> str:
-        """Generate rebalancing summary."""
+        """Generate rebalancing summary in scikit-learn style."""
         if not self.result:
-            return "Rebalancer not executed. Call run() first."
+            return "Rebalancer(not executed, call run() first)"
         
-        lines = ["========== Rebalance Summary =========="]
-        lines.append(f"Status: {self.result['status'].upper()}")
-        lines.append(f"Budget: ${self.result['budget']:,.2f}")
-        lines.append(f"Current Total Position: ${self.result['total_position_usd']:,.2f}")
-        lines.append("")
+        r = self.result
+        s = r['summary']
         
-        summary = self.result['summary']
-        lines.append("Order Statistics:")
-        lines.append(f"  Total: {summary['total_orders']}")
-        lines.append(f"  Success: {summary['successful_orders']}")
-        lines.append(f"  Failed: {summary['failed_orders']}")
-        lines.append("")
+        lines = [
+            f"Rebalancer(status={r['status']}, budget=${r['budget']:,.2f})",
+            f"  orders:  total={s['total_orders']}  success={s['successful_orders']}  failed={s['failed_orders']}",
+            f"  trades:",
+        ]
         
-        lines.append("Rebalance Trades:")
-        for trade in self.result['rebalance_trades']:
-            status = trade['status']
-            if status == 'success':
-                status_str = "[OK]"
-            elif status == 'partial':
-                status_str = "[PARTIAL]"
-            elif status == 'skip':
-                status_str = "[SKIP]"
-            elif status == 'error':
-                status_str = "[ERROR]"
-            elif trade['action'] == 'none':
-                status_str = "[NONE]"
-            else:
-                status_str = "[?]"
-            
-            action_display = trade['action'] if trade['action'] != 'none' else 'skip'
+        for trade in r['rebalance_trades']:
+            status_map = {'success': 'OK', 'partial': 'PARTIAL', 'skip': 'SKIP', 'error': 'ERROR', 'pending': 'PENDING'}
+            status_str = status_map.get(trade['status'], trade['status'])
+            if trade['action'] == 'none':
+                status_str = 'SKIP'
             
             lines.append(
-                f"{status_str} {trade['symbol']:8} {action_display:8} | "
-                f"Target: ${trade['target_usd']:10.2f} | "
-                f"Current: ${trade['current_usd']:10.2f} | "
-                f"Delta: ${trade['diff_usd']:+10.2f}"
+                f"    [{status_str:7}] {trade['symbol']:6}  "
+                f"target=${trade['target_usd']:>10.2f}  "
+                f"current=${trade['current_usd']:>10.2f}  "
+                f"delta=${trade['diff_usd']:>+10.2f}  "
+                f"action={trade['action']}"
             )
             
-            if trade['msg']:
-                lines.append(f"         └─ {trade['msg']}")
+            if trade.get('msg'):
+                lines.append(f"             msg={trade['msg']}")
         
         return "\n".join(lines)
     
     def print_summary(self) -> 'Rebalancer':
         """Print rebalancing summary."""
-        logger.info(self.summary())
+        print(self.summary())
         return self
     
-    def get_result(self) -> Dict:
-        """Get raw result dictionary."""
-        return self.result or {}
     
     def __repr__(self) -> str:
         if not self.result:

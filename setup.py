@@ -1,8 +1,18 @@
+import re
+from pathlib import Path
 from setuptools import setup, find_packages
+
+
+def get_version():
+    init_file = Path(__file__).parent / 'phandas' / '__init__.py'
+    content = init_file.read_text(encoding='utf-8')
+    match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', content, re.M)
+    return match.group(1) if match else '0.0.0'
+
 
 setup(
     name='phandas',
-    version='0.17.0',
+    version=get_version(),
     author='Phantom Management',
     author_email='quantbai@gmail.com',
     description='A multi-factor quantitative trading framework for cryptocurrency markets.',
@@ -19,6 +29,7 @@ setup(
         'python-okx>=0.4.0',
         'requests>=2.25.0',
         'mcp>=0.1.0',
+        'rich>=13.0.0',
     ],
     entry_points={
         'console_scripts': [

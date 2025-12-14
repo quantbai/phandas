@@ -21,6 +21,23 @@ def vector_neut(x: 'Factor', y: 'Factor') -> 'Factor':
     """
     return x.vector_neut(y)
 
+def regression_neut(y: 'Factor', x: 'Factor') -> 'Factor':
+    """Orthogonalize y relative to x via OLS residuals.
+    
+    Parameters
+    ----------
+    y : Factor
+        Factor to orthogonalize
+    x : Factor
+        Factor for regression
+    
+    Returns
+    -------
+    Factor
+        Residuals from OLS regression of y on x
+    """
+    return y.regression_neut(x)
+
 def group_neutralize(x: 'Factor', group: 'Factor') -> 'Factor':
     """Neutralize factor against groups (demean within group).
     
@@ -159,23 +176,6 @@ def group_normalize(x: 'Factor', group: 'Factor', scale: float = 1.0) -> 'Factor
     """
     return x.group_normalize(group, scale)
 
-def regression_neut(y: 'Factor', x: 'Factor') -> 'Factor':
-    """Orthogonalize y relative to x via OLS residuals.
-    
-    Parameters
-    ----------
-    y : Factor
-        Factor to orthogonalize
-    x : Factor
-        Factor for regression
-    
-    Returns
-    -------
-    Factor
-        Residuals from OLS regression of y on x
-    """
-    return y.regression_neut(x)
-
 def rank(factor: 'Factor') -> 'Factor':
     """Cross-sectional percentile rank (0-1).
     
@@ -259,8 +259,9 @@ def quantile(factor: 'Factor', driver: str = "gaussian", sigma: float = 1.0) -> 
     """
     return factor.quantile(driver, sigma)
 
-def scale(factor: 'Factor', scale: float = 1.0, long_scale: float = -1.0, short_scale: float = -1.0) -> 'Factor':
-    """Scale to sum(|factor|)=scale with separate long/short sizing.
+def scale(factor: 'Factor', scale: float = 1.0, longscale: Optional[float] = None, 
+          shortscale: Optional[float] = None) -> 'Factor':
+    """Scale to sum(|factor|)=scale with optional separate long/short sizing.
     
     Parameters
     ----------
@@ -268,17 +269,17 @@ def scale(factor: 'Factor', scale: float = 1.0, long_scale: float = -1.0, short_
         Input factor
     scale : float, default 1.0
         Target sum of absolute values
-    long_scale : float, default -1.0
-        Long-only scale (negative means use scale)
-    short_scale : float, default -1.0
-        Short-only scale (negative means use scale)
+    longscale : float, optional
+        Long-only scale. If None, uses `scale`.
+    shortscale : float, optional
+        Short-only scale. If None, uses `scale`.
     
     Returns
     -------
     Factor
         Scaled factor
     """
-    return factor.scale(scale, long_scale, short_scale)
+    return factor.scale(scale, longscale, shortscale)
 
 def zscore(factor: 'Factor') -> 'Factor':
     """Cross-sectional standardization (mean=0, std=1).
@@ -663,6 +664,10 @@ def ts_kurtosis(factor: 'Factor', window: int) -> 'Factor':
 def ts_skewness(factor: 'Factor', window: int) -> 'Factor':
     """Rolling sample skewness with Bessel correction.
     
+    Expression: (power(x - ts_mean(x, n), 3).ts_sum(n) * n) / 
+                (power(power(x - ts_mean(x, n), 2).ts_sum(n), 1.5) * (n-1) * (n-2))
+    Composed of: ts_mean, power, ts_sum
+    
     Parameters
     ----------
     factor : Factor
@@ -816,6 +821,9 @@ def ts_regression(y: 'Factor', x: 'Factor', window: int, lag: int = 0, rettype: 
 def ts_cv(factor: 'Factor', window: int) -> 'Factor':
     """Rolling coefficient of variation.
     
+    Expression: ts_std_dev(x, n) / (abs(ts_mean(x, n)) + eps)
+    Composed of: ts_mean, ts_std_dev, abs
+    
     Parameters
     ----------
     factor : Factor
@@ -832,6 +840,9 @@ def ts_cv(factor: 'Factor', window: int) -> 'Factor':
 
 def ts_jumpiness(factor: 'Factor', window: int) -> 'Factor':
     """Rolling jumpiness (jump intensity).
+    
+    Expression: ts_sum(abs(ts_delta(x, 1)), n) / (ts_max(x, n) - ts_min(x, n) + eps)
+    Composed of: ts_delta, abs, ts_sum, ts_max, ts_min
     
     Parameters
     ----------
@@ -866,6 +877,10 @@ def ts_trend_strength(factor: 'Factor', window: int) -> 'Factor':
 
 def ts_vr(factor: 'Factor', window: int, k: int = 2) -> 'Factor':
     """Rolling variance ratio.
+    
+    Expression: power(ts_std_dev(ts_delta(x, k), n), 2) / 
+                (k * power(ts_std_dev(ts_delta(x, 1), n), 2) + eps)
+    Composed of: ts_delta, ts_std_dev, power
     
     Parameters
     ----------
@@ -996,6 +1011,21 @@ def sqrt(factor: 'Factor') -> 'Factor':
     """
     return factor.sqrt()
 
+def inverse(factor: 'Factor') -> 'Factor':
+    """Reciprocal (1/x).
+    
+    Parameters
+    ----------
+    factor : Factor
+        Input factor
+    
+    Returns
+    -------
+    Factor
+        Reciprocal (x=0 → NaN)
+    """
+    return factor.inverse()
+
 def maximum(factor1: 'Factor', factor2: Union['Factor', float]) -> 'Factor':
     """Element-wise maximum.
     
@@ -1030,6 +1060,40 @@ def minimum(factor1: 'Factor', factor2: Union['Factor', float]) -> 'Factor':
     """
     return factor1.minimum(factor2)
 
+def power(base: 'Factor', exponent: Union['Factor', float]) -> 'Factor':
+    """Element-wise power.
+    
+    Parameters
+    ----------
+    base : Factor
+        Base factor
+    exponent : Factor or float
+        Exponent
+    
+    Returns
+    -------
+    Factor
+        Element-wise power
+    """
+    return base.power(exponent)
+
+def signed_power(base: 'Factor', exponent: Union['Factor', float]) -> 'Factor':
+    """Sign-preserving power.
+    
+    Parameters
+    ----------
+    base : Factor
+        Base factor
+    exponent : Factor or float
+        Exponent
+    
+    Returns
+    -------
+    Factor
+        Sign-preserving power: sign(x)·|x|^exp
+    """
+    return base.signed_power(exponent)
+
 def divide(factor1: 'Factor', factor2: Union['Factor', float]) -> 'Factor':
     """Element-wise division.
     
@@ -1046,21 +1110,6 @@ def divide(factor1: 'Factor', factor2: Union['Factor', float]) -> 'Factor':
         Element-wise quotient (div by 0 → NaN)
     """
     return factor1.divide(factor2)
-
-def inverse(factor: 'Factor') -> 'Factor':
-    """Reciprocal (1/x).
-    
-    Parameters
-    ----------
-    factor : Factor
-        Input factor
-    
-    Returns
-    -------
-    Factor
-        Reciprocal (x=0 → NaN)
-    """
-    return factor.inverse()
 
 def add(factor1: 'Factor', factor2: Union['Factor', float]) -> 'Factor':
     """Element-wise addition.
@@ -1113,23 +1162,6 @@ def subtract(factor1: 'Factor', factor2: Union['Factor', float]) -> 'Factor':
     """
     return factor1.subtract(factor2)
 
-def power(base: 'Factor', exponent: Union['Factor', float]) -> 'Factor':
-    """Element-wise power.
-    
-    Parameters
-    ----------
-    base : Factor
-        Base factor
-    exponent : Factor or float
-        Exponent
-    
-    Returns
-    -------
-    Factor
-        Element-wise power
-    """
-    return base.power(exponent)
-
 def reverse(factor: 'Factor') -> 'Factor':
     """Negate factor values.
     
@@ -1145,19 +1177,66 @@ def reverse(factor: 'Factor') -> 'Factor':
     """
     return factor.reverse()
 
-def signed_power(base: 'Factor', exponent: Union['Factor', float]) -> 'Factor':
-    """Sign-preserving power.
+
+def show(obj) -> None:
+    """Functional show for Factor/Panel.
     
     Parameters
     ----------
-    base : Factor
-        Base factor
-    exponent : Factor or float
-        Exponent
+    obj : Factor or Panel
+        Object to display
+    
+    Examples
+    --------
+    >>> show(factor)
+    >>> factor.show()
+    """
+    if hasattr(obj, 'show'):
+        obj.show()
+    else:
+        raise TypeError(f"show() not supported for {type(obj).__name__}")
+
+
+def to_csv(obj, path: str) -> None:
+    """Functional to_csv for Factor/Panel.
+    
+    Parameters
+    ----------
+    obj : Factor or Panel
+        Object to save
+    path : str
+        File path to save CSV
+    
+    Examples
+    --------
+    >>> to_csv(factor, 'factor.csv')
+    >>> factor.to_csv('factor.csv')
+    """
+    if hasattr(obj, 'to_csv'):
+        obj.to_csv(path)
+    else:
+        raise TypeError(f"to_csv() not supported for {type(obj).__name__}")
+
+
+def to_df(obj) -> 'pd.DataFrame':
+    """Convert Factor or Panel to pandas DataFrame.
+    
+    Parameters
+    ----------
+    obj : Factor or Panel
+        Object to convert
     
     Returns
     -------
-    Factor
-        Sign-preserving power: sign(x)·|x|^exp
+    pd.DataFrame
+        Copy of underlying data
+    
+    Examples
+    --------
+    >>> df = to_df(factor)
+    >>> df = factor.to_df()
     """
-    return base.signed_power(exponent)
+    if hasattr(obj, 'to_df'):
+        return obj.to_df()
+    else:
+        raise TypeError(f"to_df() not supported for {type(obj).__name__}")
