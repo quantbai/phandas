@@ -3,10 +3,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from phandas import __version__
+
 project = 'phandas'
 copyright = '2025, Phantom Management'
 author = 'Phantom Management'
-release = '0.17.0'
+release = __version__
 
 extensions = [
     'sphinx.ext.autodoc',

@@ -1,16 +1,14 @@
 """Plotting utilities for backtesting results and factor analysis."""
 
+import warnings
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import logging
 from typing import Dict, List, Optional, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
-    from .backtest import Backtester, CombinedBacktester
+    from .backtest import Backtester
     from .core import Factor
-
-logger = logging.getLogger(__name__)
 
 _DATE_FORMAT = '%Y-%m-%d'
 
@@ -110,8 +108,7 @@ _TEXT_LABELS = {
 }
 
 
-def _apply_plot_style():
-    """Apply default matplotlib plot style configuration."""
+def _apply_plot_style() -> None:
     plt.style.use('default')
     
     plt.rcParams['font.family'] = 'sans-serif'
@@ -121,19 +118,6 @@ def _apply_plot_style():
 
 
 def _plot_equity_line(ax, equity_series: pd.Series, y_min: float, label: str = 'Strategy') -> None:
-    """Plot equity curve with clean single-layer fill.
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axes to plot on
-    equity_series : pd.Series
-        Time series of equity values
-    y_min : float
-        Minimum y-value for fill baseline
-    label : str, default 'Strategy'
-        Legend label
-    """
     ax.fill_between(
         equity_series.index, y_min, equity_series, 
         alpha=_PLOT_STYLES['fill_alpha'], 
@@ -150,15 +134,6 @@ def _plot_equity_line(ax, equity_series: pd.Series, y_min: float, label: str = '
 
 
 def _plot_drawdown(ax, drawdown_series: pd.Series) -> None:
-    """Plot drawdown with subtle fill and zero line.
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axes to plot on
-    drawdown_series : pd.Series
-        Time series of drawdown values
-    """
     ax.fill_between(
         drawdown_series.index, 0, drawdown_series, 
         color=_PLOT_COLORS['drawdown_fill'], 
@@ -175,8 +150,7 @@ def _plot_drawdown(ax, drawdown_series: pd.Series) -> None:
     ax.axhline(0, color=_PLOT_COLORS['zero_line'], linewidth=0.5, linestyle='-', alpha=0.6)
 
 
-def _style_axis(ax, ylabel: str, is_bottom: bool = False, xlabel: str = None):
-    """Apply consistent styling to axis."""
+def _style_axis(ax, ylabel: str, is_bottom: bool = False, xlabel: str = None) -> None:
     ax.set_facecolor(_PLOT_COLORS['white'])
     ax.set_ylabel(
         ylabel, 
@@ -218,16 +192,6 @@ def _style_axis(ax, ylabel: str, is_bottom: bool = False, xlabel: str = None):
 
 
 def _render_summary_table(ax, summary_data: List[tuple]) -> None:
-    """Render summary metrics as clean table (research report style).
-    
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axes to render table on
-    summary_data : List[tuple]
-        List of (label, value) tuples to display (2-column)
-        OR List of (label, strategy_value, benchmark_value) tuples (3-column)
-    """
     if not summary_data:
         return
     
@@ -368,47 +332,12 @@ def _render_summary_table(ax, summary_data: List[tuple]) -> None:
 
 
 class BacktestPlotter:
-    """Plotter for single-strategy backtest results.
-    
-    Visualizes equity curve, drawdown, turnover, and performance metrics.
-    
-    Parameters
-    ----------
-    backtester : Backtester
-        Backtester instance to plot
-    
-    Attributes
-    ----------
-    bt : Backtester
-        Reference to backtester
-    """
+    """Equity curve and drawdown visualization for backtest results."""
     
     def __init__(self, backtester: 'Backtester'):
-        """Initialize plotter with Backtester.
-        
-        Parameters
-        ----------
-        backtester : Backtester
-            Backtester instance to visualize
-        """
         self.bt = backtester
     
     def _calculate_benchmark_metrics(self, benchmark_norm: pd.Series, strategy_returns: pd.Series) -> Dict:
-        """Calculate full benchmark metrics for equal-weight buy-and-hold.
-        
-        Parameters
-        ----------
-        benchmark_norm : pd.Series
-            Normalized benchmark equity curve
-        strategy_returns : pd.Series
-            Strategy daily returns
-        
-        Returns
-        -------
-        Dict
-            Full benchmark metrics: total_return, annual_return, sharpe, sortino, 
-            calmar, max_drawdown, var_95, cvar, linearity
-        """
         if benchmark_norm.empty or len(benchmark_norm) < 2:
             return {}
         
@@ -455,17 +384,6 @@ class BacktestPlotter:
     
     def plot_equity(self, figsize: tuple = (14, 7.5), show_summary: bool = True, 
                    show_benchmark: bool = True) -> None:
-        """Plot equity, drawdown, turnover, and performance metrics.
-        
-        Parameters
-        ----------
-        figsize : tuple, default (14, 7.5)
-            Figure size (width, height)
-        show_summary : bool, default True
-            Whether to display performance summary table
-        show_benchmark : bool, default True
-            Whether to overlay benchmark if available
-        """
         texts = _TEXT_LABELS
         
         history = self.bt.portfolio.get_history_df()
@@ -484,11 +402,11 @@ class BacktestPlotter:
             benchmark_series = self.bt._calculate_benchmark_equity()
             if not benchmark_series.empty and len(benchmark_series) > 0:
                 benchmark_norm = benchmark_series / benchmark_series.iloc[0]
-                strategy_returns = self.bt.get_daily_returns()
+                strategy_returns = self.bt.returns
                 if not strategy_returns.empty:
                     benchmark_metrics = self._calculate_benchmark_metrics(benchmark_norm, strategy_returns)
         
-        turnover_df = self.bt.get_daily_turnover_df()
+        turnover_df = self.bt.turnover
         
         _apply_plot_style()
         fig = plt.figure(figsize=figsize)
@@ -634,194 +552,23 @@ class BacktestPlotter:
         plt.show()
 
 
-class CombinedBacktestPlotter:
-    """Plotter for multi-strategy portfolio backtest results.
-    
-    Visualizes combined equity, drawdown, weights, and correlations.
-    
-    Parameters
-    ----------
-    combined_bt : CombinedBacktester
-        CombinedBacktester instance to plot
-    
-    Attributes
-    ----------
-    cbt : CombinedBacktester
-        Reference to combined backtester
-    """
-    
-    def __init__(self, combined_bt: 'CombinedBacktester'):
-        """Initialize plotter with CombinedBacktester.
-        
-        Parameters
-        ----------
-        combined_bt : CombinedBacktester
-            CombinedBacktester instance to visualize
-        """
-        self.cbt = combined_bt
-    
-    def plot_equity(self, figsize: tuple = (14, 7.5), show_summary: bool = True) -> None:
-        """Plot combined portfolio equity, drawdown, and metrics.
-        
-        Parameters
-        ----------
-        figsize : tuple, default (14, 7.5)
-            Figure size (width, height)
-        show_summary : bool, default True
-            Whether to display portfolio summary (weights, correlations, metrics)
-        """
-        texts = _TEXT_LABELS
-        
-        equity = self.cbt.get_portfolio_equity()
-        if equity.empty or len(equity) < 2:
-            return
-        
-        equity_norm = equity / equity.iloc[0]
-        rolling_max = equity_norm.cummax()
-        drawdown = equity_norm / rolling_max - 1.0
-        
-        _apply_plot_style()
-        fig = plt.figure(figsize=figsize)
-        
-        fig.subplots_adjust(top=0.91, bottom=0.08, left=0.065, right=0.98, wspace=0.02, hspace=0.12)
-        
-        gs = fig.add_gridspec(2, 2, height_ratios=[3.5, 1], width_ratios=[3, 1])
-        
-        ax = fig.add_subplot(gs[0, 0])
-        ax_dd = fig.add_subplot(gs[1, 0], sharex=ax)
-        
-        ax_summary = fig.add_subplot(gs[:, 1])
-        ax_summary.axis('off')
-        
-        y_min = equity.min()
-        _plot_equity_line(ax, equity, y_min, label=texts['equity_label'])
-        
-        strategy_names = ", ".join([bt.strategy_factor.name for bt in self.cbt.backtests])
-        
-        fig.suptitle(
-            strategy_names, 
-            fontsize=_PLOT_STYLES['title_size'], 
-            fontweight='500', 
-            color=_PLOT_COLORS['text_dark'], 
-            y=0.97
-        )
-        
-        if not equity.empty and len(equity) > 0:
-            start_date = equity.index[0].strftime(_DATE_FORMAT)
-            end_date = equity.index[-1].strftime(_DATE_FORMAT)
-            period_text = f"{start_date} {texts['to']} {end_date}"
-            fig.text(
-                0.5, 0.935, period_text, 
-                fontsize=_PLOT_STYLES['subtitle_size'], 
-                color=_PLOT_COLORS['text_muted'], 
-                ha='center', va='top'
-            )
-        
-        _style_axis(ax, texts['equity_ylabel'])
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
-        
-        if show_summary:
-            summary_data = []
-            
-            metrics = self.cbt.metrics
-            if metrics:
-                summary_data.extend([
-                    (texts['total_return'], f"{metrics.get('total_return', 0):.2%}"),
-                    (texts['annual_return'], f"{metrics.get('annual_return', 0):.2%}"),
-                    (texts['sharpe'], f"{metrics.get('sharpe_ratio', 0):.2f}"),
-                    (texts['sortino'], f"{metrics.get('sortino_ratio', 0):.2f}"),
-                    (texts['calmar'], f"{metrics.get('calmar_ratio', 0):.2f}"),
-                    (texts['linearity'], f"{metrics.get('linearity', 0):.4f}"),
-                    (texts['max_dd'], f"{metrics.get('max_drawdown', 0):.2%}"),
-                    (texts['var_95'], f"{metrics.get('var_95', 0):.2%}"),
-                    (texts['cvar'], f"{metrics.get('cvar', 0):.2%}"),
-                ])
-            
-            summary_data.append(('', ''))
-            summary_data.append((texts['weights'], ''))
-            for bt, w in zip(self.cbt.backtests, self.cbt.weights):
-                summary_data.append((f"  {bt.strategy_factor.name}", f"{w*100:.1f}%"))
-            
-            corr = self.cbt.correlation_matrix()
-            if not corr.empty and len(corr) > 1:
-                summary_data.append(('', ''))
-                summary_data.append((texts['corr_matrix'], ''))
-                for idx, row in enumerate(corr.index):
-                    for col in corr.columns:
-                        if col == corr.columns[0]:
-                            val = corr.loc[row, col]
-                            summary_data.append((f"  {row}", f"{val:.4f}"))
-            
-            _render_summary_table(ax_summary, summary_data)
-        
-        _plot_drawdown(ax_dd, drawdown)
-        _style_axis(ax_dd, texts['drawdown_ylabel'], is_bottom=True, xlabel=texts['date_xlabel'])
-        ax_dd.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.0%}'))
-        
-        plt.setp(ax.get_xticklabels(), visible=False)
-        
-        fig.align_ylabels([ax, ax_dd])
-        
-        plt.show()
-
-
 class FactorPlotter:
-    """Plotter for Factor visualization across symbols and time.
-    
-    Parameters
-    ----------
-    factor : Factor
-        Factor instance to visualize
-    
-    Attributes
-    ----------
-    factor : Factor
-        Reference to factor
-    """
+    """Time series visualization for Factor data."""
     
     def __init__(self, factor: 'Factor'):
-        """Initialize plotter with Factor.
-        
-        Parameters
-        ----------
-        factor : Factor
-            Factor instance to visualize
-        """
         self.factor = factor
     
     def plot(self, symbol: Optional[str] = None, figsize: tuple = (12, 5), 
              title: Optional[str] = None) -> None:
-        """Plot factor values over time.
-        
-        Parameters
-        ----------
-        symbol : str, optional
-            Single symbol to plot. If None, plots all symbols in subgrid
-        figsize : tuple, default (12, 5)
-            Figure size (width, height)
-        title : str, optional
-            Plot title (defaults to factor name)
-        """
         if symbol is None:
             self._plot_all_symbols(figsize, title)
         else:
             self._plot_single_symbol(symbol, figsize, title)
     
     def _plot_single_symbol(self, symbol: str, figsize: tuple, title: Optional[str]) -> None:
-        """Plot factor values for single symbol.
-        
-        Parameters
-        ----------
-        symbol : str
-            Symbol to plot
-        figsize : tuple
-            Figure size
-        title : str or None
-            Plot title
-        """
         data = self.factor.data[self.factor.data['symbol'] == symbol].copy()
         if data.empty:
-            logger.warning(f"No data found for symbol: {symbol}")
+            warnings.warn(f"No data found for symbol: {symbol}")
             return
         
         data = data.sort_values('timestamp')
@@ -878,20 +625,11 @@ class FactorPlotter:
         plt.show()
     
     def _plot_all_symbols(self, figsize: tuple, title: Optional[str]) -> None:
-        """Plot factor values for all symbols in subgrid.
-        
-        Parameters
-        ----------
-        figsize : tuple
-            Figure size (width, height)
-        title : str or None
-            Optional plot title
-        """
         symbols = sorted(self.factor.data['symbol'].unique())
         n_symbols = len(symbols)
         
         if n_symbols == 0:
-            logger.warning("No data to plot")
+            warnings.warn("No data to plot")
             return
         
         n_cols = min(3, n_symbols)

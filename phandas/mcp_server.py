@@ -1,13 +1,30 @@
+"""
+MCP (Model Context Protocol) server for phandas.
+
+Provides a bridge for AI IDEs (Cursor, Claude Desktop) to access phandas
+as a pip-installed Python module. This allows AI agents to fetch market data,
+browse operators, read source code, and execute backtests without manual coding.
+
+Available MCP Tools:
+    fetch_market_data : Fetch cryptocurrency OHLCV data
+    list_operators : List all available alpha factor operators
+    read_source : Get source code of phandas functions
+    execute_factor_backtest : Run factor backtest with custom Python code
+
+Usage:
+    Configure in Cursor/Claude Desktop MCP settings:
+    {"command": "python", "args": ["-m", "phandas.mcp_server"]}
+"""
+
 from typing import List, Optional
 from mcp.server.fastmcp import FastMCP
 from .data import fetch_data
 from .backtest import backtest
 import pandas as pd
 import json
-import logging
+import warnings
 
 mcp = FastMCP("phandas")
-logger = logging.getLogger(__name__)
 
 @mcp.tool()
 def fetch_market_data(
@@ -221,7 +238,7 @@ alpha = vector_neut(momentum, -rank(volume))
         return json.dumps(result, default=str)
     
     except Exception as e:
-        logger.exception(f"Backtest execution failed: {e}")
+        warnings.warn(f"Backtest execution failed: {e}")
         return json.dumps({
             'status': 'error',
             'summary': {},
