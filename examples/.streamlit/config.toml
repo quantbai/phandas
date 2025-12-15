@@ -1,0 +1,8 @@
+[theme]
+# 預設使用 dark 主題，但允許用戶在 Settings 中切換
+base = "dark"
+primaryColor = "#00d4ff"
+
+[client]
+# viewer 模式：保留選單但隱藏開發者選項
+toolbarMode = "viewer"

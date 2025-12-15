@@ -25,19 +25,20 @@ def inject_custom_css():
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
             
             :root {
-                --bg-primary: #06080c;
-                --bg-secondary: #0c0f14;
-                --bg-tertiary: #14171f;
-                --bg-card: rgba(14, 17, 23, 0.9);
-                --accent-primary: #00d4ff;
-                --accent-secondary: #0ea5e9;
-                --accent-glow: rgba(0, 212, 255, 0.2);
+                /* 使用 Streamlit 系統主題變數，自動適應 light/dark 模式 */
+                --bg-primary: var(--background-color);
+                --bg-secondary: var(--secondary-background-color);
+                --bg-tertiary: color-mix(in srgb, var(--secondary-background-color) 80%, var(--text-color) 5%);
+                --bg-card: var(--secondary-background-color);
+                --accent-primary: var(--primary-color, #00d4ff);
+                --accent-secondary: color-mix(in srgb, var(--primary-color, #00d4ff) 80%, #0ea5e9 20%);
+                --accent-glow: color-mix(in srgb, var(--primary-color, #00d4ff) 20%, transparent 80%);
                 --accent-gold: #fbbf24;
-                --text-primary: #f1f5f9;
-                --text-secondary: #94a3b8;
-                --text-muted: #64748b;
-                --border-subtle: rgba(148, 163, 184, 0.1);
-                --border-accent: rgba(0, 212, 255, 0.25);
+                --text-primary: var(--text-color);
+                --text-secondary: color-mix(in srgb, var(--text-color) 60%, transparent 40%);
+                --text-muted: color-mix(in srgb, var(--text-color) 40%, transparent 60%);
+                --border-subtle: color-mix(in srgb, var(--text-color) 10%, transparent 90%);
+                --border-accent: color-mix(in srgb, var(--primary-color, #00d4ff) 25%, transparent 75%);
                 --positive: #10b981;
                 --negative: #ef4444;
             }
@@ -60,8 +61,8 @@ def inject_custom_css():
                 right: 0;
                 bottom: 0;
                 background: 
-                    radial-gradient(ellipse 100% 80% at 50% -30%, rgba(0, 212, 255, 0.06), transparent 60%),
-                    radial-gradient(ellipse 50% 50% at 100% 100%, rgba(14, 165, 233, 0.03), transparent);
+                    radial-gradient(ellipse 100% 80% at 50% -30%, var(--accent-glow), transparent 60%),
+                    radial-gradient(ellipse 50% 50% at 100% 100%, color-mix(in srgb, var(--accent-secondary) 3%, transparent 97%), transparent);
                 pointer-events: none;
                 z-index: 0;
             }
@@ -286,6 +287,7 @@ def inject_custom_css():
     """, unsafe_allow_html=True)
 
 
+
 inject_custom_css()
 
 
@@ -312,23 +314,84 @@ with st.sidebar:
         full_rebalance = st.checkbox("Full Rebalance", value=False)
     
     with st.expander("Data Reference"):
-        st.info("""
-**Available Factors:**
-- close
-- open
-- high
-- low
-- volume
-""")
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.08) 0%, rgba(14, 165, 233, 0.04) 100%);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 0.25rem 0;
+        ">
+            <div style="
+                font-family: 'Inter', sans-serif;
+                font-size: 0.65rem;
+                font-weight: 600;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+                color: var(--text-muted, #64748b);
+                margin-bottom: 0.75rem;
+            ">Available Factors</div>
+            <div style="
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 0.85rem;
+                line-height: 1.8;
+                color: var(--text-primary, #f1f5f9);
+            ">
+                <span style="color: #00d4ff;">close</span><br>
+                <span style="color: #00d4ff;">open</span><br>
+                <span style="color: #00d4ff;">high</span><br>
+                <span style="color: #00d4ff;">low</span><br>
+                <span style="color: #00d4ff;">volume</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     
     with st.expander("Resources"):
         st.markdown("""
-**Operators Guide:**  
-[Documentation](https://phandas.readthedocs.io/guide/operators_guide.html)
-
-**Source Code:**  
-[GitHub Repository](https://github.com/quantbai/phandas)
-""")
+        <div style="
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.08) 0%, rgba(14, 165, 233, 0.04) 100%);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 0.25rem 0;
+        ">
+            <div style="margin-bottom: 1rem;">
+                <div style="
+                    font-family: 'Inter', sans-serif;
+                    font-size: 0.65rem;
+                    font-weight: 600;
+                    letter-spacing: 0.1em;
+                    text-transform: uppercase;
+                    color: var(--text-muted, #64748b);
+                    margin-bottom: 0.4rem;
+                ">Operators Guide</div>
+                <a href="https://phandas.readthedocs.io/guide/operators_guide.html" target="_blank" style="
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 0.8rem;
+                    color: #00d4ff;
+                    text-decoration: none;
+                    transition: opacity 0.2s;
+                ">Documentation</a>
+            </div>
+            <div>
+                <div style="
+                    font-family: 'Inter', sans-serif;
+                    font-size: 0.65rem;
+                    font-weight: 600;
+                    letter-spacing: 0.1em;
+                    text-transform: uppercase;
+                    color: var(--text-muted, #64748b);
+                    margin-bottom: 0.4rem;
+                ">Source Code</div>
+                <a href="https://github.com/quantbai/phandas" target="_blank" style="
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 0.8rem;
+                    color: #00d4ff;
+                    text-decoration: none;
+                ">GitHub Repository</a>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 col_left, col_right = st.columns([35, 65], gap="medium")
@@ -357,22 +420,25 @@ with col_right:
 
 if run_bt:
     with result_container:
+        # 先在 spinner 內完成所有計算
+        results_ready = False
+        error_info = None
+        
         with st.spinner("Processing..."):
             try:
                 csv_path = os.path.join(os.path.dirname(__file__), 'crypto_1d.csv')
                 if not os.path.exists(csv_path):
-                    st.error(f"Data file not found: {csv_path}")
-                    st.stop()
-                
-                exec_globals = vars(phandas).copy()
-                exec_globals.update({
-                    'csv_path': csv_path,
-                    'plt': plt,
-                    'pd': pd,
-                    'warnings': sys.modules['warnings']
-                })
-                
-                setup_code = """
+                    error_info = f"Data file not found: {csv_path}"
+                else:
+                    exec_globals = vars(phandas).copy()
+                    exec_globals.update({
+                        'csv_path': csv_path,
+                        'plt': plt,
+                        'pd': pd,
+                        'warnings': sys.modules['warnings']
+                    })
+                    
+                    setup_code = """
 import warnings
 warnings.filterwarnings('ignore')
 import signal
@@ -395,26 +461,26 @@ high = panel['high']
 low = panel['low']
 volume = panel['volume']
 """
-                exec(setup_code, exec_globals)
-                
-                try:
-                    exec(factor_code, exec_globals)
-                finally:
+                    exec(setup_code, exec_globals)
+                    
                     try:
-                        import signal
-                        signal.alarm(0)
-                    except:
-                        pass
-                
-                if 'alpha' not in exec_globals:
-                    st.error("Error: Your code must define a variable named 'alpha'")
-                else:
-                    alpha = exec_globals['alpha']
-                    alpha.name = factor_name
+                        exec(factor_code, exec_globals)
+                    finally:
+                        try:
+                            import signal
+                            signal.alarm(0)
+                        except:
+                            pass
                     
-                    close_price = exec_globals['close']
-                    
-                    backtest_code = f"""
+                    if 'alpha' not in exec_globals:
+                        error_info = "Error: Your code must define a variable named 'alpha'"
+                    else:
+                        alpha = exec_globals['alpha']
+                        alpha.name = factor_name
+                        
+                        close_price = exec_globals['close']
+                        
+                        backtest_code = f"""
 bt_results = backtest(
     entry_price_factor=open,
     strategy_factor=alpha,
@@ -422,139 +488,112 @@ bt_results = backtest(
     full_rebalance={full_rebalance}
 )
 """
-                    exec(backtest_code, exec_globals)
-                    bt_results = exec_globals['bt_results']
-                    m = bt_results.metrics
-                    
-                    turnover_df = bt_results.turnover
-                    avg_turnover = turnover_df['turnover'].mean() if not turnover_df.empty else 0.0
-                    
-                    k1, k2, k3, k4 = st.columns(4)
-                    k1.metric("Total Return", f"{m['total_return']:+.2%}")
-                    k2.metric("Sharpe Ratio", f"{m['sharpe_ratio']:.2f}")
-                    k3.metric("Max Drawdown", f"{m['max_drawdown']:.2%}")
-                    k4.metric("Linearity", f"{m['linearity']:.4f}")
-                    
-                    st.markdown('<div style="height: 1.25rem"></div>', unsafe_allow_html=True)
-                    
-                    plt.style.use('dark_background')
-                    plt.rcParams['figure.dpi'] = 150
-                    plt.rcParams['savefig.dpi'] = 150
-                    
-                    fig = plt.figure(figsize=(14, 5))
-                    ax = fig.add_subplot(111)
-                    
-                    equity = bt_results.equity
-                    
-
-                    # Modern Crypto-style Equity Curve
-                    
-                    import numpy as np
-                    
-                    x = np.arange(len(equity))
-                    y = equity.values
-                    
-                    # 1. Main Line
-                    ax.plot(x, y, color='#00d4ff', linewidth=2.5, alpha=1.0, zorder=3)
-                    
-                    # 2. Vertical Gradient Fill
-                    from matplotlib.colors import LinearSegmentedColormap
-                    from matplotlib.patches import Polygon
-                    
-                    # Calculate limits
-                    ylim_min = y.min() * 0.98  # Slightly tighter padding
-                    ylim_max = y.max() * 1.02
-                    ax.set_ylim(ylim_min, ylim_max)
-                    ax.set_xlim(x.min(), x.max())
-                    
-                    # Create gradient from transparent to semi-opaque cyan
-                    # (0, 212, 255) is #00d4ff
-                    gradient_colors = [(0, 0.83, 1, 0), (0, 0.83, 1, 0.3)] 
-                    cmap = LinearSegmentedColormap.from_list('cyan_gradient', gradient_colors)
-                    
-                    # Create vertical gradient array
-                    # We want the gradient to map to the Y-axis range
-                    # imshow plots a 2D array. We create a vertical gradient (0 at bottom, 1 at top)
-                    Z = np.linspace(0, 1, 256).reshape(-1, 1)
-                    Z = np.hstack((Z, Z)) # Duplicate to make it 2D
-                    
-                    # Plot gradient image covering the whole plot area
-                    im = ax.imshow(Z, aspect='auto', cmap=cmap, 
-                                 extent=[x.min(), x.max(), ylim_min, ylim_max], 
-                                 origin='lower', zorder=1)
-                    
-                    # Create a polygon to clip the image to the area under the curve
-                    # Vertices: bottom-left -> all (x,y) points -> bottom-right
-                    verts = [(x.min(), ylim_min)] + list(zip(x, y)) + [(x.max(), ylim_min)]
-                    poly = Polygon(verts, facecolor='none')
-                    ax.add_patch(poly) # Necessary to attach to axes
-                    im.set_clip_path(poly)
-                    
-                    # 3. Dashed line for initial capital
-                    ax.axhline(y=equity.iloc[0], color='#ffffff', linewidth=1, linestyle='--', alpha=0.3, zorder=2)
-                    
-                    ax.grid(True, linestyle='-', linewidth=0.4, alpha=0.25, color='#475569')
-                    
-                    for spine in ['top', 'right']:
-                        ax.spines[spine].set_visible(False)
-                    for spine in ['bottom', 'left']:
-                        ax.spines[spine].set_color('#334155')
-                        ax.spines[spine].set_linewidth(0.8)
-                    
-                    ax.tick_params(axis='both', colors='#94a3b8', labelsize=10, width=0.8, length=4)
-                    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda val, p: f'{val:,.0f}'))
-                    
-                    tick_positions = np.linspace(0, len(equity)-1, 8, dtype=int)
-                    ax.set_xticks(tick_positions)
-                    ax.set_xticklabels([equity.index[i].strftime('%Y-%m') for i in tick_positions], fontsize=9)
-                    
-                    fig.patch.set_facecolor('#0a0a0f')
-                    ax.set_facecolor('#0a0a0f')
-                    
-                    plt.tight_layout(pad=1.0)
-                    st.pyplot(fig, use_container_width=True)
-                    plt.close(fig)
-                    
-                    st.markdown('<div style="height: 0.75rem"></div>', unsafe_allow_html=True)
-                    
-                    tab1, tab2 = st.tabs(["Risk Metrics", "IC Analysis"])
-                    
-                    with tab1:
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            st.markdown("**Risk Profile**")
-                            risk_df = pd.DataFrame([
-                                ["Sortino Ratio", f"{m['sortino_ratio']:.2f}"],
-                                ["Calmar Ratio", f"{m['calmar_ratio']:.2f}"],
-                                ["VaR 95%", f"{m['var_95']:.2%}"],
-                                ["CVaR", f"{m['cvar']:.2%}"],
-                                ["Avg Turnover", f"{avg_turnover:.2%}"],
-                            ], columns=["Metric", "Value"])
-                            st.dataframe(risk_df, use_container_width=True, hide_index=True)
+                        exec(backtest_code, exec_globals)
+                        bt_results = exec_globals['bt_results']
+                        m = bt_results.metrics
                         
-                        with c2:
-                            st.markdown("**Drawdown Periods**")
-                            if 'drawdown_periods' in m and m['drawdown_periods']:
-                                dd_data = []
-                                for dd in m['drawdown_periods'][:5]:
-                                    dd_data.append({
-                                        "Depth": f"{dd['depth']:.2%}",
-                                        "Duration": f"{dd['duration_days']}d",
-                                        "End": str(dd['end']).split(' ')[0]
-                                    })
-                                st.dataframe(pd.DataFrame(dd_data), use_container_width=True, hide_index=True)
-                            else:
-                                st.info("No significant drawdowns.")
-                    
-                    with tab2:
-                        st.markdown("**Information Coefficient**")
+                        turnover_df = bt_results.turnover
+                        avg_turnover = turnover_df['turnover'].mean() if not turnover_df.empty else 0.0
+                        
+                        # 偵測當前 Streamlit 主題
+                        theme_base = st.get_option("theme.base")
+                        is_dark_mode = theme_base == "dark" or theme_base is None
+                        
+                        # 根據主題設定顏色（背景透明，會自動跟隨頁面）
+                        if is_dark_mode:
+                            text_color = '#94a3b8'
+                            grid_color = '#475569'
+                            spine_color = '#334155'
+                            line_alpha = 0.3
+                            plt.style.use('dark_background')
+                        else:
+                            text_color = '#374151'
+                            grid_color = '#d1d5db'
+                            spine_color = '#9ca3af'
+                            line_alpha = 0.5
+                            plt.style.use('default')
+                        
+                        accent_color = '#00d4ff'
+                        
+                        plt.rcParams['figure.dpi'] = 150
+                        plt.rcParams['savefig.dpi'] = 150
+                        
+                        # 預先生成圖表
+                        import numpy as np
+                        from matplotlib.colors import LinearSegmentedColormap
+                        from matplotlib.patches import Polygon
+                        
+                        equity = bt_results.equity
+                        fig = plt.figure(figsize=(14, 5))
+                        ax = fig.add_subplot(111)
+                        
+                        x = np.arange(len(equity))
+                        y = equity.values
+                        
+                        ax.plot(x, y, color=accent_color, linewidth=2.5, alpha=1.0, zorder=3)
+                        
+                        ylim_min = y.min() * 0.98
+                        ylim_max = y.max() * 1.02
+                        ax.set_ylim(ylim_min, ylim_max)
+                        ax.set_xlim(x.min(), x.max())
+                        
+                        gradient_alpha = 0.3 if is_dark_mode else 0.15
+                        gradient_colors = [(0, 0.83, 1, 0), (0, 0.83, 1, gradient_alpha)]
+                        cmap = LinearSegmentedColormap.from_list('cyan_gradient', gradient_colors)
+                        
+                        Z = np.linspace(0, 1, 256).reshape(-1, 1)
+                        Z = np.hstack((Z, Z))
+                        
+                        im = ax.imshow(Z, aspect='auto', cmap=cmap,
+                                     extent=[x.min(), x.max(), ylim_min, ylim_max],
+                                     origin='lower', zorder=1)
+                        
+                        verts = [(x.min(), ylim_min)] + list(zip(x, y)) + [(x.max(), ylim_min)]
+                        poly = Polygon(verts, facecolor='none')
+                        ax.add_patch(poly)
+                        im.set_clip_path(poly)
+                        
+                        baseline_color = '#ffffff' if is_dark_mode else '#000000'
+                        ax.axhline(y=equity.iloc[0], color=baseline_color, linewidth=1, linestyle='--', alpha=line_alpha, zorder=2)
+                        
+                        ax.grid(True, linestyle='-', linewidth=0.4, alpha=0.25, color=grid_color)
+                        
+                        for spine in ['top', 'right']:
+                            ax.spines[spine].set_visible(False)
+                        for spine in ['bottom', 'left']:
+                            ax.spines[spine].set_color(spine_color)
+                            ax.spines[spine].set_linewidth(0.8)
+                        
+                        ax.tick_params(axis='both', colors=text_color, labelsize=10, width=0.8, length=4)
+                        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda val, p: f'{val:,.0f}'))
+                        
+                        tick_positions = np.linspace(0, len(equity)-1, 8, dtype=int)
+                        ax.set_xticks(tick_positions)
+                        ax.set_xticklabels([equity.index[i].strftime('%Y-%m') for i in tick_positions], fontsize=9)
+                        
+                        fig.patch.set_facecolor('none')
+                        fig.patch.set_alpha(0)
+                        ax.set_facecolor('none')
+                        ax.patch.set_alpha(0)
+                        
+                        plt.tight_layout(pad=1.0)
+                        
+                        # 預先將圖表轉成 PNG buffer，加速渲染
+                        import io
+                        fig_buffer = io.BytesIO()
+                        fig.savefig(fig_buffer, format='png', transparent=True, 
+                                  facecolor='none', edgecolor='none', bbox_inches='tight')
+                        fig_buffer.seek(0)
+                        plt.close(fig)
+                        
+                        # 預先準備 IC 數據
+                        ic_data = None
+                        ic_error = None
                         try:
                             from phandas import FactorAnalyzer
                             analyzer = FactorAnalyzer([alpha], close_price, horizons=[1, 7, 30])
                             ic_results = analyzer.ic()
-                            
                             factor_ic = ic_results.get(factor_name, {})
-                            
                             ic_data = []
                             for h in [1, 7, 30]:
                                 h_data = factor_ic.get(h, {})
@@ -565,15 +604,72 @@ bt_results = backtest(
                                     "IR": f"{h_data.get('ir', 0):.4f}",
                                     "T-Stat": f"{h_data.get('t_stat', 0):.2f}"
                                 })
-                            
-                            st.dataframe(pd.DataFrame(ic_data), use_container_width=True, hide_index=True)
-                            
-                        except Exception as ic_error:
-                            st.warning(f"IC calculation failed: {ic_error}")
-                    
+                        except Exception as e:
+                            ic_error = str(e)
+                        
+                        results_ready = True
+                        
             except Exception as e:
+                error_info = traceback.format_exc()
+        
+        # Spinner 結束後，一次性渲染所有 UI
+        if error_info:
+            if "Error:" in str(error_info):
+                st.error(error_info)
+            else:
                 st.error("Execution error:")
-                st.code(traceback.format_exc(), language="python")
+                st.code(error_info, language="python")
+        elif results_ready:
+            # 指標
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Total Return", f"{m['total_return']:+.2%}")
+            k2.metric("Sharpe Ratio", f"{m['sharpe_ratio']:.2f}")
+            k3.metric("Max Drawdown", f"{m['max_drawdown']:.2%}")
+            k4.metric("Linearity", f"{m['linearity']:.4f}")
+            
+            st.markdown('<div style="height: 1.25rem"></div>', unsafe_allow_html=True)
+            
+            # Equity Curve (使用預先生成的 PNG)
+            st.image(fig_buffer, use_container_width=True)
+            
+            st.markdown('<div style="height: 0.75rem"></div>', unsafe_allow_html=True)
+            
+            # Tabs
+            tab1, tab2 = st.tabs(["Risk Metrics", "IC Analysis"])
+            
+            with tab1:
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("**Risk Profile**")
+                    risk_df = pd.DataFrame([
+                        ["Sortino Ratio", f"{m['sortino_ratio']:.2f}"],
+                        ["Calmar Ratio", f"{m['calmar_ratio']:.2f}"],
+                        ["VaR 95%", f"{m['var_95']:.2%}"],
+                        ["CVaR", f"{m['cvar']:.2%}"],
+                        ["Avg Turnover", f"{avg_turnover:.2%}"],
+                    ], columns=["Metric", "Value"])
+                    st.dataframe(risk_df, use_container_width=True, hide_index=True)
+                
+                with c2:
+                    st.markdown("**Drawdown Periods**")
+                    if 'drawdown_periods' in m and m['drawdown_periods']:
+                        dd_data = []
+                        for dd in m['drawdown_periods'][:5]:
+                            dd_data.append({
+                                "Depth": f"{dd['depth']:.2%}",
+                                "Duration": f"{dd['duration_days']}d",
+                                "End": str(dd['end']).split(' ')[0]
+                            })
+                        st.dataframe(pd.DataFrame(dd_data), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No significant drawdowns.")
+            
+            with tab2:
+                st.markdown("**Information Coefficient**")
+                if ic_data:
+                    st.dataframe(pd.DataFrame(ic_data), use_container_width=True, hide_index=True)
+                elif ic_error:
+                    st.warning(f"IC calculation failed: {ic_error}")
 
 
 st.markdown("""
