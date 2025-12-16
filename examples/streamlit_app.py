@@ -254,6 +254,12 @@ def inject_custom_css():
                 border: 1px solid var(--border-subtle) !important;
                 border-radius: 6px !important;
             }
+
+            .stExpander [data-testid="stExpanderDetails"] {
+                padding-bottom: 1rem !important;
+                padding-left: 0.5rem !important;
+                padding-right: 0.5rem !important;
+            }
             
             ::-webkit-scrollbar {
                 width: 5px;
@@ -319,8 +325,9 @@ with st.sidebar:
             background: linear-gradient(135deg, rgba(0, 212, 255, 0.08) 0%, rgba(14, 165, 233, 0.04) 100%);
             border: 1px solid rgba(0, 212, 255, 0.2);
             border-radius: 8px;
-            padding: 1rem;
+            padding: 12px 14px;
             margin: 0.25rem 0;
+            margin-bottom: 0.5rem;
         ">
             <div style="
                 font-family: 'Inter', sans-serif;
@@ -329,18 +336,20 @@ with st.sidebar:
                 letter-spacing: 0.1em;
                 text-transform: uppercase;
                 color: var(--text-muted, #64748b);
-                margin-bottom: 0.75rem;
+                margin-bottom: 0.6rem;
             ">Available Factors</div>
             <div style="
                 font-family: 'JetBrains Mono', monospace;
                 font-size: 0.85rem;
-                line-height: 1.8;
                 color: var(--text-primary, #f1f5f9);
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
             ">
-                <span style="color: #00d4ff;">close</span><br>
-                <span style="color: #00d4ff;">open</span><br>
-                <span style="color: #00d4ff;">high</span><br>
-                <span style="color: #00d4ff;">low</span><br>
+                <span style="color: #00d4ff;">close</span>
+                <span style="color: #00d4ff;">open</span>
+                <span style="color: #00d4ff;">high</span>
+                <span style="color: #00d4ff;">low</span>
                 <span style="color: #00d4ff;">volume</span>
             </div>
         </div>
@@ -352,10 +361,11 @@ with st.sidebar:
             background: linear-gradient(135deg, rgba(0, 212, 255, 0.08) 0%, rgba(14, 165, 233, 0.04) 100%);
             border: 1px solid rgba(0, 212, 255, 0.2);
             border-radius: 8px;
-            padding: 1rem;
+            padding: 12px 14px;
             margin: 0.25rem 0;
+            margin-bottom: 0.5rem;
         ">
-            <div style="margin-bottom: 1rem;">
+            <div style="margin-bottom: 0.8rem;">
                 <div style="
                     font-family: 'Inter', sans-serif;
                     font-size: 0.65rem;
@@ -363,7 +373,7 @@ with st.sidebar:
                     letter-spacing: 0.1em;
                     text-transform: uppercase;
                     color: var(--text-muted, #64748b);
-                    margin-bottom: 0.4rem;
+                    margin-bottom: 0.3rem;
                 ">Operators Guide</div>
                 <a href="https://phandas.readthedocs.io/guide/operators_guide.html" target="_blank" style="
                     font-family: 'JetBrains Mono', monospace;
@@ -371,6 +381,7 @@ with st.sidebar:
                     color: #00d4ff;
                     text-decoration: none;
                     transition: opacity 0.2s;
+                    display: block;
                 ">Documentation</a>
             </div>
             <div>
@@ -381,13 +392,14 @@ with st.sidebar:
                     letter-spacing: 0.1em;
                     text-transform: uppercase;
                     color: var(--text-muted, #64748b);
-                    margin-bottom: 0.4rem;
+                    margin-bottom: 0.3rem;
                 ">Source Code</div>
                 <a href="https://github.com/quantbai/phandas" target="_blank" style="
                     font-family: 'JetBrains Mono', monospace;
                     font-size: 0.8rem;
                     color: #00d4ff;
                     text-decoration: none;
+                    display: block;
                 ">GitHub Repository</a>
             </div>
         </div>

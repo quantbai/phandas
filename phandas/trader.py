@@ -23,6 +23,32 @@ def _safe_float(val: object) -> float:
         return 0.0
 
 
+def _determine_action(current_usd: float, target_usd: float, 
+                      threshold: float = 1.0) -> tuple:
+    diff_usd = target_usd - current_usd
+    
+    if abs(diff_usd) < threshold:
+        return ('skip', None, 0.0)
+    
+    order_side = 'buy' if diff_usd > 0 else 'sell'
+    order_size = abs(diff_usd)
+    
+    if current_usd == 0 and target_usd == 0:
+        return ('none', None, 0.0)
+    elif current_usd == 0:
+        return ('open', order_side, order_size)
+    elif current_usd > 0 and target_usd > 0:
+        action = 'add' if diff_usd > 0 else 'reduce'
+        return (action, order_side, order_size)
+    elif current_usd < 0 and target_usd < 0:
+        action = 'add' if diff_usd < 0 else 'reduce'
+        return (action, order_side, order_size)
+    elif (current_usd > 0) != (target_usd > 0):
+        return ('flip', order_side, order_size)
+    else:
+        return ('close', order_side, order_size)
+
+
 class OKXTrader:
     """OKX perpetual swap trading interface."""
     
@@ -46,7 +72,7 @@ class OKXTrader:
         self.acct_lv = None
         self.pos_mode = None
     
-    def validate_account_config(self) -> Dict:
+    def validate_account_config(self, auto_fix: bool = True) -> Dict:
         """Validate account configuration before trading."""
         config = self.get_account_config()
         
@@ -57,6 +83,14 @@ class OKXTrader:
         pos_mode = config.get('pos_mode')
         acct_lv_map_reverse = {'SPOT': '1', 'FUTURES': '2', 'CROSS_MARGIN': '3', 'COMPOSITE': '4'}
         acct_lv_code = acct_lv_map_reverse.get(acct_lv_str, '')
+        
+        if pos_mode != 'net_mode' and auto_fix:
+            fix_result = self.account_api.set_position_mode(posMode='net_mode')
+            if fix_result.get('code') == '0':
+                console.print("[bold yellow]Position mode auto-fixed: long_short_mode -> net_mode[/bold yellow]")
+                pos_mode = 'net_mode'
+            else:
+                console.print(f"[bold red]Failed to auto-fix position mode: {fix_result.get('msg', 'Unknown error')}[/bold red]")
         
         checks = {
             'account_mode': {
@@ -529,18 +563,7 @@ class OKXTrader:
             target_usd = target['target_usd']
             diff_usd = target_usd - current_usd
             
-            if abs(diff_usd) < 0.01:
-                action = 'skip'
-                order_side = None
-                order_size = 0
-            elif diff_usd > 0:
-                action = 'long'
-                order_side = 'buy'
-                order_size = diff_usd
-            else:
-                action = 'short'
-                order_side = 'sell'
-                order_size = abs(diff_usd)
+            action, order_side, order_size = _determine_action(current_usd, target_usd)
             
             trade_record = {
                 'symbol': symbol,
@@ -750,20 +773,7 @@ class Rebalancer:
             target_usd = target['target_usd']
             diff_usd = target_usd - current_usd
             
-            if abs(diff_usd) < 1.0:
-                action = "skip"
-            elif current_usd == 0 and target_usd == 0:
-                action = "none"
-            elif current_usd == 0 and target_usd != 0:
-                action = "open"
-            elif current_usd > 0 and target_usd > 0:
-                action = "add" if diff_usd > 0 else "reduce"
-            elif current_usd < 0 and target_usd < 0:
-                action = "add" if diff_usd < 0 else "reduce"
-            elif (current_usd > 0 and target_usd < 0) or (current_usd < 0 and target_usd > 0):
-                action = "flip"
-            else:
-                action = "close"
+            action, _, _ = _determine_action(current_usd, target_usd)
             
             plan_trades.append({
                 'symbol': symbol,
@@ -825,12 +835,36 @@ class Rebalancer:
             delta_str = f"+${delta:,.2f}" if delta >= 0 else f"-${abs(delta):,.2f}"
             
             action = trade['action']
+            target_usd = trade['target_usd']
+            
             if action == 'skip':
                 action_str = "[dim]skip[/dim]"
-            elif action == 'long':
-                action_str = "[bold bright_green]LONG[/bold bright_green]"
+            elif action == 'none':
+                action_str = "[dim]-[/dim]"
+            elif action == 'open':
+                if target_usd > 0:
+                    action_str = "[bold bright_green]LONG[/bold bright_green]"
+                else:
+                    action_str = "[bold bright_red]SHORT[/bold bright_red]"
+            elif action == 'add':
+                if target_usd > 0:
+                    action_str = "[bright_green]+LONG[/bright_green]"
+                else:
+                    action_str = "[bright_red]+SHORT[/bright_red]"
+            elif action == 'reduce':
+                if target_usd > 0:
+                    action_str = "[bright_yellow]-LONG[/bright_yellow]"
+                else:
+                    action_str = "[bright_yellow]-SHORT[/bright_yellow]"
+            elif action == 'flip':
+                if target_usd > 0:
+                    action_str = "[bold bright_magenta]FLIP->L[/bold bright_magenta]"
+                else:
+                    action_str = "[bold bright_magenta]FLIP->S[/bold bright_magenta]"
+            elif action == 'close':
+                action_str = "[bold bright_yellow]CLOSE[/bold bright_yellow]"
             else:
-                action_str = "[bold bright_red]SHORT[/bold bright_red]"
+                action_str = f"[dim]{action}[/dim]"
             
             holdings_table.add_row(
                 trade['symbol'],
@@ -882,6 +916,16 @@ class Rebalancer:
             return "Rebalancer(not executed, call run() first)"
         
         r = self.result
+        
+        if r['status'] == 'error' and 'summary' not in r:
+            error_msg = r.get('msg', 'Unknown error')
+            validation = r.get('validation', {})
+            lines = [f"Rebalancer(status=error)", f"  error: {error_msg}"]
+            if validation:
+                for check_name, check_data in validation.items():
+                    lines.append(f"    {check_name}: {check_data.get('value')} ({check_data.get('status')})")
+            return "\n".join(lines)
+        
         s = r['summary']
         
         lines = [
@@ -919,6 +963,11 @@ class Rebalancer:
         if not self.result:
             return (f"Rebalancer(budget={self.budget}, "
                    f"symbols={len(self.target_weights)}, status=not_executed)")
+        
+        if 'summary' not in self.result:
+            return (f"Rebalancer(budget={self.budget}, "
+                   f"status={self.result['status']}, error={self.result.get('msg', 'unknown')})")
+        
         return (f"Rebalancer(budget={self.budget}, "
                f"status={self.result['status']}, "
                f"success={self.result['summary']['successful_orders']}, "

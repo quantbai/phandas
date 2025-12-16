@@ -1,7 +1,7 @@
 """Phantom Data Analysis"""
 
 __author__ = "Phantom Management"
-__version__ = "0.18.0"
+__version__ = "0.18.1"
 
 from .core import Factor
 from .panel import Panel
