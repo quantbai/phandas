@@ -30,6 +30,8 @@ Phandas is a streamlined toolkit for alpha factor research and backtesting in cr
 
 ### Installation
 
+**Requires Python 3.10+**
+
 ```bash
 pip install phandas
 ```
@@ -121,6 +123,8 @@ Phandas 是一個精簡的加密貨幣因子研究與回測工具。提供 60+ �
 - **MCP 集成**：AI 代理（Claude）可直接調用 Phandas
 
 ### 安裝
+
+**需要 Python 3.10+**
 
 ```bash
 pip install phandas

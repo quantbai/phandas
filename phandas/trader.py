@@ -1,6 +1,7 @@
 """OKX cryptocurrency perpetual swap trading and portfolio rebalancing."""
 
 import time
+import math
 import string
 import random
 import pandas as pd
@@ -577,6 +578,10 @@ class OKXTrader:
                 'status': 'pending',
                 'msg': None
             }
+
+            if action == 'skip':
+                trade_record['status'] = 'skip'
+                trade_record['msg'] = 'Delta < $1.0'
             
             if action != 'skip' and order_side and order_size > 0:
                 orders_to_execute.append({
@@ -593,8 +598,6 @@ class OKXTrader:
         failed_orders = 0
         prepared_orders = []
         order_to_trade_mapping = {}
-        account_config = self.get_account_config()
-        _pos_mode = account_config.get('pos_mode')
         
         for order_info in orders_to_execute:
             inst_id = order_info['inst_id']
@@ -1020,3 +1023,261 @@ def rebalance(target_weights: Dict[str, float], trader: OKXTrader, budget: float
     if auto_run:
         rb.run()
     return rb
+
+
+def twap_rebalance(
+    target_weights: Dict[str, float],
+    trader: OKXTrader,
+    budget: float,
+    symbol_suffix: str = '-USDT-SWAP',
+    leverage: int = 5,
+    chunk_size: float = 1000.0,
+    interval_seconds: int = 60,
+    preview: bool = True
+) -> Dict:
+    """
+    Dynamic TWAP rebalancing with recalculation each round.
+    
+    Splits total delta into multiple rounds based on chunk_size.
+    Each round recalculates current delta to adapt to market changes.
+    All coins execute proportionally together to maintain beta neutrality.
+    
+    Parameters
+    ----------
+    target_weights : Dict[str, float]
+        Target weight for each symbol
+    trader : OKXTrader
+        OKXTrader instance
+    budget : float
+        Total budget (equity) for rebalancing
+    symbol_suffix : str
+        Symbol suffix (default: '-USDT-SWAP')
+    leverage : int
+        Leverage multiplier (default: 5)
+    chunk_size : float
+        Maximum total delta per round in USD (default: 1000)
+    interval_seconds : int
+        Wait time between rounds in seconds (default: 60)
+    preview : bool
+        Show plan and wait for confirmation before executing (default: True)
+    
+    Returns
+    -------
+    Dict
+        Execution report with round-by-round details
+    
+    Examples
+    --------
+    result = twap_rebalance(
+        target_weights=weights,
+        trader=trader,
+        budget=100000,
+        chunk_size=1000,
+        interval_seconds=60
+    )
+    """
+    
+    def _calculate_deltas() -> Dict[str, float]:
+        """Calculate current delta for each symbol."""
+        current_positions = trader.get_positions()
+        current_holdings = {}
+        
+        for pos_key, pos_data in current_positions.items():
+            symbol = pos_data['symbol'].split('-')[0]
+            current_holdings[symbol] = pos_data['notional_usd']
+        
+        deltas = {}
+        for symbol, weight in target_weights.items():
+            target_usd = weight * budget
+            current_usd = current_holdings.get(symbol, 0.0)
+            deltas[symbol] = target_usd - current_usd
+        
+        return deltas
+    
+    def _execute_round_orders(round_deltas: Dict[str, float]) -> Dict:
+        """Execute orders for a single round."""
+        orders_to_execute = []
+        
+        for symbol, delta in round_deltas.items():
+            if abs(delta) < 1.0:
+                continue
+            
+            inst_id = f"{symbol}{symbol_suffix}"
+            side = 'buy' if delta > 0 else 'sell'
+            usd_amount = abs(delta)
+            
+            try:
+                lever_result = trader.set_leverage(
+                    inst_id=inst_id, 
+                    lever=leverage,
+                    mgn_mode='cross',
+                    pos_side='long' if side == 'buy' else 'short'
+                )
+                
+                if lever_result['status'] != 'success':
+                    continue
+                
+                ticker = trader.get_ticker(inst_id)
+                current_px = ticker.get('last_px') if 'error' not in ticker else None
+                
+                convert_result = trader.convert_coin_contract(
+                    inst_id=inst_id,
+                    sz=usd_amount,
+                    convert_type=1,
+                    px=current_px,
+                    unit='usds'
+                )
+                
+                if convert_result['status'] != 'success' or convert_result['sz'] <= 0:
+                    continue
+                
+                orders_to_execute.append({
+                    'inst_id': inst_id,
+                    'side': side,
+                    'size': convert_result['sz'],
+                    'price': None,
+                    'pos_side': 'long' if side == 'buy' else 'short',
+                    'reduce_only': False
+                })
+                
+                time.sleep(0.2)
+                
+            except Exception:
+                continue
+        
+        if not orders_to_execute:
+            return {'status': 'skip', 'filled': 0, 'orders': []}
+        
+        batch_result = trader.place_batch_orders(orders_to_execute)
+        return batch_result
+    
+    validation = trader.validate_account_config()
+    if validation['status'] == 'error':
+        return {'status': 'error', 'msg': validation['msg']}
+    
+    initial_deltas = _calculate_deltas()
+    total_abs_delta = sum(abs(d) for d in initial_deltas.values())
+    
+    if total_abs_delta < 10:
+        console.print("[dim]Total delta < $10, no rebalancing needed[/dim]")
+        return {'status': 'skip', 'msg': 'Total delta too small', 'total_delta': total_abs_delta}
+    
+    n_rounds = max(1, math.ceil(total_abs_delta / chunk_size))
+    
+    console.print(f"\n[bold]TWAP Rebalance Plan[/bold]")
+    console.print(f"  Total Delta: [bright_cyan]${total_abs_delta:,.2f}[/bright_cyan]")
+    console.print(f"  Rounds: [bright_yellow]{n_rounds}[/bright_yellow]")
+    console.print(f"  Interval: [dim]{interval_seconds}s[/dim]")
+    console.print(f"  Chunk Size: [dim]${chunk_size:,.0f}[/dim]")
+    console.print()
+    
+    plan_table = Table(title="[bold]Initial Delta[/bold]", box=SIMPLE, show_header=True)
+    plan_table.add_column("Symbol", style="bright_cyan")
+    plan_table.add_column("Delta", justify="right")
+    plan_table.add_column("Per Round", justify="right")
+    
+    for symbol in sorted(initial_deltas.keys()):
+        delta = initial_deltas[symbol]
+        per_round = delta / n_rounds
+        delta_style = "bright_green" if delta > 0 else "bright_red"
+        plan_table.add_row(
+            symbol,
+            f"[{delta_style}]${delta:+,.2f}[/{delta_style}]",
+            f"[dim]${per_round:+,.2f}[/dim]"
+        )
+    
+    console.print(plan_table)
+    
+    if preview:
+        try:
+            input("\nPress Enter to start TWAP execution, Ctrl+C to cancel: ")
+        except KeyboardInterrupt:
+            console.print("\n[bold yellow]TWAP cancelled by user[/bold yellow]")
+            return {'status': 'cancelled', 'msg': 'Cancelled by user'}
+    
+    execution_log = []
+    total_filled = 0
+    
+    for round_num in range(1, n_rounds + 1):
+        is_final = (round_num == n_rounds)
+        remaining_rounds = n_rounds - round_num + 1
+        
+        current_deltas = _calculate_deltas()
+        current_total = sum(abs(d) for d in current_deltas.values())
+        
+        round_deltas = {}
+        for symbol, delta in current_deltas.items():
+            if is_final:
+                round_deltas[symbol] = delta
+            else:
+                round_deltas[symbol] = delta / remaining_rounds
+        
+        round_total = sum(abs(d) for d in round_deltas.values())
+        
+        console.print(f"\n[bold]Round {round_num}/{n_rounds}[/bold]" + 
+                     (" [bright_yellow](FINAL)[/bright_yellow]" if is_final else ""))
+        
+        round_table = Table(box=SIMPLE, show_header=True)
+        round_table.add_column("Symbol", style="bright_cyan")
+        round_table.add_column("Remaining", justify="right")
+        round_table.add_column("Execute", justify="right")
+        
+        for symbol in sorted(round_deltas.keys()):
+            remaining = current_deltas[symbol]
+            execute = round_deltas[symbol]
+            if abs(execute) < 1.0:
+                continue
+            style = "bright_green" if execute > 0 else "bright_red"
+            round_table.add_row(
+                symbol,
+                f"${remaining:+,.2f}",
+                f"[{style}]${execute:+,.2f}[/{style}]"
+            )
+        
+        console.print(round_table)
+        
+        result = _execute_round_orders(round_deltas)
+        
+        round_log = {
+            'round': round_num,
+            'deltas': round_deltas.copy(),
+            'total': round_total,
+            'result': result
+        }
+        execution_log.append(round_log)
+        
+        if result.get('status') == 'success':
+            filled_count = result.get('successful', 0)
+            total_filled += filled_count
+            console.print(f"  [bright_green]Executed: {filled_count} orders[/bright_green]")
+        elif result.get('status') == 'partial':
+            filled_count = result.get('successful', 0)
+            failed_count = result.get('failed', 0)
+            total_filled += filled_count
+            console.print(f"  [bright_yellow]Partial: {filled_count} success, {failed_count} failed[/bright_yellow]")
+        elif result.get('status') == 'skip':
+            console.print(f"  [dim]Skipped (delta too small)[/dim]")
+        else:
+            console.print(f"  [bright_red]Error: {result.get('msg', 'Unknown')}[/bright_red]")
+        
+        if not is_final:
+            console.print(f"  [dim]Waiting {interval_seconds}s...[/dim]")
+            time.sleep(interval_seconds)
+    
+    final_deltas = _calculate_deltas()
+    final_total = sum(abs(d) for d in final_deltas.values())
+    
+    console.print(f"\n[bold]TWAP Execution Complete[/bold]")
+    console.print(f"  Rounds: {n_rounds}")
+    console.print(f"  Orders Filled: {total_filled}")
+    console.print(f"  Initial Delta: ${total_abs_delta:,.2f}")
+    console.print(f"  Remaining Delta: ${final_total:,.2f}")
+    
+    return {
+        'status': 'success',
+        'n_rounds': n_rounds,
+        'initial_delta': total_abs_delta,
+        'final_delta': final_total,
+        'total_filled': total_filled,
+        'execution_log': execution_log
+    }

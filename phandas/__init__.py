@@ -1,7 +1,7 @@
 """Phantom Data Analysis"""
 
 __author__ = "Phantom Management"
-__version__ = "0.18.1"
+__version__ = "0.18.2"
 
 from .core import Factor
 from .panel import Panel
@@ -12,7 +12,7 @@ from .backtest import backtest, Backtester
 
 from .analysis import analyze, FactorAnalyzer
 
-from .trader import rebalance, Rebalancer, OKXTrader
+from .trader import rebalance, twap_rebalance, Rebalancer, OKXTrader
 
 from .operators import (
     vector_neut, regression_neut,
@@ -45,7 +45,7 @@ __all__ = [
 
     'analyze', 'FactorAnalyzer',
 
-    'rebalance', 'Rebalancer', 'OKXTrader',
+    'rebalance', 'twap_rebalance', 'Rebalancer', 'OKXTrader',
 
     'vector_neut', 'regression_neut',
     

@@ -577,6 +577,17 @@ class FactorPlotter:
         fig, ax = plt.subplots(figsize=figsize)
         ax.set_facecolor(_PLOT_COLORS['background_subtle'])
         
+        nan_dates = data[data['factor'].isna()]['timestamp']
+        for nan_date in nan_dates:
+            ax.axvline(
+                nan_date, 
+                color='#dc2626', 
+                linewidth=0.9, 
+                linestyle=':', 
+                alpha=1.0,
+                zorder=10
+            )
+        
         line_color = _PLOT_COLORS['factor_palette'][0]
         ax.plot(
             data['timestamp'], data['factor'], 
@@ -648,6 +659,17 @@ class FactorPlotter:
             ax = axes[idx]
             data = self.factor.data[self.factor.data['symbol'] == symbol].copy()
             data = data.sort_values('timestamp')
+            
+            nan_dates = data[data['factor'].isna()]['timestamp']
+            for nan_date in nan_dates:
+                ax.axvline(
+                    nan_date, 
+                    color='#dc2626', 
+                    linewidth=0.9, 
+                    linestyle=':', 
+                    alpha=1.0,
+                    zorder=10
+                )
             
             color = palette[idx % len(palette)]
             ax.plot(

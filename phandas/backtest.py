@@ -293,9 +293,12 @@ class Backtester:
                     skipped_dates.append((date, nan_symbols))
         
         if skipped_dates:
-            warnings.warn(
-                f"Skipped {len(skipped_dates)} dates with NaN (strategy='{factor.name}')"
-            )
+            print(f"Skipped {len(skipped_dates)} dates with NaN (strategy='{factor.name}'):")
+            for date, symbols in skipped_dates[:10]:
+                date_str = pd.Timestamp(date).strftime(_DATE_FORMAT)
+                print(f"  - {date_str}: {symbols}")
+            if len(skipped_dates) > 10:
+                print(f"  ... and {len(skipped_dates) - 10} more")
         
         return cache
     

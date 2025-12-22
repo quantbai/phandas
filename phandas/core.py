@@ -1344,10 +1344,12 @@ class Factor:
         def safe_div(x, y):
             if isinstance(y, (int, float)):
                 if y == 0:
-                    return np.nan
+                    return np.full_like(x, np.nan) if hasattr(x, '__len__') else np.nan
                 return x / y
             else:
-                return np.where(np.abs(y) > 1e-10, x / y, np.nan)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    result = x / y
+                return np.where(np.isinf(result) | np.isnan(result), np.nan, result)
         
         return self._binary_op(other, safe_div, '/')
 
