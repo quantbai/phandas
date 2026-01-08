@@ -1097,6 +1097,8 @@ def twap_rebalance(
     def _execute_round_orders(round_deltas: Dict[str, float]) -> Dict:
         """Execute orders for a single round."""
         orders_to_execute = []
+        order_symbols = []
+        order_amounts = []
         
         for symbol, delta in round_deltas.items():
             if abs(delta) < 1.0:
@@ -1139,6 +1141,8 @@ def twap_rebalance(
                     'pos_side': 'long' if side == 'buy' else 'short',
                     'reduce_only': False
                 })
+                order_symbols.append(symbol)
+                order_amounts.append(delta)
                 
                 time.sleep(0.2)
                 
@@ -1146,9 +1150,23 @@ def twap_rebalance(
                 continue
         
         if not orders_to_execute:
-            return {'status': 'skip', 'filled': 0, 'orders': []}
+            return {'status': 'skip', 'filled': 0, 'orders': [], 'order_details': []}
         
         batch_result = trader.place_batch_orders(orders_to_execute)
+        
+        order_details = []
+        if batch_result.get('orders'):
+            for i, order_result in enumerate(batch_result['orders']):
+                symbol = order_symbols[i] if i < len(order_symbols) else 'Unknown'
+                amount = order_amounts[i] if i < len(order_amounts) else 0
+                order_details.append({
+                    'symbol': symbol,
+                    'amount': amount,
+                    'status': order_result.get('status', 'error'),
+                    'msg': order_result.get('msg', '')
+                })
+        
+        batch_result['order_details'] = order_details
         return batch_result
     
     validation = trader.validate_account_config()
@@ -1249,12 +1267,19 @@ def twap_rebalance(
         if result.get('status') == 'success':
             filled_count = result.get('successful', 0)
             total_filled += filled_count
-            console.print(f"  [bright_green]Executed: {filled_count} orders[/bright_green]")
+            for detail in result.get('order_details', []):
+                amount = detail['amount']
+                style = "bright_green" if amount > 0 else "bright_red"
+                console.print(f"  [{style}]{detail['symbol']:>6}[/{style}]: ${amount:+,.2f} ... [bright_green]OK[/bright_green]")
         elif result.get('status') == 'partial':
             filled_count = result.get('successful', 0)
             failed_count = result.get('failed', 0)
             total_filled += filled_count
-            console.print(f"  [bright_yellow]Partial: {filled_count} success, {failed_count} failed[/bright_yellow]")
+            for detail in result.get('order_details', []):
+                amount = detail['amount']
+                style = "bright_green" if amount > 0 else "bright_red"
+                status_str = "[bright_green]OK[/bright_green]" if detail['status'] == 'success' else f"[bright_red]FAIL[/bright_red] {detail['msg']}"
+                console.print(f"  [{style}]{detail['symbol']:>6}[/{style}]: ${amount:+,.2f} ... {status_str}")
         elif result.get('status') == 'skip':
             console.print(f"  [dim]Skipped (delta too small)[/dim]")
         else:

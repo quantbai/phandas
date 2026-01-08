@@ -32,17 +32,6 @@ class TestDataProcessing:
         assert len(loaded.data) == len(sample_factor.data)
 
 
-class TestSymbolRenames:
-    """Tests for symbol rename handling."""
-    
-    def test_symbol_renames_defined(self):
-        """SYMBOL_RENAMES should be defined in constants."""
-        from phandas.constants import SYMBOL_RENAMES
-        
-        assert isinstance(SYMBOL_RENAMES, dict)
-        assert 'POL' in SYMBOL_RENAMES
-
-
 class TestTimeframeMapping:
     """Tests for timeframe mapping."""
     

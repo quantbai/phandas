@@ -10,7 +10,13 @@ from typing import List, Optional, TYPE_CHECKING, Callable
 if TYPE_CHECKING:
     from .panel import Panel
 
-from .constants import SYMBOL_RENAMES
+_SYMBOL_RENAMES = {
+    'POL': {
+        'old_symbol': 'MATIC',
+        'new_symbol': 'POL',
+        'cutoff_date': '2024-09-01',
+    }
+}
 
 TIMEFRAME_MAP = {
     '1m': 'min', '5m': '5min', '15m': '15min', '30m': '30min',
@@ -226,7 +232,7 @@ def fetch_binance(
         
         symbols_to_fetch = list(set(symbols))
         
-        for new_sym, rename_info in SYMBOL_RENAMES.items():
+        for new_sym, rename_info in _SYMBOL_RENAMES.items():
             if new_sym not in symbols_to_fetch:
                 continue
             

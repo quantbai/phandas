@@ -147,9 +147,13 @@ class TestArithmeticOperators:
 class TestGroupOperators:
     """Tests for group-related operator functions."""
     
-    def test_group_mapping_constants(self, close_factor):
-        """Test mapping using predefined constant name."""
-        g_factor = group(close_factor, 'SECTOR_L1_L2')
+    def test_group_mapping_dict_sector(self, close_factor):
+        """Test mapping using sector dictionary."""
+        sector_l1_l2 = {
+            'ETH': 1, 'SOL': 1, 'SUI': 1,
+            'ARB': 2, 'OP': 2, 'POL': 2,
+        }
+        g_factor = group(close_factor, sector_l1_l2)
         
         assert isinstance(g_factor, Factor)
         

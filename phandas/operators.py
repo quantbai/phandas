@@ -5,65 +5,71 @@ from .core import Factor
 
 
 def vector_neut(x: 'Factor', y: 'Factor') -> 'Factor':
-    """Remove y projection from x via vector orthogonalization.
+    """Remove y's influence from x, keeping only the independent part.
+    
+    Formula: x - (x dot y / y dot y) * y
     
     Parameters
     ----------
     x : Factor
-        Factor to orthogonalize
+        Factor to process
     y : Factor
-        Factor defining projection direction
+        Factor whose influence to remove
     
     Returns
     -------
     Factor
-        Orthogonalized factor with y projection removed
+        x with y's influence removed
     """
     return x.vector_neut(y)
 
 def regression_neut(y: 'Factor', x: 'Factor') -> 'Factor':
-    """Orthogonalize y relative to x via OLS residuals.
+    """Remove x's influence from y using linear regression.
+    
+    Fits a line y = a + b*x, returns the residuals (actual - predicted).
     
     Parameters
     ----------
     y : Factor
-        Factor to orthogonalize
+        Factor to process
     x : Factor
-        Factor for regression
+        Factor whose influence to remove
     
     Returns
     -------
     Factor
-        Residuals from OLS regression of y on x
+        Residuals after removing x's linear effect
     """
     return y.regression_neut(x)
 
 def group_neutralize(x: 'Factor', group: 'Factor') -> 'Factor':
-    """Neutralize factor against groups (demean within group).
+    """Subtract group average from each value.
+    
+    Formula: x - mean(x within same group)
     
     Parameters
     ----------
     x : Factor
         Factor to neutralize
     group : Factor
-        Factor defining the group for each asset
+        Group ID for each asset
     
     Returns
     -------
     Factor
-        Neutralized factor (x - group_mean)
+        Values relative to group average
     """
     return x.group_neutralize(group)
 
-def group(factor: 'Factor', mapping: Union[str, dict]) -> 'Factor':
-    """Map symbol to group ID using predefined definition or custom dict.
+def group(factor: 'Factor', mapping: dict) -> 'Factor':
+    """Map symbol to group ID using a custom dict.
     
     Parameters
     ----------
     factor : Factor
         Base factor providing timestamp/symbol index
-    mapping : str or dict
-        Mapping name (in constants.GROUP_DEFINITIONS) or dict
+    mapping : dict
+        Symbol to group ID mapping, e.g. {'ETH': 1, 'SOL': 1, 'ARB': 2}
     
     Returns
     -------
@@ -177,7 +183,9 @@ def group_normalize(x: 'Factor', group: 'Factor', scale: float = 1.0) -> 'Factor
     return x.group_normalize(group, scale)
 
 def rank(factor: 'Factor') -> 'Factor':
-    """Cross-sectional percentile rank (0-1).
+    """Rank values from 0 to 1 across all assets at each time.
+    
+    Highest value gets 1.0, lowest gets close to 0.
     
     Parameters
     ----------
@@ -187,12 +195,12 @@ def rank(factor: 'Factor') -> 'Factor':
     Returns
     -------
     Factor
-        Ranked factor per timestamp
+        Percentile rank (0-1) at each timestamp
     """
     return factor.rank()
 
 def mean(factor: 'Factor') -> 'Factor':
-    """Cross-sectional mean per timestamp.
+    """Average across all assets at each time.
     
     Parameters
     ----------
@@ -202,12 +210,12 @@ def mean(factor: 'Factor') -> 'Factor':
     Returns
     -------
     Factor
-        Mean-replicated factor per timestamp
+        Average value at each timestamp
     """
     return factor.mean()
 
 def median(factor: 'Factor') -> 'Factor':
-    """Cross-sectional median per timestamp.
+    """Middle value across all assets at each time.
     
     Parameters
     ----------
@@ -217,72 +225,76 @@ def median(factor: 'Factor') -> 'Factor':
     Returns
     -------
     Factor
-        Median-replicated factor per timestamp
+        Median value at each timestamp
     """
     return factor.median()
 
 def normalize(factor: 'Factor', use_std: bool = False, limit: float = 0.0) -> 'Factor':
-    """Cross-sectional demean with optional std normalization.
+    """Subtract average, optionally divide by spread.
+    
+    Formula: (x - mean) or (x - mean) / std
     
     Parameters
     ----------
     factor : Factor
         Input factor
     use_std : bool, default False
-        Whether to divide by standard deviation
+        If True, also divide by standard deviation
     limit : float, default 0.0
-        Clipping limit (e.g., ±limit)
+        If > 0, clip values to [-limit, +limit]
     
     Returns
     -------
     Factor
-        Demeaned and optionally normalized factor
+        Normalized factor centered at 0
     """
     return factor.normalize(use_std, limit)
 
 def quantile(factor: 'Factor', driver: str = "gaussian", sigma: float = 1.0) -> 'Factor':
-    """Cross-sectional quantile transform (normal/uniform/Cauchy).
+    """Transform ranks to follow a target distribution shape.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     driver : {'gaussian', 'uniform', 'cauchy'}, default 'gaussian'
-        Quantile transform distribution
+        Target distribution (gaussian = bell curve)
     sigma : float, default 1.0
-        Scale parameter
+        Spread of the distribution
     
     Returns
     -------
     Factor
-        Quantile-transformed factor
+        Values reshaped to target distribution
     """
     return factor.quantile(driver, sigma)
 
 def scale(factor: 'Factor', scale: float = 1.0, longscale: Optional[float] = None, 
           shortscale: Optional[float] = None) -> 'Factor':
-    """Scale to sum(|factor|)=scale with optional separate long/short sizing.
+    """Resize values so their absolute sum equals a target.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     scale : float, default 1.0
-        Target sum of absolute values
+        Target for sum of absolute values
     longscale : float, optional
-        Long-only scale. If None, uses `scale`.
+        Separate target for positive values
     shortscale : float, optional
-        Short-only scale. If None, uses `scale`.
+        Separate target for negative values
     
     Returns
     -------
     Factor
-        Scaled factor
+        Rescaled factor
     """
     return factor.scale(scale, longscale, shortscale)
 
 def zscore(factor: 'Factor') -> 'Factor':
-    """Cross-sectional standardization (mean=0, std=1).
+    """Standardize to mean=0 and std=1 at each time.
+    
+    Formula: (x - mean) / std
     
     Parameters
     ----------
@@ -292,29 +304,32 @@ def zscore(factor: 'Factor') -> 'Factor':
     Returns
     -------
     Factor
-        Standardized factor per timestamp
+        Standardized factor
     """
     return factor.zscore()
 
 def spread(factor: 'Factor', pct: float = 0.5) -> 'Factor':
-    """Binary long-short signal based on top and bottom percentiles.
+    """Simple long/short: go long top X%, short bottom X%.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     pct : float, default 0.5
-        Percentile threshold (top pct% → +0.5, bottom pct% → -0.5)
+        Percentage to include (top pct% gets +0.5, bottom pct% gets -0.5)
     
     Returns
     -------
     Factor
-        Binary long-short signal per timestamp
+        Binary long/short weights
     """
     return factor.spread(pct)
 
 def signal(factor: 'Factor') -> 'Factor':
-    """Dollar-neutral signal (long sum=0.5, short=-0.5).
+    """Convert to trading weights (long +0.5, short -0.5, net zero).
+    
+    Subtracts mean then scales so positive values sum to 0.5
+    and negative values sum to -0.5.
     
     Parameters
     ----------
@@ -324,135 +339,141 @@ def signal(factor: 'Factor') -> 'Factor':
     Returns
     -------
     Factor
-        Demeaned and scaled to dollar-neutral weights
+        Trading weights that sum to zero
     """
     return factor.signal()
 
 def ts_rank(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling percentile rank within window.
+    """Where does today's value rank in the last N days? (0-1)
+    
+    1.0 = highest in window, 0 = lowest in window.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days to look at
     
     Returns
     -------
     Factor
-        Rolling percentile rank
+        Percentile rank within the window
     """
     return factor.ts_rank(window)
 
 def ts_mean(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling mean over window.
+    """Average of the last N days.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days to average
     
     Returns
     -------
     Factor
-        Rolling mean, NaN if window incomplete
+        Rolling average
     """
     return factor.ts_mean(window)
 
 def ts_median(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling median over window.
+    """Middle value of the last N days.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling median, NaN if window incomplete
+        Rolling median
     """
     return factor.ts_median(window)
 
 def ts_product(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling product over window.
+    """Multiply all values in the last N days.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling product, NaN if window incomplete
+        Rolling product
     """
     return factor.ts_product(window)
 
 def ts_sum(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling sum over window.
+    """Add up all values in the last N days.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling sum, NaN if window incomplete
+        Rolling sum
     """
     return factor.ts_sum(window)
 
 def ts_std_dev(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling standard deviation over window.
+    """How spread out are values in the last N days?
+    
+    Higher = more volatile, lower = more stable.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling std dev, NaN if window incomplete
+        Rolling standard deviation
     """
     return factor.ts_std_dev(window)
 
 def where(condition: 'Factor', x: Union['Factor', float], y: Union['Factor', float]) -> 'Factor':
-    """Select x when condition is True, else y.
+    """If-else selection: pick x when condition is true, otherwise y.
     
     Parameters
     ----------
     condition : Factor
-        Boolean condition factor
+        True/False values for each cell
     x : Factor or float
-        Values where condition is True
+        Value to use when True
     y : Factor or float
-        Values where condition is False
+        Value to use when False
     
     Returns
     -------
     Factor
-        Conditional selection result
+        Selected values
     """
     if not isinstance(x, Factor):
         raise TypeError("The `x` argument must be a Factor object for `where` operator.")
     return x.where(condition, other=y)
 
 def ts_corr(factor1: 'Factor', factor2: 'Factor', window: int) -> 'Factor':
-    """Rolling Pearson correlation over window.
+    """How closely do two factors move together over the last N days?
+    
+    +1 = move together, -1 = move opposite, 0 = no relationship.
     
     Parameters
     ----------
@@ -461,153 +482,161 @@ def ts_corr(factor1: 'Factor', factor2: 'Factor', window: int) -> 'Factor':
     factor2 : Factor
         Second factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling correlation, NaN if window incomplete
+        Rolling correlation (-1 to +1)
     """
     return factor1.ts_corr(factor2, window)
 
 def ts_step(factor: 'Factor', start: int = 1) -> 'Factor':
-    """Time step counter (1, 2, 3, ...) per symbol.
+    """Day counter for each asset (1, 2, 3, ...).
     
     Parameters
     ----------
     factor : Factor
         Input factor
     start : int, default 1
-        Starting value
+        First day's number
     
     Returns
     -------
     Factor
-        Incrementing time steps per symbol
+        Day number for each row
     """
     return factor.ts_step(start)
 
 def ts_delay(factor: 'Factor', window: int) -> 'Factor':
-    """Lag factor by window periods.
+    """Get the value from N days ago.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Lag periods
+        How many days back to look
     
     Returns
     -------
     Factor
-        Lagged factor
+        Value from N days ago
     """
     return factor.ts_delay(window)
 
 def ts_delta(factor: 'Factor', window: int) -> 'Factor':
-    """Difference between current and lagged value.
+    """Change since N days ago.
+    
+    Formula: today - N_days_ago
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Lag periods
+        How many days back to compare
     
     Returns
     -------
     Factor
-        First difference (x - lag(x, window))
+        Difference from N days ago
     """
     return factor.ts_delta(window)
 
 def ts_arg_max(factor: 'Factor', window: int) -> 'Factor':
-    """Relative index of maximum in window (0=oldest).
+    """When did the highest value occur in the last N days?
+    
+    Returns position: 0=oldest day, N-1=today.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Index of max value in window
+        Position of maximum value
     """
     return factor.ts_arg_max(window)
 
 def ts_arg_min(factor: 'Factor', window: int) -> 'Factor':
-    """Relative index of minimum in window (0=oldest).
+    """When did the lowest value occur in the last N days?
+    
+    Returns position: 0=oldest day, N-1=today.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Index of min value in window
+        Position of minimum value
     """
     return factor.ts_arg_min(window)
 
 def ts_min(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling minimum over window.
+    """Lowest value in the last N days.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling minimum, NaN if window incomplete
+        Rolling minimum
     """
     return factor.ts_min(window)
 
 def ts_max(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling maximum over window.
+    """Highest value in the last N days.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling maximum, NaN if window incomplete
+        Rolling maximum
     """
     return factor.ts_max(window)
 
 def ts_count_nans(factor: 'Factor', window: int) -> 'Factor':
-    """Count NaN values in rolling window.
+    """How many missing values in the last N days?
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Count of NaN values in window
+        Count of missing values
     """
     return factor.ts_count_nans(window)
 
 def ts_covariance(factor1: 'Factor', factor2: 'Factor', window: int) -> 'Factor':
-    """Rolling covariance over window.
+    """How do two factors vary together over the last N days?
+    
+    Positive = move in same direction, negative = opposite.
     
     Parameters
     ----------
@@ -616,321 +645,338 @@ def ts_covariance(factor1: 'Factor', factor2: 'Factor', window: int) -> 'Factor'
     factor2 : Factor
         Second factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling covariance, NaN if window incomplete
+        Rolling covariance
     """
     return factor1.ts_covariance(factor2, window)
 
 def ts_quantile(factor: 'Factor', window: int, driver: str = "gaussian") -> 'Factor':
-    """Rolling quantile transform (normal/uniform/Cauchy).
+    """Transform rolling ranks to a target distribution shape.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     driver : {'gaussian', 'uniform', 'cauchy'}, default 'gaussian'
-        Quantile transform distribution
+        Target distribution (gaussian = bell curve)
     
     Returns
     -------
     Factor
-        Rolling quantile-transformed factor
+        Rolling quantile-transformed values
     """
     return factor.ts_quantile(window, driver)
 
 def ts_kurtosis(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling excess kurtosis.
+    """Are there extreme values in the last N days? (tail heaviness)
+    
+    High = frequent extreme moves, low = mostly normal moves.
+    Normal distribution has kurtosis = 0.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling excess kurtosis: E[(x-mean)^4]/std^4 - 3
+        Rolling kurtosis (0 = normal, >0 = fat tails)
     """
     return factor.ts_kurtosis(window)
 
 def ts_skewness(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling sample skewness with Bessel correction.
+    """Is the distribution lopsided in the last N days?
     
-    Expression: (power(x - ts_mean(x, n), 3).ts_sum(n) * n) / 
-                (power(power(x - ts_mean(x, n), 2).ts_sum(n), 1.5) * (n-1) * (n-2))
-    Composed of: ts_mean, power, ts_sum
+    Positive = more extreme high values, negative = more extreme low values.
+    Zero = symmetric distribution.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling skewness, NaN if window incomplete
+        Rolling skewness
     """
     return factor.ts_skewness(window)
 
 def ts_av_diff(factor: 'Factor', window: int) -> 'Factor':
-    """Deviation from rolling mean.
+    """How far is today's value from the N-day average?
+    
+    Formula: today - average(last N days)
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days for average
     
     Returns
     -------
     Factor
-        Deviation from rolling mean
+        Distance from rolling average
     """
     return factor.ts_av_diff(window)
 
 def ts_scale(factor: 'Factor', window: int, constant: float = 0) -> 'Factor':
-    """Rolling min-max scale.
+    """Scale values to 0-1 range based on last N days min/max.
+    
+    Formula: (today - min) / (max - min) + constant
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     constant : float, default 0
-        Offset constant
+        Add this to the scaled value
     
     Returns
     -------
     Factor
-        Scaled factor: (x-min)/(max-min) + constant
+        Scaled to 0-1 range
     """
     return factor.ts_scale(window, constant)
 
 def ts_zscore(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling Z-score over window.
+    """How unusual is today's value compared to recent history?
+    
+    Formula: (today - average) / std_dev
+    Higher absolute value = more unusual.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days for comparison
     
     Returns
     -------
     Factor
-        Rolling Z-score, NaN if window incomplete
+        Rolling z-score
     """
     return factor.ts_zscore(window)
 
 def ts_backfill(factor: 'Factor', window: int, k: int = 1) -> 'Factor':
-    """Backfill NaN with k-th most recent non-NaN in window.
+    """Fill missing values with recent valid values.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        How far back to look for valid values
     k : int, default 1
-        Which recent non-NaN to use (1=most recent, 2=second-most, ...)
+        Use k-th most recent valid value (1=latest, 2=second-latest)
     
     Returns
     -------
     Factor
-        Factor with NaN backfilled
+        Factor with missing values filled
     """
     return factor.ts_backfill(window, k)
 
 def ts_decay_exp_window(factor: 'Factor', window: int, factor_arg: float = 1.0, nan: bool = True) -> 'Factor':
-    """Exponentially weighted rolling average (recent heavier).
+    """Weighted average where recent values count more (exponential weights).
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     factor_arg : float, default 1.0
-        Exponential decay factor
+        Decay rate (smaller = faster decay)
     nan : bool, default True
-        Whether to skip NaN values
+        Skip missing values if True
     
     Returns
     -------
     Factor
-        Exponentially weighted rolling average
+        Exponentially weighted average
     """
     return factor.ts_decay_exp_window(window, factor_arg, nan)
 
 def ts_decay_linear(factor: 'Factor', window: int, dense: bool = False) -> 'Factor':
-    """Linearly weighted rolling average (recent heavier).
+    """Weighted average where recent values count more (linear weights).
+    
+    Most recent day has weight N, oldest has weight 1.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     dense : bool, default False
-        Whether to use dense weighting
+        If True, skip missing values when weighting
     
     Returns
     -------
     Factor
-        Linearly weighted rolling average
+        Linearly weighted average
     """
     return factor.ts_decay_linear(window, dense)
 
 def ts_regression(y: 'Factor', x: 'Factor', window: int, lag: int = 0, rettype: int = 0) -> 'Factor':
-    """Rolling OLS regression with multiple return types.
+    """Fit a line y = a + b*x over rolling window.
+    
+    Can return different parts of the regression result.
     
     Parameters
     ----------
     y : Factor
-        Dependent variable
+        Value to predict
     x : Factor
-        Independent variable
+        Value used for prediction
     window : int
-        Window size (periods)
+        Number of past days
     lag : int, default 0
-        Lag for x (periods)
+        Shift x by this many days
     rettype : int, default 0
-        Return type: 0=residual, 1=α, 2=β, 3=pred, 4=SSE, 5=SST, 
-        6=R², 7=MSE, 8=SE(β), 9=SE(α)
+        What to return: 0=residual, 1=intercept, 2=slope, 3=predicted,
+        4=sum squared error, 5=total variance, 6=R-squared, 7=mean squared error
     
     Returns
     -------
     Factor
-        Regression result of specified type
+        Regression result
     """
     return y.ts_regression(x, window, lag, rettype)
 
 def ts_cv(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling coefficient of variation.
+    """Relative volatility: std / abs(mean) over rolling window.
     
-    Expression: ts_std_dev(x, n) / (abs(ts_mean(x, n)) + eps)
-    Composed of: ts_mean, ts_std_dev, abs
+    Higher = more volatile relative to average level.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling CV: std / abs(mean)
+        Coefficient of variation
     """
     return factor.ts_cv(window)
 
 def ts_jumpiness(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling jumpiness (jump intensity).
+    """How choppy is the price movement? (frequent small jumps vs smooth trend)
     
-    Expression: ts_sum(abs(ts_delta(x, 1)), n) / (ts_max(x, n) - ts_min(x, n) + eps)
-    Composed of: ts_delta, abs, ts_sum, ts_max, ts_min
+    Formula: sum of daily changes / total range
+    Higher = more choppy, lower = smoother trend.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling jumpiness: sum(|diff|) / (max - min)
+        Jumpiness ratio
     """
     return factor.ts_jumpiness(window)
 
 def ts_trend_strength(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling trend strength (R² of linear regression on time).
+    """How strong is the trend direction? (0=no trend, 1=perfect trend)
+    
+    Uses R-squared from fitting a line through time.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling trend strength (R² value)
+        Trend strength (0 to 1)
     """
     return factor.ts_trend_strength(window)
 
 def ts_vr(factor: 'Factor', window: int, k: int = 2) -> 'Factor':
-    """Rolling variance ratio.
+    """Compare volatility at different time scales.
     
-    Expression: power(ts_std_dev(ts_delta(x, k), n), 2) / 
-                (k * power(ts_std_dev(ts_delta(x, 1), n), 2) + eps)
-    Composed of: ts_delta, ts_std_dev, power
+    Ratio of k-day variance to 1-day variance.
+    >1 suggests trending, <1 suggests mean-reverting.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     k : int, default 2
-        Variance ratio period
+        Compare k-day changes to 1-day changes
     
     Returns
     -------
     Factor
-        Rolling variance ratio: Var(k-period) / (k * Var(1-period))
+        Variance ratio
     """
     return factor.ts_vr(window, k)
 
 def ts_autocorr(factor: 'Factor', window: int, lag: int = 1) -> 'Factor':
-    """Rolling autocorrelation at specified lag.
+    """How similar is today's value to N days ago?
+    
+    +1 = very similar, -1 = opposite, 0 = no pattern.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     lag : int, default 1
-        Lag for autocorrelation
+        Compare to value from lag days ago
     
     Returns
     -------
     Factor
-        Rolling autocorrelation
+        Autocorrelation
     """
     return factor.ts_autocorr(window, lag)
 
 def ts_reversal_count(factor: 'Factor', window: int) -> 'Factor':
-    """Rolling reversal count (direction changes).
+    """How often does direction change? (up to down or down to up)
+    
+    Higher = more choppy, lower = more consistent direction.
     
     Parameters
     ----------
     factor : Factor
         Input factor
     window : int
-        Window size (periods)
+        Number of past days
     
     Returns
     -------
     Factor
-        Rolling reversal count: direction changes / window
+        Reversal frequency (0 to 1)
     """
     return factor.ts_reversal_count(window)
 
@@ -1179,17 +1225,12 @@ def reverse(factor: 'Factor') -> 'Factor':
 
 
 def show(obj) -> None:
-    """Functional show for Factor/Panel.
+    """Display Factor or Panel visualization.
     
     Parameters
     ----------
     obj : Factor or Panel
         Object to display
-    
-    Examples
-    --------
-    >>> show(factor)
-    >>> factor.show()
     """
     if hasattr(obj, 'show'):
         obj.show()
@@ -1198,19 +1239,14 @@ def show(obj) -> None:
 
 
 def to_csv(obj, path: str) -> None:
-    """Functional to_csv for Factor/Panel.
+    """Export Factor or Panel to CSV file.
     
     Parameters
     ----------
     obj : Factor or Panel
         Object to save
     path : str
-        File path to save CSV
-    
-    Examples
-    --------
-    >>> to_csv(factor, 'factor.csv')
-    >>> factor.to_csv('factor.csv')
+        Output file path
     """
     if hasattr(obj, 'to_csv'):
         obj.to_csv(path)
@@ -1230,11 +1266,6 @@ def to_df(obj) -> 'pd.DataFrame':
     -------
     pd.DataFrame
         Copy of underlying data
-    
-    Examples
-    --------
-    >>> df = to_df(factor)
-    >>> df = factor.to_df()
     """
     if hasattr(obj, 'to_df'):
         return obj.to_df()
