@@ -3,7 +3,6 @@
 from typing import Union, List, Optional
 from .core import Factor 
 
-
 def vector_neut(x: 'Factor', y: 'Factor') -> 'Factor':
     """Remove y's influence from x, keeping only the independent part.
     
@@ -1271,3 +1270,151 @@ def to_df(obj) -> 'pd.DataFrame':
         return obj.to_df()
     else:
         raise TypeError(f"to_df() not supported for {type(obj).__name__}")
+
+
+def crowding(factor: 'Factor', volume: 'Factor', close: 'Factor',
+             lookback: int = 20) -> 'Factor':
+    """Factor crowding based on abnormal volume correlation.
+    
+    Measures whether large factor signal changes coincide with
+    abnormally high trading volume, indicating crowded positioning.
+    
+    Parameters
+    ----------
+    factor : Factor
+        Strategy factor to analyze
+    volume : Factor
+        Trading volume factor
+    close : Factor
+        Close price factor
+    lookback : int, default 20
+        Lookback period for average dollar volume
+    
+    Returns
+    -------
+    Factor
+        Daily cross-sectional correlation between |delta_signal| and
+        abnormal dollar volume. Values > 0.3 sustained suggest crowding.
+    """
+    return factor.crowding(volume, close, lookback)
+
+
+def ic(factor: 'Factor', close: 'Factor',
+       method: str = 'spearman') -> 'Factor':
+    """Information Coefficient time series.
+    
+    Cross-sectional correlation between factor_{t-1} and return_t.
+    
+    Parameters
+    ----------
+    factor : Factor
+        Alpha factor
+    close : Factor
+        Close price factor
+    method : {'spearman', 'pearson'}, default 'spearman'
+        Correlation method
+    
+    Returns
+    -------
+    Factor
+        Daily IC values, broadcast to all symbols.
+    """
+    return factor.ic(close, method)
+
+
+def turnover(factor: 'Factor', lag: int = 1) -> 'Factor':
+    """Factor turnover as absolute rank change.
+    
+    Parameters
+    ----------
+    factor : Factor
+        Input factor
+    lag : int, default 1
+        Lag period for comparison
+    
+    Returns
+    -------
+    Factor
+        Average absolute change in cross-sectional rank.
+    """
+    return factor.turnover(lag)
+
+
+def autocorr(factor: 'Factor', lag: int = 1) -> 'Factor':
+    """Factor autocorrelation time series.
+    
+    Computes cross-sectional correlation between factor_t and factor_{t-lag}.
+    
+    Parameters
+    ----------
+    factor : Factor
+        Input factor
+    lag : int, default 1
+        Lag period
+    
+    Returns
+    -------
+    Factor
+        Autocorrelation at each timestamp.
+    """
+    return factor.autocorr(lag)
+
+
+def pnl(factor: 'Factor', close: 'Factor') -> 'Factor':
+    """Factor PnL contribution per symbol (full-rebalance, no transaction cost).
+    
+    Uses close-to-close returns with previous day's signal as weights.
+    
+    Parameters
+    ----------
+    factor : Factor
+        Strategy factor
+    close : Factor
+        Close price factor
+    
+    Returns
+    -------
+    Factor
+        Daily PnL per symbol = weight_{t-1} * (close_t - close_{t-1}) / close_{t-1}
+    """
+    return factor.pnl(close)
+
+
+def rolling_sharpe(factor: 'Factor', close: 'Factor', 
+                   window: int = 60) -> 'Factor':
+    """Rolling Sharpe ratio of factor PnL.
+    
+    Parameters
+    ----------
+    factor : Factor
+        Strategy factor
+    close : Factor
+        Close price factor
+    window : int, default 60
+        Rolling window for Sharpe calculation
+    
+    Returns
+    -------
+    Factor
+        Annualized rolling Sharpe ratio.
+    """
+    return factor.rolling_sharpe(close, window)
+
+
+def drawdown(factor: 'Factor', close: 'Factor') -> 'Factor':
+    """Portfolio drawdown from high water mark.
+    
+    Parameters
+    ----------
+    factor : Factor
+        Strategy factor
+    close : Factor
+        Close price factor
+    
+    Returns
+    -------
+    Factor
+        Drawdown (negative values).
+        0 = at high water mark, -0.1 = 10% below peak.
+    """
+    return factor.drawdown(close)

@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, TYPE_CHECKING, Union
 if TYPE_CHECKING:
     from .backtest import Backtester
     from .core import Factor
+    from .analysis import FactorAnalyzer
 
 _DATE_FORMAT = '%Y-%m-%d'
 
@@ -647,11 +648,25 @@ class FactorPlotter:
         n_rows = (n_symbols + n_cols - 1) // n_cols
         
         _apply_plot_style()
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, constrained_layout=True)
-        if n_symbols == 1:
-            axes = np.array([axes])
-        else:
-            axes = axes.flatten() if n_symbols > 1 else np.array([axes])
+        fig = plt.figure(figsize=figsize)
+        fig.subplots_adjust(top=0.88, bottom=0.10, left=0.07, right=0.97, hspace=0.50, wspace=0.30)
+        
+        gs = fig.add_gridspec(n_rows, n_cols)
+        axes = []
+        for i in range(n_rows):
+            for j in range(n_cols):
+                idx = i * n_cols + j
+                if idx < n_symbols:
+                    axes.append(fig.add_subplot(gs[i, j]))
+        
+        plot_title = title or self.factor.name
+        fig.suptitle(
+            plot_title,
+            fontsize=_PLOT_STYLES['title_size'],
+            fontweight='500',
+            color=_PLOT_COLORS['text_dark'],
+            y=0.97
+        )
         
         palette = _PLOT_COLORS['factor_palette']
         
@@ -688,10 +703,11 @@ class FactorPlotter:
                 symbol, 
                 fontsize=_PLOT_STYLES['factor_subgrid_title_size'], 
                 fontweight='500', 
-                color=_PLOT_COLORS['text_light']
+                color=_PLOT_COLORS['text_light'],
+                pad=8
             )
             ax.set_xlabel('Date', fontsize=_PLOT_STYLES['factor_subgrid_label_size'], color=_PLOT_COLORS['text_muted'])
-            ax.set_ylabel('Factor Value', fontsize=_PLOT_STYLES['factor_subgrid_label_size'], color=_PLOT_COLORS['text_muted'])
+            ax.set_ylabel('Value', fontsize=_PLOT_STYLES['factor_subgrid_label_size'], color=_PLOT_COLORS['text_muted'])
             ax.grid(
                 True, 
                 alpha=_PLOT_STYLES['factor_grid_alpha_subgrid'], 
@@ -720,7 +736,410 @@ class FactorPlotter:
                 tick_indices = [0, n_dates // 2, n_dates - 1]
                 ax.set_xticks([dates[i] for i in tick_indices])
         
-        for idx in range(n_symbols, len(axes)):
-            axes[idx].set_visible(False)
+        plt.show()
+
+
+class FactorAnalysisPlotter:
+    """Professional factor analysis visualization for quant research.
+    
+    Provides 4 core charts optimized for small asset universes:
+    1. Rolling IC time series (7D, 30D smoothed) with inset histogram
+    2. Cumulative IC - factor alpha trajectory
+    3. IC Decay Curve - optimal holding period analysis
+    4. IC by Symbol Heatmap - per-asset contribution analysis
+    """
+    
+    def __init__(self, analyzer: 'FactorAnalyzer'):
+        self.analyzer = analyzer
+    
+    def plot(self, factor_idx: int = 0, horizon_idx: int = 0, 
+             figsize: tuple = (14, 10), rolling_windows: list = None) -> None:
+        """Generate 4-panel factor analysis chart.
+        
+        Parameters
+        ----------
+        factor_idx : int
+            Index of factor to plot (default first factor)
+        horizon_idx : int  
+            Index of horizon to use (default first horizon)
+        figsize : tuple
+            Figure size
+        rolling_windows : list
+            Windows for rolling IC (default [7, 30])
+        """
+        if factor_idx >= len(self.analyzer.factors):
+            warnings.warn(f"factor_idx={factor_idx} out of range")
+            return
+        
+        if rolling_windows is None:
+            rolling_windows = [7, 30]
+        
+        factor = self.analyzer.factors[factor_idx]
+        horizon = self.analyzer.horizons[horizon_idx]
+        
+        _apply_plot_style()
+        fig = plt.figure(figsize=figsize)
+        fig.subplots_adjust(top=0.92, bottom=0.08, left=0.08, right=0.96, 
+                           hspace=0.35, wspace=0.25)
+        
+        gs = fig.add_gridspec(2, 2)
+        
+        ax_ic_ts = fig.add_subplot(gs[0, 0])
+        ax_cum_ic = fig.add_subplot(gs[0, 1])
+        ax_ic_decay = fig.add_subplot(gs[1, 0])
+        ax_ic_heatmap = fig.add_subplot(gs[1, 1])
+        
+        fig.suptitle(
+            f'{factor.name}  |  {horizon}D Horizon',
+            fontsize=_PLOT_STYLES['title_size'],
+            fontweight='500',
+            color=_PLOT_COLORS['text_dark'],
+            y=0.97
+        )
+        
+        ic_results = self.analyzer.ic()
+        ic_data = ic_results.get(factor.name, {}).get(horizon, {})
+        ic_series = ic_data.get('ic_series', pd.Series(dtype=float))
+        
+        self._plot_ic_timeseries_with_histogram(ax_ic_ts, ic_series, rolling_windows, ic_data)
+        self._plot_cumulative_ic(ax_cum_ic, ic_series, ic_data)
+        self._plot_ic_decay(ax_ic_decay, factor)
+        self._plot_ic_by_symbol(ax_ic_heatmap, factor, horizon)
         
         plt.show()
+    
+    def _plot_ic_timeseries_with_histogram(self, ax, ic_series: pd.Series, 
+                                           rolling_windows: list, ic_data: dict) -> None:
+        """Panel 1: Rolling IC time series with inset histogram."""
+        if ic_series.empty:
+            ax.text(0.5, 0.5, 'No IC Data', transform=ax.transAxes,
+                   ha='center', va='center', fontsize=12, color=_PLOT_COLORS['text_muted'])
+            ax.set_title('Rolling IC', fontsize=_PLOT_STYLES['factor_title_size'],
+                        color=_PLOT_COLORS['text_light'])
+            return
+        
+        colors = ['#94a3b8', '#3b82f6', '#1d4ed8']
+        labels = []
+        
+        for i, window in enumerate(rolling_windows):
+            rolling_ic = ic_series.rolling(window=window, min_periods=1).mean()
+            color = colors[min(i + 1, len(colors) - 1)]
+            alpha = 0.6 + 0.15 * i
+            linewidth = 1.0 + 0.3 * i
+            
+            ax.plot(rolling_ic.index, rolling_ic, 
+                   color=color,
+                   linewidth=linewidth,
+                   alpha=alpha,
+                   label=f'{window}D')
+            labels.append(f'{window}D')
+        
+        ax.axhline(0, color=_PLOT_COLORS['zero_line'], linewidth=0.8, linestyle='-', alpha=0.6)
+        
+        ic_mean = ic_data.get('ic_mean', np.nan)
+        ir = ic_data.get('ir', np.nan)
+        t_stat = ic_data.get('t_stat', np.nan)
+        
+        if not np.isnan(ic_mean):
+            ax.axhline(ic_mean, color=_PLOT_COLORS['benchmark_line'], 
+                      linewidth=1.0, linestyle='--', alpha=0.7)
+        
+        ax.legend(loc='upper left', frameon=False, 
+                 fontsize=_PLOT_STYLES['small_label_size'],
+                 labelcolor=_PLOT_COLORS['text_muted'])
+        
+        stats_text = []
+        if not np.isnan(ic_mean):
+            stats_text.append(f'IC={ic_mean:.4f}')
+        if not np.isnan(ir):
+            stats_text.append(f'IR={ir:.2f}')
+        if not np.isnan(t_stat):
+            stats_text.append(f't={t_stat:.1f}')
+        
+        if stats_text:
+            ax.text(0.98, 0.02, '  '.join(stats_text),
+                   transform=ax.transAxes, ha='right', va='bottom',
+                   fontsize=_PLOT_STYLES['small_label_size'],
+                   color=_PLOT_COLORS['text_info'],
+                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
+                            alpha=0.9, edgecolor=_PLOT_COLORS['grid']))
+        
+        inset_ax = ax.inset_axes([0.72, 0.60, 0.25, 0.35])
+        inset_ax.hist(ic_series.dropna(), bins=20, alpha=0.7, 
+                     color=_PLOT_COLORS['equity_fill'],
+                     edgecolor='none')
+        inset_ax.axvline(0, color=_PLOT_COLORS['zero_line'], linewidth=0.8, alpha=0.6)
+        if not np.isnan(ic_mean):
+            inset_ax.axvline(ic_mean, color=_PLOT_COLORS['benchmark_line'], 
+                           linewidth=1.0, linestyle='--', alpha=0.8)
+        inset_ax.set_facecolor(_PLOT_COLORS['background_subtle'])
+        inset_ax.tick_params(axis='both', labelsize=7, colors=_PLOT_COLORS['text_muted'])
+        for spine in inset_ax.spines.values():
+            spine.set_visible(False)
+        
+        ax.set_title('Rolling IC', 
+                    fontsize=_PLOT_STYLES['factor_title_size'],
+                    color=_PLOT_COLORS['text_light'], pad=10)
+        ax.set_ylabel('IC', fontsize=_PLOT_STYLES['factor_label_size'],
+                     color=_PLOT_COLORS['text_muted'])
+        
+        self._style_subplot(ax)
+    
+    def _plot_cumulative_ic(self, ax, ic_series: pd.Series, ic_data: dict) -> None:
+        """Panel 2: Cumulative IC curve."""
+        if ic_series.empty:
+            ax.text(0.5, 0.5, 'No IC Data', transform=ax.transAxes,
+                   ha='center', va='center', fontsize=12, color=_PLOT_COLORS['text_muted'])
+            ax.set_title('Cumulative IC', fontsize=_PLOT_STYLES['factor_title_size'],
+                        color=_PLOT_COLORS['text_light'])
+            return
+        
+        cum_ic = ic_series.cumsum()
+        
+        ax.fill_between(
+            cum_ic.index, 0, cum_ic,
+            where=(cum_ic >= 0),
+            alpha=0.2, color=_PLOT_COLORS['equity_fill']
+        )
+        ax.fill_between(
+            cum_ic.index, 0, cum_ic,
+            where=(cum_ic < 0),
+            alpha=0.2, color=_PLOT_COLORS['drawdown_fill']
+        )
+        ax.plot(cum_ic.index, cum_ic,
+               color=_PLOT_COLORS['equity_line'],
+               linewidth=_PLOT_STYLES['linewidth'],
+               alpha=0.9)
+        
+        ax.axhline(0, color=_PLOT_COLORS['zero_line'], linewidth=0.8, alpha=0.6)
+        
+        rolling_max = cum_ic.cummax()
+        drawdown = cum_ic - rolling_max
+        max_dd = drawdown.min()
+        max_dd_idx = drawdown.idxmin()
+        
+        if max_dd < 0:
+            dd_start_idx = rolling_max[:max_dd_idx].idxmax()
+            ax.axvspan(dd_start_idx, max_dd_idx, alpha=0.1, color=_PLOT_COLORS['drawdown_fill'])
+        
+        positive_ratio = (ic_series > 0).mean()
+        final_cum_ic = cum_ic.iloc[-1] if len(cum_ic) > 0 else 0
+        
+        ax.text(0.02, 0.98, f'Pos%: {positive_ratio:.1%}\nMax DD: {max_dd:.2f}',
+               transform=ax.transAxes, ha='left', va='top',
+               fontsize=_PLOT_STYLES['small_label_size'],
+               color=_PLOT_COLORS['text_info'],
+               bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
+                        alpha=0.9, edgecolor=_PLOT_COLORS['grid']))
+        
+        ax.set_title(f'Cumulative IC ({final_cum_ic:.2f})', 
+                    fontsize=_PLOT_STYLES['factor_title_size'],
+                    color=_PLOT_COLORS['text_light'], pad=10)
+        ax.set_ylabel('Cumulative IC', fontsize=_PLOT_STYLES['factor_label_size'],
+                     color=_PLOT_COLORS['text_muted'])
+        
+        self._style_subplot(ax)
+    
+    def _plot_ic_decay(self, ax, factor: 'Factor') -> None:
+        """Panel 3: IC Decay Curve across horizons."""
+        decay_horizons = [1, 2, 3, 5, 7, 10, 14, 21, 30]
+        
+        price_pivot = self.analyzer.price.data.pivot(
+            index='timestamp', columns='symbol', values='factor'
+        )
+        factor_pivot = factor.data.pivot(
+            index='timestamp', columns='symbol', values='factor'
+        )
+        
+        ic_by_horizon = []
+        
+        for h in decay_horizons:
+            fwd_ret = price_pivot.shift(-h) / price_pivot - 1
+            aligned_factor, aligned_ret = factor_pivot.align(fwd_ret, join='inner')
+            
+            ic_series = self._compute_ic(aligned_factor, aligned_ret)
+            
+            if len(ic_series) > 0:
+                ic_mean = ic_series.mean()
+                ic_by_horizon.append({'horizon': h, 'ic': ic_mean})
+            else:
+                ic_by_horizon.append({'horizon': h, 'ic': np.nan})
+        
+        df = pd.DataFrame(ic_by_horizon)
+        
+        if df['ic'].isna().all():
+            ax.text(0.5, 0.5, 'No IC Data', transform=ax.transAxes,
+                   ha='center', va='center', fontsize=12, color=_PLOT_COLORS['text_muted'])
+            ax.set_title('IC Decay', fontsize=_PLOT_STYLES['factor_title_size'],
+                        color=_PLOT_COLORS['text_light'])
+            return
+        
+        colors = [_PLOT_COLORS['equity_fill'] if v >= 0 else _PLOT_COLORS['drawdown_fill'] 
+                 for v in df['ic'].fillna(0)]
+        edge_colors = [_PLOT_COLORS['equity_line'] if v >= 0 else _PLOT_COLORS['drawdown_line'] 
+                      for v in df['ic'].fillna(0)]
+        
+        ax.bar(range(len(df)), df['ic'], color=colors, alpha=0.8,
+              edgecolor=edge_colors, linewidth=1.0)
+        ax.set_xticks(range(len(df)))
+        ax.set_xticklabels([str(h) for h in df['horizon']])
+        
+        ax.axhline(0, color=_PLOT_COLORS['zero_line'], linewidth=0.8, alpha=0.6)
+        
+        valid_ics = df.dropna()
+        if len(valid_ics) > 0:
+            max_ic = valid_ics['ic'].max()
+            max_idx = valid_ics['ic'].idxmax()
+            optimal_horizon = valid_ics.loc[max_idx, 'horizon']
+            
+            half_life = None
+            if max_ic > 0:
+                half_target = max_ic / 2
+                for _, row in valid_ics.iterrows():
+                    if row['horizon'] > optimal_horizon and row['ic'] <= half_target:
+                        half_life = row['horizon']
+                        break
+            
+            title_suffix = f'Peak: {optimal_horizon}D'
+            if half_life:
+                title_suffix += f', T½: {half_life}D'
+        else:
+            title_suffix = ''
+        
+        ax.set_title(f'IC Decay ({title_suffix})', 
+                    fontsize=_PLOT_STYLES['factor_title_size'],
+                    color=_PLOT_COLORS['text_light'], pad=10)
+        ax.set_xlabel('Horizon (Days)', fontsize=_PLOT_STYLES['factor_label_size'],
+                     color=_PLOT_COLORS['text_muted'])
+        ax.set_ylabel('IC', fontsize=_PLOT_STYLES['factor_label_size'],
+                     color=_PLOT_COLORS['text_muted'])
+        
+        self._style_subplot(ax)
+    
+    def _plot_ic_by_symbol(self, ax, factor: 'Factor', horizon: int) -> None:
+        """Panel 4: IC contribution by symbol over time."""
+        price_pivot = self.analyzer.price.data.pivot(
+            index='timestamp', columns='symbol', values='factor'
+        )
+        factor_pivot = factor.data.pivot(
+            index='timestamp', columns='symbol', values='factor'
+        )
+        
+        fwd_ret = price_pivot.shift(-horizon) / price_pivot - 1
+        aligned_factor, aligned_ret = factor_pivot.align(fwd_ret, join='inner')
+        
+        symbols = sorted(aligned_factor.columns)
+        
+        monthly_ic = {}
+        
+        for symbol in symbols:
+            f_col = aligned_factor[symbol]
+            r_col = aligned_ret[symbol]
+            
+            valid_mask = f_col.notna() & r_col.notna()
+            f_valid = f_col[valid_mask]
+            r_valid = r_col[valid_mask]
+            
+            if len(f_valid) < 10:
+                continue
+            
+            symbol_df = pd.DataFrame({'factor': f_valid, 'return': r_valid})
+            symbol_df['month'] = symbol_df.index.to_period('M')
+            
+            monthly_contrib = {}
+            for month, group in symbol_df.groupby('month'):
+                if len(group) >= 3:
+                    f_rank = group['factor'].rank()
+                    r_rank = group['return'].rank()
+                    corr = f_rank.corr(r_rank)
+                    monthly_contrib[month] = corr
+            
+            if monthly_contrib:
+                monthly_ic[symbol] = monthly_contrib
+        
+        if not monthly_ic:
+            ax.text(0.5, 0.5, 'Insufficient Data', transform=ax.transAxes,
+                   ha='center', va='center', fontsize=12, color=_PLOT_COLORS['text_muted'])
+            ax.set_title('IC by Symbol', fontsize=_PLOT_STYLES['factor_title_size'],
+                        color=_PLOT_COLORS['text_light'])
+            return
+        
+        ic_df = pd.DataFrame(monthly_ic).T
+        ic_df = ic_df.reindex(sorted(ic_df.index))
+        
+        if ic_df.shape[1] > 12:
+            ic_df = ic_df.iloc[:, -12:]
+        
+        from matplotlib.colors import TwoSlopeNorm
+        
+        vmax = max(abs(ic_df.min().min()), abs(ic_df.max().max()), 0.3)
+        norm = TwoSlopeNorm(vmin=-vmax, vcenter=0, vmax=vmax)
+        
+        im = ax.imshow(ic_df.values, aspect='auto', cmap='RdBu_r', norm=norm)
+        
+        ax.set_yticks(range(len(ic_df.index)))
+        ax.set_yticklabels(ic_df.index)
+        
+        n_cols = len(ic_df.columns)
+        if n_cols <= 6:
+            ax.set_xticks(range(n_cols))
+            ax.set_xticklabels([str(c) for c in ic_df.columns], rotation=45, ha='right')
+        else:
+            step = max(1, n_cols // 6)
+            ax.set_xticks(range(0, n_cols, step))
+            ax.set_xticklabels([str(ic_df.columns[i]) for i in range(0, n_cols, step)], 
+                              rotation=45, ha='right')
+        
+        cbar = plt.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
+        cbar.ax.tick_params(labelsize=8, colors=_PLOT_COLORS['text_muted'])
+        
+        ax.set_title('IC by Symbol (Monthly)', 
+                    fontsize=_PLOT_STYLES['factor_title_size'],
+                    color=_PLOT_COLORS['text_light'], pad=10)
+        
+        ax.tick_params(axis='both', which='major',
+                      labelsize=_PLOT_STYLES['factor_tick_size'],
+                      colors=_PLOT_COLORS['text_muted'])
+    
+    def _compute_ic(self, factor_pivot: pd.DataFrame, ret_pivot: pd.DataFrame) -> pd.Series:
+        """Compute IC series using Spearman correlation."""
+        f_data = factor_pivot.rank(axis=1, na_option='keep')
+        r_data = ret_pivot.rank(axis=1, na_option='keep')
+        
+        valid_mask = factor_pivot.notna() & ret_pivot.notna()
+        valid_count = valid_mask.sum(axis=1)
+        
+        f_std = f_data.std(axis=1, skipna=True)
+        r_std = r_data.std(axis=1, skipna=True)
+        std_valid = (f_std > 1e-10) & (r_std > 1e-10) & (valid_count >= 3)
+        
+        f_demean = f_data.sub(f_data.mean(axis=1, skipna=True), axis=0)
+        r_demean = r_data.sub(r_data.mean(axis=1, skipna=True), axis=0)
+        
+        numer = (f_demean * r_demean).sum(axis=1, skipna=True)
+        denom = (f_demean.pow(2).sum(axis=1, skipna=True) * 
+                 r_demean.pow(2).sum(axis=1, skipna=True)).pow(0.5)
+        
+        ic = numer / denom
+        ic = ic[std_valid]
+        
+        return ic.dropna()
+    
+    def _style_subplot(self, ax) -> None:
+        """Apply consistent styling to subplot."""
+        ax.set_facecolor(_PLOT_COLORS['white'])
+        ax.grid(True, alpha=_PLOT_STYLES['grid_alpha'], 
+               color=_PLOT_COLORS['grid'],
+               linestyle='-', linewidth=_PLOT_STYLES['grid_width'])
+        
+        for spine in ['top', 'right']:
+            ax.spines[spine].set_visible(False)
+        for spine in ['bottom', 'left']:
+            ax.spines[spine].set_color(_PLOT_STYLES['spine_color'])
+            ax.spines[spine].set_linewidth(_PLOT_STYLES['spine_width'])
+        
+        ax.tick_params(axis='both', which='major',
+                      labelsize=_PLOT_STYLES['factor_tick_size'],
+                      colors=_PLOT_COLORS['text_muted'],
+                      width=0.5, length=3)
+

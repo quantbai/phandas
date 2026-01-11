@@ -244,6 +244,32 @@ class FactorAnalyzer:
         print(self.summary())
         return self
     
+    def plot(self, factor_idx: int = 0, horizon_idx: int = 0,
+             figsize: tuple = (14, 10), rolling_window: int = 20) -> 'FactorAnalyzer':
+        """Generate 4-panel factor analysis chart.
+        
+        Parameters
+        ----------
+        factor_idx : int
+            Index of factor to plot (default first factor)
+        horizon_idx : int
+            Index of horizon to use (default first horizon)
+        figsize : tuple
+            Figure size
+        rolling_window : int
+            Window for rolling IC calculation
+            
+        Returns
+        -------
+        FactorAnalyzer
+            Self for method chaining
+        """
+        from .plot import FactorAnalysisPlotter
+        plotter = FactorAnalysisPlotter(self)
+        plotter.plot(factor_idx=factor_idx, horizon_idx=horizon_idx,
+                    figsize=figsize, rolling_window=rolling_window)
+        return self
+    
     def __repr__(self) -> str:
         factor_names = [f.name for f in self.factors]
         return f"FactorAnalyzer(factors={factor_names}, horizons={self.horizons})"

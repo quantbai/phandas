@@ -34,6 +34,8 @@ from .operators import (
     add, multiply, subtract, divide, reverse, where,
     
     show, to_csv, to_df,
+    
+    crowding, ic, turnover, autocorr, pnl, rolling_sharpe, drawdown,
 )
 
 __all__ = [
@@ -66,4 +68,6 @@ __all__ = [
     'add', 'multiply', 'subtract', 'divide', 'reverse', 'where',
     
     'show', 'to_csv', 'to_df',
+    
+    'crowding', 'ic', 'turnover', 'autocorr', 'pnl', 'rolling_sharpe', 'drawdown',
 ]

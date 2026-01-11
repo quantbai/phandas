@@ -11,6 +11,7 @@ The Factor class is composed of multiple Mixins:
 - GroupMixin: Group operators (group_neutralize, group_rank...)
 - ArithmeticMixin: Arithmetic and comparison operators (+, -, *, /, power...)
 - IOMixin: Input/output and utility methods (to_df, show, info...)
+- MetricsMixin: Factor metrics (crowding, ic, turnover, autocorr...)
 """
 
 from .base import FactorBase
@@ -20,6 +21,7 @@ from .neutralization import NeutralizationMixin
 from .group import GroupMixin
 from .arithmetic import ArithmeticMixin
 from .io import IOMixin
+from .metrics import MetricsMixin
 
 
 class Factor(
@@ -29,7 +31,8 @@ class Factor(
     NeutralizationMixin,
     GroupMixin,
     ArithmeticMixin,
-    IOMixin
+    IOMixin,
+    MetricsMixin
 ):
     """Factor matrix for quantitative analysis.
     
