@@ -12,7 +12,7 @@ from .backtest import backtest, Backtester
 
 from .analysis import analyze, FactorAnalyzer
 
-from .trader import rebalance, twap_rebalance, Rebalancer, OKXTrader
+from .trader import rebalance, twap_rebalance, twap_close_all, close_all, Rebalancer, OKXTrader
 
 from .operators import (
     vector_neut, regression_neut,
@@ -47,7 +47,7 @@ __all__ = [
 
     'analyze', 'FactorAnalyzer',
 
-    'rebalance', 'twap_rebalance', 'Rebalancer', 'OKXTrader',
+    'rebalance', 'twap_rebalance', 'twap_close_all', 'close_all', 'Rebalancer', 'OKXTrader',
 
     'vector_neut', 'regression_neut',
     

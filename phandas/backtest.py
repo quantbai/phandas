@@ -4,7 +4,7 @@ import warnings
 import pandas as pd
 import numpy as np
 from typing import TYPE_CHECKING, Union, Tuple, Dict, List, Optional
-from scipy.stats import linregress, skew, kurtosis, norm
+from scipy.stats import linregress
 
 if TYPE_CHECKING:
     from .core import Factor
@@ -68,31 +68,19 @@ def _calculate_performance_metrics(returns: pd.Series, risk_free_rate: float = 0
     rolling_max = equity.expanding().max()
     drawdown = equity / rolling_max - 1
     max_drawdown = drawdown.min()
-    calmar = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0
     
     t = np.arange(len(equity))
     r_value = linregress(t, equity.values)[2]
     linearity = r_value ** 2
-    
-    downside_returns = returns[returns < 0]
-    downside_vol = downside_returns.std() * np.sqrt(annualization_factor) if len(downside_returns) > 0 else 0
-    sortino = (annual_return - risk_free_rate) / downside_vol if downside_vol > 0 else 0
-    
-    var_95 = returns.quantile(0.05)
-    cvar = returns[returns <= var_95].mean() if (returns <= var_95).any() else 0
     
     return {
         'total_return': total_return,
         'annual_return': annual_return,
         'annual_volatility': annual_vol,
         'sharpe_ratio': sharpe,
-        'sortino_ratio': sortino,
-        'calmar_ratio': calmar,
         'max_drawdown': max_drawdown,
         'linearity': linearity,
         'drawdown_periods': _identify_drawdown_periods(equity),
-        'var_95': var_95,
-        'cvar': cvar,
     }
 
 
@@ -170,13 +158,11 @@ class Backtester:
         strategy_factor: 'Factor',
         transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
         initial_capital: float = 1000,
-        full_rebalance: bool = False,
-        neutralization: str = "market"
+        full_rebalance: bool = False
     ):
         self.entry_price_factor = entry_price_factor
-        self.strategy_factor = strategy_factor
+        self.strategy_factor = strategy_factor.signal()
         self.full_rebalance = full_rebalance
-        self.neutralization = neutralization.lower()
         
         if isinstance(transaction_cost, (list, tuple)):
             self.transaction_cost_rates = tuple(transaction_cost)
@@ -187,7 +173,7 @@ class Backtester:
         self.metrics = {}
         
         self._price_cache = self._build_date_cache(entry_price_factor)
-        self._strategy_cache = self._build_date_cache(strategy_factor)
+        self._strategy_cache = self._build_date_cache(self.strategy_factor)
     
     def run(self) -> 'Backtester':
         price_dates = set(self.entry_price_factor.data['timestamp'].unique())
@@ -206,6 +192,8 @@ class Backtester:
             'date': initial_date,
             'total_value': self.portfolio.initial_capital,
         })
+        
+        last_valid_prices = {}
 
         for i in range(start_idx, len(common_dates)):
             current_date = common_dates[i]
@@ -213,34 +201,77 @@ class Backtester:
             
             try:
                 current_prices = self._get_factor_data(self.entry_price_factor, current_date)
-                if current_prices.empty:
+                valid_prices = current_prices.dropna()
+                
+                if valid_prices.empty:
                     continue
                 
-                self.portfolio.update_market_value(current_date, current_prices)
+                for symbol, price in valid_prices.items():
+                    last_valid_prices[symbol] = price
+                
+                nan_symbols = set(current_prices.index) - set(valid_prices.index)
+                if nan_symbols:
+                    for symbol in nan_symbols:
+                        if symbol in self.portfolio.positions and symbol in last_valid_prices:
+                            self.portfolio.execute_trade(
+                                symbol, -self.portfolio.positions[symbol],
+                                last_valid_prices[symbol],
+                                self.transaction_cost_rates, current_date)
+                
+                self.portfolio.update_market_value(current_date, valid_prices)
                 if not prev_date:
                     continue
                 
                 strategy_factors = self._get_factor_data(self.strategy_factor, prev_date)
+                
+                if nan_symbols:
+                    strategy_factors = self._resignal_excluding(strategy_factors, nan_symbols)
+                
                 target_holdings = self._calculate_target_holdings(strategy_factors, prev_date)
                 
                 if self.full_rebalance:
                     for symbol in list(self.portfolio.positions.keys()):
-                        if symbol in current_prices.index:
+                        if symbol in valid_prices.index:
                             self.portfolio.execute_trade(
                                 symbol, -self.portfolio.positions[symbol], 
-                                current_prices.loc[symbol],
+                                valid_prices.loc[symbol],
                                 self.transaction_cost_rates, current_date)
-                    self.portfolio.update_market_value(current_date, current_prices)
+                    self.portfolio.update_market_value(current_date, valid_prices)
                 
-                for symbol, quantity in self._generate_orders(target_holdings, current_prices).items():
-                    if symbol in current_prices.index:
-                        self.portfolio.execute_trade(symbol, quantity, current_prices.loc[symbol], 
+                for symbol, quantity in self._generate_orders(target_holdings, valid_prices).items():
+                    if symbol in valid_prices.index:
+                        self.portfolio.execute_trade(symbol, quantity, valid_prices.loc[symbol], 
                                                     self.transaction_cost_rates, current_date)
             except Exception as e:
                 warnings.warn(f"Error on {current_date}: {e}")
                 continue
         
         return self
+    
+    def _resignal_excluding(self, factors: pd.Series, exclude_symbols: set) -> pd.Series:
+        """Re-calculate signal weights excluding specified symbols.
+        
+        When a symbol has no price (NaN), its factor is set to 0 and weights
+        are redistributed among remaining symbols to maintain dollar-neutral.
+        """
+        adjusted = factors.copy()
+        for symbol in exclude_symbols:
+            if symbol in adjusted.index:
+                adjusted.loc[symbol] = 0.0
+        
+        valid_data = adjusted[adjusted != 0]
+        if len(valid_data) < 2:
+            return pd.Series(0.0, index=factors.index)
+        
+        demeaned = valid_data - valid_data.mean()
+        abs_sum = np.abs(demeaned).sum()
+        
+        if abs_sum < 1e-10:
+            return pd.Series(0.0, index=factors.index)
+        
+        result = pd.Series(0.0, index=factors.index)
+        result[valid_data.index] = demeaned / abs_sum
+        return result
     
     def calculate_metrics(self, risk_free_rate: float = 0.03) -> 'Backtester':
         history = self.portfolio.get_history_df()
@@ -252,54 +283,16 @@ class Backtester:
         daily_returns = equity_curve.pct_change().dropna()
         
         self.metrics = _calculate_performance_metrics(daily_returns, risk_free_rate, annualization_factor=365)
-        psr = self._calculate_psr(daily_returns) if not daily_returns.empty else 0
-        self.metrics['psr'] = psr
         
         return self
-    
-    def _calculate_psr(self, daily_returns: pd.Series, sr_benchmark: float = 0.0) -> float:
-        if len(daily_returns) < 2:
-            return 0.0
-        
-        std = daily_returns.std()
-        sr_obs = (daily_returns.mean() * 365) / (std * np.sqrt(365)) if std > 0 else 0
-        
-        T = len(daily_returns)
-        adjustment = np.sqrt(1 - skew(daily_returns) * sr_obs + 
-                           ((kurtosis(daily_returns, fisher=False) - 1) / 4) * sr_obs ** 2)
-        psr_stat = (sr_obs - sr_benchmark) / adjustment * np.sqrt(T / 365)
-        psr = norm.cdf(psr_stat)
-        return float(np.clip(psr, 0.0, 1.0))
 
 
     def _build_date_cache(self, factor: 'Factor') -> dict:
+        """Build date-indexed cache for fast factor data lookup."""
         cache = {}
-        first_valid_date = None
-        skipped_dates = []
-        
-        all_dates = sorted(factor.data['timestamp'].unique())
-        
-        for date in all_dates:
+        for date in factor.data['timestamp'].unique():
             group = factor.data[factor.data['timestamp'] == date]
-            series = group.set_index('symbol')['factor']
-            
-            if not series.isna().any():
-                cache[date] = series
-                if first_valid_date is None:
-                    first_valid_date = date
-            else:
-                if first_valid_date is not None:
-                    nan_symbols = series[series.isna()].index.tolist()
-                    skipped_dates.append((date, nan_symbols))
-        
-        if skipped_dates:
-            print(f"Skipped {len(skipped_dates)} dates with NaN (strategy='{factor.name}'):")
-            for date, symbols in skipped_dates[:10]:
-                date_str = pd.Timestamp(date).strftime(_DATE_FORMAT)
-                print(f"  - {date_str}: {symbols}")
-            if len(skipped_dates) > 10:
-                print(f"  ... and {len(skipped_dates) - 10} more")
-        
+            cache[date] = group.set_index('symbol')['factor']
         return cache
     
     def _get_factor_data(self, factor: 'Factor', date) -> pd.Series:
@@ -320,23 +313,16 @@ class Backtester:
             strategy_data = self._get_factor_data(self.strategy_factor, prev_date)
             price_data = self._get_factor_data(self.entry_price_factor, date)
             
-            if not strategy_data.empty and not price_data.empty:
+            if strategy_data.empty or price_data.empty:
+                continue
+            
+            if (strategy_data.abs() > 1e-10).any():
                 return i
-        raise ValueError("No valid start date found with overlapping data")
+        
+        raise ValueError("No valid start date found with non-zero signal")
     
     def _calculate_target_holdings(self, factors: pd.Series, date=None) -> pd.Series:
-        if self.neutralization == "none":
-            return factors * self.portfolio.total_value
-        
-        if self.strategy_factor._is_signal(date):
-            return factors * self.portfolio.total_value
-        
-        demeaned = factors - factors.mean()
-        abs_sum = np.abs(demeaned).sum()
-        if abs_sum < 1e-10:
-            return pd.Series(0.0, index=factors.index)
-        
-        return (demeaned / abs_sum) * self.portfolio.total_value
+        return factors * self.portfolio.total_value
     
     def _generate_orders(self, target_holdings: pd.Series, prices: pd.Series) -> pd.Series:
         current_holdings = self.portfolio.holdings
@@ -372,11 +358,8 @@ class Backtester:
         lines = [
             f"Backtester(strategy='{name}', period={start} to {end})",
             f"  total_return:   {m.get('total_return', 0):>8.2%}    annual_return:  {m.get('annual_return', 0):>8.2%}",
-            f"  sharpe_ratio:   {m.get('sharpe_ratio', 0):>8.2f}    sortino_ratio:  {m.get('sortino_ratio', 0):>8.2f}",
-            f"  calmar_ratio:   {m.get('calmar_ratio', 0):>8.2f}    max_drawdown:   {m.get('max_drawdown', 0):>8.2%}",
-            f"  linearity:      {m.get('linearity', 0):>8.4f}    psr:            {m.get('psr', 0):>8.1%}",
-            f"  var_95:         {m.get('var_95', 0):>8.2%}    cvar:           {m.get('cvar', 0):>8.2%}",
-            f"  turnover:       {avg_turnover:>8.2%}",
+            f"  sharpe_ratio:   {m.get('sharpe_ratio', 0):>8.2f}    max_drawdown:   {m.get('max_drawdown', 0):>8.2%}",
+            f"  linearity:      {m.get('linearity', 0):>8.4f}    turnover:       {avg_turnover:>8.2%}",
         ]
         
         return "\n".join(lines)
@@ -401,11 +384,8 @@ class Backtester:
         m = self.metrics
         print(f"Backtester(strategy='{name}', period={start} to {end})")
         print(f"  total_return:   {m.get('total_return', 0):>8.2%}    annual_return:  {m.get('annual_return', 0):>8.2%}")
-        print(f"  sharpe_ratio:   {m.get('sharpe_ratio', 0):>8.2f}    sortino_ratio:  {m.get('sortino_ratio', 0):>8.2f}")
-        print(f"  calmar_ratio:   {m.get('calmar_ratio', 0):>8.2f}    max_drawdown:   {m.get('max_drawdown', 0):>8.2%}")
-        print(f"  linearity:      {m.get('linearity', 0):>8.4f}    psr:            {m.get('psr', 0):>8.1%}")
-        print(f"  var_95:         {m.get('var_95', 0):>8.2%}    cvar:           {m.get('cvar', 0):>8.2%}")
-        print(f"  turnover:       {avg_turnover:>8.2%}")
+        print(f"  sharpe_ratio:   {m.get('sharpe_ratio', 0):>8.2f}    max_drawdown:   {m.get('max_drawdown', 0):>8.2%}")
+        print(f"  linearity:      {m.get('linearity', 0):>8.4f}    turnover:       {avg_turnover:>8.2%}")
         
         return self
     
@@ -439,8 +419,12 @@ class Backtester:
         if prices_first is None or prices_first.empty:
             return pd.Series(dtype=float)
         
-        alloc_per_asset = self.portfolio.initial_capital / len(prices_first)
-        holdings = {s: alloc_per_asset / prices_first[s] for s in prices_first.index}
+        valid_prices_first = prices_first.dropna()
+        if valid_prices_first.empty:
+            return pd.Series(dtype=float)
+        
+        alloc_per_asset = self.portfolio.initial_capital / len(valid_prices_first)
+        holdings = {s: alloc_per_asset / valid_prices_first[s] for s in valid_prices_first.index}
         
         values, dates = [], []
         for date in sorted(self._price_cache.keys()):
@@ -449,8 +433,11 @@ class Backtester:
             prices = self._price_cache[date]
             if prices.empty:
                 continue
-            values.append(sum(holdings[s] * prices[s] for s in holdings if s in prices.index))
-            dates.append(date)
+            valid_prices = prices.dropna()
+            portfolio_value = sum(holdings[s] * valid_prices[s] for s in holdings if s in valid_prices.index)
+            if portfolio_value > 0:
+                values.append(portfolio_value)
+                dates.append(date)
         
         return pd.Series(values, index=pd.DatetimeIndex(dates))
     
@@ -536,11 +523,10 @@ def backtest(
     transaction_cost: Union[float, Tuple[float, float]] = (0.0003, 0.0003),
     initial_capital: float = 1000,
     full_rebalance: bool = False,
-    neutralization: str = "market",
     auto_run: bool = True
 ) -> Backtester:
     bt = Backtester(entry_price_factor, strategy_factor, transaction_cost, initial_capital, 
-                   full_rebalance, neutralization)
+                   full_rebalance)
     
     if auto_run:
         bt.run().calculate_metrics()

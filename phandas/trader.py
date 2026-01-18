@@ -1086,9 +1086,11 @@ def twap_rebalance(
             symbol = pos_data['symbol'].split('-')[0]
             current_holdings[symbol] = pos_data['notional_usd']
         
+        all_symbols = set(target_weights.keys()) | set(current_holdings.keys())
+        
         deltas = {}
-        for symbol, weight in target_weights.items():
-            target_usd = weight * budget
+        for symbol in all_symbols:
+            target_usd = target_weights.get(symbol, 0.0) * budget
             current_usd = current_holdings.get(symbol, 0.0)
             deltas[symbol] = target_usd - current_usd
         
@@ -1306,3 +1308,79 @@ def twap_rebalance(
         'total_filled': total_filled,
         'execution_log': execution_log
     }
+
+
+def twap_close_all(
+    trader: OKXTrader,
+    budget: float,
+    symbol_suffix: str = '-USDT-SWAP',
+    chunk_size: float = 1000.0,
+    interval_seconds: int = 60,
+    preview: bool = True
+) -> Dict:
+    """
+    TWAP close all positions.
+    
+    Equivalent to twap_rebalance with target_weights={}.
+    Closes all positions gradually using TWAP algorithm.
+    
+    Parameters
+    ----------
+    trader : OKXTrader
+        OKXTrader instance
+    budget : float
+        Current account equity (used for delta calculation)
+    symbol_suffix : str
+        Symbol suffix (default: '-USDT-SWAP')
+    chunk_size : float
+        Maximum total delta per round in USD (default: 1000)
+    interval_seconds : int
+        Wait time between rounds in seconds (default: 60)
+    preview : bool
+        Show plan and wait for confirmation (default: True)
+    
+    Returns
+    -------
+    Dict
+        Execution report with round-by-round details
+    """
+    return twap_rebalance(
+        target_weights={},
+        trader=trader,
+        budget=budget,
+        symbol_suffix=symbol_suffix,
+        chunk_size=chunk_size,
+        interval_seconds=interval_seconds,
+        preview=preview
+    )
+
+
+def close_all(
+    trader: OKXTrader,
+    symbol_suffix: str = '-USDT-SWAP',
+    mgn_mode: str = 'cross'
+) -> Dict:
+    """
+    Emergency close all positions immediately at market price.
+    
+    WARNING: This executes market orders immediately without TWAP.
+    Use twap_close_all for large positions to minimize slippage.
+    
+    Parameters
+    ----------
+    trader : OKXTrader
+        OKXTrader instance
+    symbol_suffix : str
+        Symbol suffix filter (default: '-USDT-SWAP')
+    mgn_mode : str
+        Margin mode (default: 'cross')
+    
+    Returns
+    -------
+    Dict
+        Close results with status and details
+    """
+    return trader.close_all_positions(
+        mgn_mode=mgn_mode,
+        symbol_suffix=symbol_suffix
+    )

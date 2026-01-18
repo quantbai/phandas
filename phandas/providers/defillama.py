@@ -3,8 +3,6 @@
 Fetches on-chain metrics by blockchain including:
 - Total Value Locked (TVL)
 - Stablecoin supply
-- DEX trading volume
-- Protocol fees and revenue
 """
 
 import warnings
@@ -38,8 +36,7 @@ def fetch_defillama(
     Returns
     -------
     pd.DataFrame or None
-        Columns: timestamp, symbol, defillama_tvl, defillama_stablecoin_supply,
-                 defillama_dex_volume, defillama_fees, defillama_revenue
+        Columns: timestamp, symbol, defillama_tvl, defillama_stablecoin_supply
     
     Notes
     -----
@@ -68,22 +65,10 @@ def fetch_defillama(
     
     for chain, chain_symbols in chains_to_fetch.items():
         tvl_df = _fetch_tvl(api_client, chain, start_date, end_date)
-        dex_df = _fetch_dex_volume(api_client, chain, start_date, end_date)
-        fees_df = _fetch_fees_revenue(api_client, chain, start_date, end_date)
         
         for symbol in chain_symbols:
             if tvl_df is not None:
                 df = tvl_df.copy()
-                df["symbol"] = symbol
-                all_dfs.append(df)
-            
-            if dex_df is not None:
-                df = dex_df.copy()
-                df["symbol"] = symbol
-                all_dfs.append(df)
-            
-            if fees_df is not None:
-                df = fees_df.copy()
                 df["symbol"] = symbol
                 all_dfs.append(df)
     
@@ -183,118 +168,6 @@ def _fetch_tvl(
         warnings.warn(f"Failed to fetch TVL for {chain}: {e}")
         return None
 
-
-def _fetch_dex_volume(
-    client: RestClient,
-    chain: str,
-    start_date: Optional[str],
-    end_date: Optional[str],
-) -> Optional[pd.DataFrame]:
-    """Fetch historical DEX trading volume for a chain."""
-    try:
-        params = {
-            "excludeTotalDataChart": "false",
-            "excludeTotalDataChartBreakdown": "true",
-        }
-        
-        data = client.get(f"/overview/dexs/{chain.lower()}", params)
-        
-        if not data:
-            return None
-        
-        chart_data = data.get("totalDataChart", [])
-        
-        if not chart_data:
-            return None
-        
-        records = []
-        for entry in chart_data:
-            if isinstance(entry, list) and len(entry) >= 2:
-                records.append({
-                    "timestamp": pd.to_datetime(int(entry[0]), unit="s"),
-                    "defillama_dex_volume": entry[1],
-                })
-        
-        if not records:
-            return None
-        
-        df = pd.DataFrame(records)
-        return _filter_date_range(df, start_date, end_date)
-        
-    except Exception as e:
-        warnings.warn(f"Failed to fetch DEX volume for {chain}: {e}")
-        return None
-
-
-def _fetch_fees_revenue(
-    client: RestClient,
-    chain: str,
-    start_date: Optional[str],
-    end_date: Optional[str],
-) -> Optional[pd.DataFrame]:
-    """Fetch historical fees and revenue for a chain."""
-    base_params = {
-        "excludeTotalDataChart": "false",
-        "excludeTotalDataChartBreakdown": "true",
-    }
-    
-    fees_df = _fetch_chart_metric(
-        client,
-        f"/overview/fees/{chain.lower()}",
-        {**base_params, "dataType": "dailyFees"},
-        "defillama_fees",
-    )
-    
-    revenue_df = _fetch_chart_metric(
-        client,
-        f"/overview/fees/{chain.lower()}",
-        {**base_params, "dataType": "dailyRevenue"},
-        "defillama_revenue",
-    )
-    
-    if fees_df is None and revenue_df is None:
-        return None
-    
-    if fees_df is not None and revenue_df is not None:
-        df = pd.merge(fees_df, revenue_df, on="timestamp", how="outer")
-    elif fees_df is not None:
-        df = fees_df
-    else:
-        df = revenue_df
-    
-    return _filter_date_range(df, start_date, end_date)
-
-
-def _fetch_chart_metric(
-    client: RestClient,
-    endpoint: str,
-    params: dict,
-    column_name: str,
-) -> Optional[pd.DataFrame]:
-    """Fetch a single chart metric from DefiLlama."""
-    try:
-        data = client.get(endpoint, params)
-        
-        if not data:
-            return None
-        
-        chart = data.get("totalDataChart", [])
-        
-        if not chart:
-            return None
-        
-        records = []
-        for entry in chart:
-            if isinstance(entry, list) and len(entry) >= 2:
-                records.append({
-                    "timestamp": pd.to_datetime(int(entry[0]), unit="s"),
-                    column_name: entry[1],
-                })
-        
-        return pd.DataFrame(records) if records else None
-        
-    except Exception:
-        return None
 
 
 def _filter_date_range(

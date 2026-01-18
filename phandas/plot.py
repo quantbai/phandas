@@ -95,13 +95,8 @@ _TEXT_LABELS = {
     'total_return': 'Total Return',
     'annual_return': 'Annual Return',
     'sharpe': 'Sharpe Ratio',
-    'psr': 'PSR',
-    'sortino': 'Sortino Ratio',
-    'calmar': 'Calmar Ratio',
     'linearity': 'Linearity',
     'max_dd': 'Max Drawdown',
-    'var_95': 'VaR 95%',
-    'cvar': 'CVaR',
     'turnover': 'Annual Turnover',
     'corr_matrix': 'Correlation Matrix',
     'weights': 'Strategy Weights',
@@ -354,33 +349,21 @@ class BacktestPlotter:
         risk_free_rate = 0.03
         bmk_sharpe = (bmk_annual_return - risk_free_rate) / bmk_annual_vol if bmk_annual_vol > 0 else 0
         
-        downside_returns = benchmark_returns[benchmark_returns < 0]
-        downside_vol = downside_returns.std() * np.sqrt(365) if len(downside_returns) > 0 else 0
-        bmk_sortino = (bmk_annual_return - risk_free_rate) / downside_vol if downside_vol > 0 else 0
-        
         rolling_max = benchmark_norm.cummax()
         drawdown = benchmark_norm / rolling_max - 1
         bmk_max_dd = drawdown.min()
-        bmk_calmar = bmk_annual_return / abs(bmk_max_dd) if bmk_max_dd < 0 else 0
         
         from scipy.stats import linregress
         t = np.arange(len(benchmark_norm))
         r_value = linregress(t, benchmark_norm.values)[2]
         bmk_linearity = r_value ** 2
         
-        bmk_var_95 = benchmark_returns.quantile(0.05)
-        bmk_cvar = benchmark_returns[benchmark_returns <= bmk_var_95].mean() if (benchmark_returns <= bmk_var_95).any() else 0
-        
         return {
             'bmk_total_return': bmk_total_return,
             'bmk_annual_return': bmk_annual_return,
             'bmk_sharpe': bmk_sharpe,
-            'bmk_sortino': bmk_sortino,
-            'bmk_calmar': bmk_calmar,
             'bmk_linearity': bmk_linearity,
             'bmk_max_drawdown': bmk_max_dd,
-            'bmk_var_95': bmk_var_95,
-            'bmk_cvar': bmk_cvar,
         }
     
     def plot_equity(self, figsize: tuple = (14, 7.5), show_summary: bool = True, 
@@ -485,19 +468,10 @@ class BacktestPlotter:
                          f"{benchmark_metrics.get('bmk_annual_return', 0):.2%}"),
                         (texts['sharpe'], f"{metrics.get('sharpe_ratio', 0):.2f}", 
                          f"{benchmark_metrics.get('bmk_sharpe', 0):.2f}"),
-                        (texts['psr'], f"{metrics.get('psr', 0):.1%}", '-'),
-                        (texts['sortino'], f"{metrics.get('sortino_ratio', 0):.2f}", 
-                         f"{benchmark_metrics.get('bmk_sortino', 0):.2f}"),
-                        (texts['calmar'], f"{metrics.get('calmar_ratio', 0):.2f}", 
-                         f"{benchmark_metrics.get('bmk_calmar', 0):.2f}"),
                         (texts['linearity'], f"{metrics.get('linearity', 0):.4f}", 
                          f"{benchmark_metrics.get('bmk_linearity', 0):.4f}"),
                         (texts['max_dd'], f"{metrics.get('max_drawdown', 0):.2%}", 
                          f"{benchmark_metrics.get('bmk_max_drawdown', 0):.2%}"),
-                        (texts['var_95'], f"{metrics.get('var_95', 0):.2%}", 
-                         f"{benchmark_metrics.get('bmk_var_95', 0):.2%}"),
-                        (texts['cvar'], f"{metrics.get('cvar', 0):.2%}", 
-                         f"{benchmark_metrics.get('bmk_cvar', 0):.2%}"),
                         (texts['turnover'], f"{avg_turnover:.2%}", '-'),
                     ])
             else:
@@ -510,13 +484,8 @@ class BacktestPlotter:
                         (texts['total_return'], f"{metrics.get('total_return', 0):.2%}"),
                         (texts['annual_return'], f"{metrics.get('annual_return', 0):.2%}"),
                         (texts['sharpe'], f"{metrics.get('sharpe_ratio', 0):.2f}"),
-                        (texts['psr'], f"{metrics.get('psr', 0):.1%}"),
-                        (texts['sortino'], f"{metrics.get('sortino_ratio', 0):.2f}"),
-                        (texts['calmar'], f"{metrics.get('calmar_ratio', 0):.2f}"),
                         (texts['linearity'], f"{metrics.get('linearity', 0):.4f}"),
                         (texts['max_dd'], f"{metrics.get('max_drawdown', 0):.2%}"),
-                        (texts['var_95'], f"{metrics.get('var_95', 0):.2%}"),
-                        (texts['cvar'], f"{metrics.get('cvar', 0):.2%}"),
                         (texts['turnover'], f"{avg_turnover:.2%}"),
                     ])
             

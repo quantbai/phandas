@@ -283,14 +283,21 @@ class CrossSectionalMixin:
         result = self.data.copy()
         
         def to_dn_signal(group):
-            if group.isna().any():
-                return pd.Series(np.nan, index=group.index)
+            valid_mask = ~group.isna()
+            valid_data = group[valid_mask]
             
-            demeaned = group - group.mean()
+            if len(valid_data) < 2:
+                return pd.Series(0.0, index=group.index)
+            
+            demeaned = valid_data - valid_data.mean()
             abs_sum = np.abs(demeaned).sum()
+            
             if abs_sum < 1e-10:
-                return pd.Series(np.nan, index=group.index)
-            return demeaned / abs_sum
+                return pd.Series(0.0, index=group.index)
+            
+            result = pd.Series(0.0, index=group.index)
+            result[valid_mask] = demeaned / abs_sum
+            return result
         
         result['factor'] = result.groupby('timestamp', group_keys=False)['factor'].transform(to_dn_signal)
         return Factor(result, f"signal({self.name})")

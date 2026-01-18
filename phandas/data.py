@@ -63,9 +63,9 @@ def fetch_data(
     
     Notes
     -----
-    - Alternative data sources (okx, defillama) are aligned to Binance's date range
-    - Missing values are forward-filled within each symbol's time series
-    - Data is sorted by (timestamp, symbol) with common start date across symbols
+    - Alternative data sources (okx, defillama) are aligned to Binance's end date
+    - Missing values are preserved as NaN; use ts_backfill() or ts_ffill() if needed
+    - Data is sorted by (symbol, timestamp) with full date range preserved
     
     Examples
     --------
@@ -162,7 +162,7 @@ def _align_and_fill(
     timeframe: str,
     symbols: List[str],
 ) -> pd.DataFrame:
-    """Align data to common date range and forward-fill missing values.
+    """Align data to full date range without forward-filling.
     
     Parameters
     ----------
@@ -176,23 +176,27 @@ def _align_and_fill(
     Returns
     -------
     pd.DataFrame
-        Aligned and filled DataFrame
+        Aligned DataFrame with NaN preserved for missing values
+    
+    Notes
+    -----
+    Missing values are preserved as NaN. Use ts_backfill() or ts_ffill()
+    operators if forward/backward filling is needed before backtesting.
     """
-    pivoted = df.pivot_table(index='timestamp', columns='symbol', values='close')
-    common_start = pivoted.apply(lambda s: s.first_valid_index()).max()
+    start_date = df['timestamp'].min()
     end_date = df['timestamp'].max()
     
     freq = TIMEFRAME_MAP.get(timeframe, 'D')
-    full_range = pd.date_range(start=common_start, end=end_date, freq=freq)
+    full_range = pd.date_range(start=start_date, end=end_date, freq=freq)
     
     result_dfs = []
     value_columns = [c for c in df.columns if c not in ['timestamp', 'symbol']]
     
     for col in value_columns:
         pivot = df.pivot_table(index='timestamp', columns='symbol', values=col)
-        pivot = pivot[pivot.index >= common_start].reindex(full_range).ffill()
-        stacked = pivot.stack(future_stack=True).reset_index()
-        stacked.columns = ['timestamp', 'symbol', col]
+        pivot = pivot.reindex(full_range)
+        pivot.index.name = 'timestamp'
+        stacked = pivot.reset_index().melt(id_vars='timestamp', var_name='symbol', value_name=col)
         result_dfs.append(stacked)
     
     result = result_dfs[0]

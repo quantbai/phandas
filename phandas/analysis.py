@@ -186,9 +186,9 @@ class FactorAnalyzer:
         lines.append("")
         
         lines.append("IC Analysis (Spearman):")
-        header = "  Factor".ljust(20) + "".join([f"{h}D".rjust(12) for h in self.horizons])
+        header = "  Factor".ljust(20) + "".join([f"{h}D".rjust(16) for h in self.horizons])
         lines.append(header)
-        lines.append("  " + "-" * (18 + 12 * len(self.horizons)))
+        lines.append("  " + "-" * (18 + 16 * len(self.horizons)))
         
         for factor in self.factors:
             name = factor.name[:18].ljust(18)
@@ -196,11 +196,11 @@ class FactorAnalyzer:
             for h in self.horizons:
                 ic_data = ic_results[factor.name].get(h, {})
                 ic_mean = ic_data.get('ic_mean', np.nan)
-                ir = ic_data.get('ir', np.nan)
+                t_stat = ic_data.get('t_stat', np.nan)
                 if np.isnan(ic_mean):
-                    ic_vals.append("N/A".rjust(12))
+                    ic_vals.append("N/A".rjust(16))
                 else:
-                    ic_vals.append(f"{ic_mean:.4f}".rjust(12))
+                    ic_vals.append(f"{ic_mean:.4f}|{t_stat:.2f}".rjust(16))
             lines.append(f"  {name}" + "".join(ic_vals))
         
         lines.append("")
